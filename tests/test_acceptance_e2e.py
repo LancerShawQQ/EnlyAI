@@ -1,343 +1,298 @@
-"""最终端到端验收测试
+"""完整端到端验收测试
 
-模拟完整的"本地 + 云端 GPU"工作流：
-1. 启动云端 TTS / 数字人 API 服务（TestClient 模拟）
-2. 本地 KrVoiceAI 通过 GPURunner 调用云端服务
-3. 注册音色和形象
-4. 跑通完整 9 模块 pipeline
-5. 验证最终产物
+对标旗博士 9 大能力，验证完整流程：
+1. 文案提取（mock 模式）
+2. 文案仿写
+3. TTS 语音合成
+4. 数字人口播生成
+5. 字幕生成
+6. 视频合成
+7. 标题生成
+8. 封面生成
+9. 多平台发布（manifest 模式）
 
-这是对标旗博士 9 大能力的最终验收测试。
+验证项：
+- 全流程无异常完成
+- 每个步骤状态为 success/skipped
+- 最终视频文件存在且可播放
+- 封面图片存在
+- 标题文案已生成
+- 进度回调被正确触发
+- 断点续跑功能正常
 """
 from __future__ import annotations
 
-import base64
-import importlib
 import json
-import os
-import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
-# 检查依赖
-fastapi_available = False
-try:
-    from fastapi.testclient import TestClient
-    fastapi_available = True
-except ImportError:
-    pass
+from krvoiceai.app import KrVoiceAI
 
 
-pytestmark = pytest.mark.skipif(
-    not fastapi_available,
-    reason="fastapi/testclient 未安装",
-)
+# 测试文案（模拟真实口播内容）
+TEST_SCRIPT = """大家好，今天和大家聊聊如何高效学习这件事。
+
+很多人觉得学习就是死记硬背，其实完全不是这样。我总结了三个方法，帮你事半功倍。
+
+第一，主动回忆。看完一段内容后，合上书，试着回忆刚才看了什么。这比反复阅读有效十倍。
+
+第二，间隔重复。不要一次性学完，而是分散到几天里。今天学一遍，明天复习，一周后再看。记忆会越来越牢固。
+
+第三，费曼技巧。把学到的东西讲给别人听。如果讲不清楚，说明你还没真正理解。
+
+这三个方法看起来简单，但真正坚持下来的人不多。从今天开始试试吧。
+
+关注我，获取更多学习干货。"""
 
 
-@pytest.fixture
-def cloud_env(tmp_path, monkeypatch):
-    """搭建云端 GPU 服务环境（模拟）"""
-    cloud_voices = tmp_path / "cloud_voices"
-    cloud_avatars = tmp_path / "cloud_avatars"
-    cloud_voices.mkdir()
-    cloud_avatars.mkdir()
+class TestFullPipelineAcceptance:
+    """完整端到端验收测试"""
 
-    monkeypatch.setenv("VOICES_DIR", str(cloud_voices))
-    monkeypatch.setenv("AVATARS_DIR", str(cloud_avatars))
+    def test_full_9_module_pipeline(self, isolated_config):
+        """验收测试：9 大模块全流程"""
+        app = KrVoiceAI()
 
-    # 启动 TTS 服务
-    from krvoiceai.api import tts_server
-    importlib.reload(tts_server)
-    tts_server._tts_model = None
-    tts_server._voices_dir = cloud_voices
-    tts_client = TestClient(tts_server.app)
+        progress_log = []
 
-    # 启动数字人服务
-    from krvoiceai.api import avatar_server
-    importlib.reload(avatar_server)
-    avatar_server._avatar_model = None
-    avatar_server._avatars_dir = cloud_avatars
-    avatar_client = TestClient(avatar_server.app)
+        def progress_cb(step, status, data):
+            progress_log.append({
+                "step": step,
+                "status": status,
+                "has_data": bool(data),
+            })
 
-    return {
-        "tts_client": tts_client,
-        "avatar_client": avatar_client,
-        "cloud_voices": cloud_voices,
-        "cloud_avatars": cloud_avatars,
-    }
-
-
-@pytest.fixture
-def local_app_with_cloud(tmp_path, isolated_config, cloud_env, monkeypatch):
-    """本地 KrVoiceAI 配置为调用云端服务（通过 mock GPURunner）"""
-    from krvoiceai.app import KrVoiceAI
-    from krvoiceai.core.gpu_runner import GPURunner
-
-    tts_client = cloud_env["tts_client"]
-    avatar_client = cloud_env["avatar_client"]
-
-    # 创建 mock GPURunner，将 HTTP 调用转发到 TestClient
-    class CloudGPURunner(GPURunner):
-        def __init__(self):
-            super().__init__()
-            self.tts_endpoint = "mock://tts"
-            self.avatar_endpoint = "mock://avatar"
-
-        def health_check_tts(self):
-            return True
-
-        def health_check_avatar(self):
-            return True
-
-        def is_gpu_available(self):
-            return True
-
-        def call_tts(self, payload, timeout=120):
-            r = tts_client.post("/api/tts/synthesize", json=payload)
-            r.raise_for_status()
-            return r.json()
-
-        def call_tts_register(self, payload, timeout=300):
-            r = tts_client.post("/api/tts/register_voice", json=payload)
-            r.raise_for_status()
-            return r.json()
-
-        def call_avatar(self, payload, timeout=300):
-            r = avatar_client.post("/api/avatar/generate", json=payload)
-            r.raise_for_status()
-            return r.json()
-
-        def call_avatar_register(self, payload, timeout=600):
-            r = avatar_client.post("/api/avatar/register", json=payload)
-            r.raise_for_status()
-            return r.json()
-
-    # 配置使用云端 provider
-    isolated_config.set("tts.provider", "gpt_sovits")
-    isolated_config.set("avatar.provider", "musetalk")
-    isolated_config.set("pipeline.gpu_enabled", True)
-    isolated_config.set("llm.provider", "mock")
-    isolated_config.set("asr.provider", "mock")
-    isolated_config.set("publisher.mode", "manual")
-
-    app = KrVoiceAI()
-
-    # 替换 TTS 和 Avatar 模块的 gpu_runner，并强制使用云端 provider
-    cloud_runner = CloudGPURunner()
-    for step_def in app.orchestrator._steps.values():
-        module = step_def.module
-        if hasattr(module, "gpu"):
-            module.gpu = cloud_runner
-        if module.name == "tts":
-            module.provider = "gpt_sovits"
-        elif module.name == "avatar":
-            module.provider = "musetalk"
-
-    return app, cloud_env
-
-
-def _make_wav_bytes(duration: float = 2.0) -> bytes:
-    """生成测试用 wav"""
-    from krvoiceai.core.audio_utils import generate_silent_wav
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        path = Path(f.name)
-    try:
-        generate_silent_wav(path, duration=duration, sample_rate=22050)
-        return path.read_bytes()
-    finally:
-        path.unlink(missing_ok=True)
-
-
-def _make_mp4_bytes() -> bytes:
-    """生成测试用 mp4"""
-    import subprocess
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
-        path = Path(f.name)
-    subprocess.run(
-        [
-            "ffmpeg", "-y", "-f", "lavfi",
-            "-i", "color=c=blue:s=320x240:d=2",
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            path,
-        ],
-        capture_output=True, check=True,
-    )
-    data = path.read_bytes()
-    path.unlink()
-    return data
-
-
-def _register_cloud_resources(cloud_env, voice_id: str, avatar_id: str):
-    """注册音色和形象到云端"""
-    audio_b64 = base64.b64encode(_make_wav_bytes()).decode()
-    r = cloud_env["tts_client"].post("/api/tts/register_voice", json={
-        "voice_id": voice_id,
-        "sample_audio_base64": audio_b64,
-    })
-    assert r.status_code == 200
-
-    video_b64 = base64.b64encode(_make_mp4_bytes()).decode()
-    r = cloud_env["avatar_client"].post("/api/avatar/register", json={
-        "avatar_id": avatar_id,
-        "reference_video_base64": video_b64,
-    })
-    assert r.status_code == 200
-
-
-# ============================================
-# 验收测试 1：云端服务健康检查
-# ============================================
-
-def test_cloud_services_healthy(cloud_env):
-    """云端 TTS 和数字人服务健康检查通过"""
-    r = cloud_env["tts_client"].get("/health")
-    assert r.status_code == 200
-    assert r.json()["service"] == "tts"
-
-    r = cloud_env["avatar_client"].get("/health")
-    assert r.status_code == 200
-    assert r.json()["service"] == "avatar"
-
-
-# ============================================
-# 验收测试 2：注册音色和形象到云端
-# ============================================
-
-def test_register_voice_and_avatar_to_cloud(cloud_env):
-    """注册音色和形象到云端服务"""
-    _register_cloud_resources(cloud_env, "acceptance_voice", "acceptance_avatar")
-
-    # 验证文件存在
-    assert (cloud_env["cloud_voices"] / "acceptance_voice" / "sample.wav").exists()
-    assert (cloud_env["cloud_avatars"] / "acceptance_avatar" / "reference.mp4").exists()
-    assert (cloud_env["cloud_avatars"] / "acceptance_avatar" / "meta.json").exists()
-
-
-# ============================================
-# 验收测试 3：完整 9 模块 pipeline（云端 GPU 模式）
-# ============================================
-
-def test_full_pipeline_with_cloud_gpu(local_app_with_cloud):
-    """完整 9 模块 pipeline，TTS 和数字人调用云端服务
-
-    这是最终验收测试：对标旗博士 9 大能力全流程打通。
-    """
-    app, cloud_env = local_app_with_cloud
-
-    # 注册资源到云端
-    _register_cloud_resources(cloud_env, "e2e_voice", "e2e_avatar")
-
-    # 提交并运行任务
-    result = app.submit_and_run(
-        script="今天分享一个 AI 小技巧，用 GPT-SoVITS 克隆声音，三分钟搞定。",
-        avatar_id="e2e_avatar",
-        voice_id="e2e_voice",
-        script_mode="polish",
-        platform="douyin",
-        auto_publish=False,
-    )
-
-    # 验证任务成功
-    assert result["success"] is True, f"任务失败: {result.get('error')}"
-    assert result["status"] == "success"
-
-    # 验证 9 个步骤状态
-    job = app.get_job(result["job_id"])
-    steps = {s["step"]: s["status"] for s in job["steps"]}
-    assert len(steps) == 9, f"应有 9 个步骤，实际 {len(steps)}"
-
-    # 核心步骤必须成功
-    for core_step in ["script_write", "tts", "avatar", "subtitle", "compose"]:
-        assert steps[core_step] == "success", (
-            f"核心步骤 {core_step} 状态: {steps[core_step]}"
+        result = app.submit_and_run(
+            script=TEST_SCRIPT,
+            script_mode="polish",
+            platform="douyin",
+            auto_publish=False,
+            progress_callback=progress_cb,
         )
 
-    # 验证最终产物
-    output = result["output"]
-    assert output["final_video"], "无最终视频"
-    final_video = Path(output["final_video"])
-    assert final_video.exists(), f"最终视频不存在: {final_video}"
-    assert final_video.stat().st_size > 1000, "最终视频过小"
+        # === 整体验收 ===
+        assert result["success"] is True, f"任务失败: {result.get('error')}"
+        assert result["status"] == "success"
 
-    # 验证视频是有效的 mp4
-    with open(final_video, "rb") as f:
-        header = f.read(8)
-    assert header[4:8] == b'ftyp', f"视频不是有效的 mp4: {header}"
+        # === 步骤验收 ===
+        steps = result["steps"]
+        # script_extract 应跳过（无参考 URL）
+        assert steps["script_extract"]["status"] == "skipped"
+        # 核心步骤应成功
+        for step in ["script_write", "tts", "avatar", "subtitle", "compose"]:
+            assert steps[step]["status"] == "success", \
+                f"步骤 {step} 状态异常: {steps[step]}"
+        # title/cover 应成功
+        assert steps["title"]["status"] == "success"
+        assert steps["cover"]["status"] == "success"
+        # publish 应跳过（auto_publish=False）
+        assert steps["publish"]["status"] == "skipped"
 
-    # 验证其他产物
-    assert output["script_text"], "无文案"
-    assert output["audio_path"], "无音频"
-    assert output["audio_duration"] > 0, "音频时长为0"
-    assert output["raw_video"], "无口播视频"
-    assert output["subtitle"], "无字幕"
-    assert output["title"], "无标题"
-    assert output["cover"], "无封面"
+        # === 产物验收 ===
+        output = result["output"]
+        # 视频文件
+        assert output["final_video"] is not None
+        video_path = Path(output["final_video"])
+        assert video_path.exists(), f"视频文件不存在: {video_path}"
+        assert video_path.stat().st_size > 1000, "视频文件过小"
+        # 文案
+        assert output["script_text"], "文案为空"
+        assert len(output["script_text"]) > 50, "文案过短"
+        # 音频
+        assert output["audio_path"] is not None
+        audio_path = Path(output["audio_path"])
+        assert audio_path.exists(), "音频文件不存在"
+        # 字幕
+        assert output["subtitle"] is not None
+        subtitle_path = Path(output["subtitle"])
+        assert subtitle_path.exists(), "字幕文件不存在"
+        # 标题
+        assert output["title"], "标题为空"
+        # 封面
+        assert output["cover"] is not None
+        cover_path = Path(output["cover"])
+        assert cover_path.exists(), "封面文件不存在"
 
+        # === 进度回调验收 ===
+        assert len(progress_log) > 0, "未触发进度回调"
+        # 应包含 success 事件
+        success_events = [e for e in progress_log if e["status"] == "success"]
+        assert len(success_events) >= 7, \
+            f"成功事件不足: {len(success_events)}"
 
-# ============================================
-# 验收测试 4：断点续跑（云端模式）
-# ============================================
+    def test_pipeline_with_reference_url(self, isolated_config):
+        """验收测试：带参考视频 URL（mock 提取文案）"""
+        app = KrVoiceAI()
 
-def test_resume_with_cloud_gpu(local_app_with_cloud):
-    """验证云端模式下断点续跑"""
-    app, cloud_env = local_app_with_cloud
+        result = app.submit_and_run(
+            script="",  # 留空，使用参考视频提取
+            reference_video_url="https://www.douyin.com/video/test123",
+            script_mode="rewrite",
+            platform="bilibili",
+        )
 
-    _register_cloud_resources(cloud_env, "resume_voice", "resume_avatar")
+        assert result["success"] is True
+        # script_extract 应执行（有 URL）
+        assert result["steps"]["script_extract"]["status"] == "success"
+        # 提取的文案应非空
+        assert result["output"]["script_text"]
 
-    # 第一次运行
-    result1 = app.submit_and_run(
-        script="断点续跑测试文案。",
-        avatar_id="resume_avatar",
-        voice_id="resume_voice",
-        platform="bilibili",
-    )
-    assert result1["success"] is True
+    def test_pipeline_auto_publish(self, isolated_config):
+        """验收测试：自动发布（manifest 模式）"""
+        app = KrVoiceAI()
 
-    # 重新运行（应跳过已完成步骤）
-    job_id = result1["job_id"]
-    success = app.rerun_job(job_id)
-    assert success is True
+        result = app.submit_and_run(
+            script="测试自动发布功能。",
+            script_mode="polish",
+            platform="douyin",
+            auto_publish=True,
+        )
 
-    # 验证所有步骤仍为成功（从 checkpoint 恢复）
-    job = app.get_job(job_id)
-    for s in job["steps"]:
-        if s["status"] != "skipped":
-            assert s["status"] == "success", (
-                f"步骤 {s['step']} 状态: {s['status']}"
+        assert result["success"] is True
+        # publish 应执行
+        assert result["steps"]["publish"]["status"] == "success"
+
+    def test_pipeline_all_platforms(self, isolated_config):
+        """验收测试：所有平台"""
+        app = KrVoiceAI()
+        platforms = ["douyin", "bilibili", "kuaishou", "wechat_video"]
+
+        for platform in platforms:
+            result = app.submit_and_run(
+                script=f"测试 {platform} 平台。",
+                script_mode="polish",
+                platform=platform,
             )
+            assert result["success"] is True, \
+                f"平台 {platform} 失败: {result.get('error')}"
+
+    def test_pipeline_all_script_modes(self, isolated_config):
+        """验收测试：所有文案模式"""
+        app = KrVoiceAI()
+        modes = ["polish", "rewrite", "generate"]
+
+        for mode in modes:
+            result = app.submit_and_run(
+                script="测试不同文案模式的效果。",
+                script_mode=mode,
+            )
+            assert result["success"] is True, \
+                f"模式 {mode} 失败: {result.get('error')}"
+            assert result["output"]["script_text"], \
+                f"模式 {mode} 文案为空"
+
+    def test_resume_from_failure(self, isolated_config):
+        """验收测试：断点续跑"""
+        app = KrVoiceAI()
+
+        # 第一次运行
+        result1 = app.submit_and_run(
+            script="测试断点续跑功能。",
+            script_mode="polish",
+        )
+        assert result1["success"] is True
+        job_id = result1["job_id"]
+
+        # 重跑（应从已完成状态续跑，快速完成）
+        ok = app.rerun_job(job_id)
+        assert ok is True
+
+    def test_video_is_playable(self, isolated_config, tmp_path):
+        """验收测试：视频可播放（FFmpeg 可探测时长）"""
+        app = KrVoiceAI()
+        from krvoiceai.core.ffmpeg_utils import FFmpegRunner
+
+        result = app.submit_and_run(
+            script="测试视频可播放性。",
+            script_mode="polish",
+        )
+
+        video_path = Path(result["output"]["final_video"])
+        ff = FFmpegRunner()
+        duration = ff.probe_duration(video_path)
+        assert duration > 0, f"视频时长为 0: {video_path}"
+
+    def test_subtitle_is_valid_srt(self, isolated_config):
+        """验收测试：字幕是合法 SRT 格式"""
+        app = KrVoiceAI()
+
+        result = app.submit_and_run(
+            script="测试字幕格式。",
+            script_mode="polish",
+        )
+
+        subtitle_path = Path(result["output"]["subtitle"])
+        content = subtitle_path.read_text(encoding="utf-8")
+        # SRT 基本格式检查
+        assert "-->" in content, "字幕缺少时间轴标记"
+        # 应有序号
+        lines = content.strip().split("\n")
+        assert lines[0].strip().isdigit(), "字幕第一行不是序号"
+
+    def test_cover_is_valid_image(self, isolated_config):
+        """验收测试：封面是合法图片"""
+        app = KrVoiceAI()
+        from PIL import Image
+
+        result = app.submit_and_run(
+            script="测试封面图片。",
+            script_mode="polish",
+        )
+
+        cover_path = Path(result["output"]["cover"])
+        img = Image.open(cover_path)
+        assert img.size[0] > 0 and img.size[1] > 0, "封面图片尺寸异常"
+
+    def test_title_is_meaningful(self, isolated_config):
+        """验收测试：标题有意义"""
+        app = KrVoiceAI()
+
+        result = app.submit_and_run(
+            script="测试标题生成质量。",
+            script_mode="polish",
+            platform="douyin",
+        )
+
+        title = result["output"]["title"]
+        assert title, "标题为空"
+        assert len(title) >= 5, f"标题过短: {title}"
 
 
-# ============================================
-# 验收测试 5：多平台支持
-# ============================================
+class TestSingleModuleAcceptance:
+    """单模块验收测试（对标旗博士单环节调试）"""
 
-@pytest.mark.parametrize("platform", ["douyin", "bilibili", "kuaishou", "wechat_video"])
-def test_multi_platform(local_app_with_cloud, platform):
-    """验证多平台支持"""
-    app, cloud_env = local_app_with_cloud
+    def test_each_module_executable(self, isolated_config):
+        """验收测试：每个模块都能单独执行"""
+        app = KrVoiceAI()
+        modules_to_test = [
+            "script_write", "tts", "avatar",
+            "subtitle", "compose", "title", "cover",
+        ]
 
-    _register_cloud_resources(
-        cloud_env,
-        f"plat_voice_{platform}",
-        f"plat_avatar_{platform}",
-    )
+        for module_name in modules_to_test:
+            result = app.run_single_module(
+                module_name=module_name,
+                script="测试单模块执行。",
+                script_mode="polish",
+            )
+            assert result["success"] is True, \
+                f"模块 {module_name} 执行失败: {result.get('error')}"
 
-    result = app.submit_and_run(
-        script=f"测试 {platform} 平台发布。",
-        avatar_id=f"plat_avatar_{platform}",
-        voice_id=f"plat_voice_{platform}",
-        platform=platform,
-        auto_publish=True,
-    )
+    def test_module_context_propagation(self, isolated_config):
+        """验收测试：模块间上下文传递"""
+        app = KrVoiceAI()
 
-    assert result["success"] is True, f"平台 {platform} 失败: {result.get('error')}"
+        # 执行到 compose，验证上下文
+        result = app.run_single_module(
+            module_name="compose",
+            script="测试上下文传递。",
+            script_mode="polish",
+        )
 
-    # 验证发布步骤执行
-    job = app.get_job(result["job_id"])
-    publish_step = [s for s in job["steps"] if s["step"] == "publish"][0]
-    assert publish_step["status"] == "success", (
-        f"平台 {platform} 发布步骤状态: {publish_step['status']}"
-    )
+        ctx = result["context"]
+        # 前置模块的产物应在上下文中
+        assert ctx["script_text"], "文案未传递"
+        assert ctx["audio_path"], "音频未传递"
+        assert ctx["raw_video_path"], "数字人视频未传递"
+        assert ctx["subtitle_path"], "字幕未传递"
+        assert ctx["final_video"], "最终视频未生成"

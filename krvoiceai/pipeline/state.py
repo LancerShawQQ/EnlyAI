@@ -171,6 +171,7 @@ class JobStore:
                         "status": s["status"],
                         "duration": s["duration"],
                         "error": s["error"],
+                        "result": json.loads(s["result_json"]) if s["result_json"] else None,
                     }
                     for s in steps
                 ],
@@ -184,6 +185,13 @@ class JobStore:
                 (limit,),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def delete_job(self, job_id: str) -> bool:
+        """删除任务及其步骤记录"""
+        with self._conn() as c:
+            c.execute("DELETE FROM steps WHERE job_id=?", (job_id,))
+            cur = c.execute("DELETE FROM jobs WHERE job_id=?", (job_id,))
+            return cur.rowcount > 0
 
     def get_next_pending_step(self, job_id: str) -> Optional[str]:
         """获取下一个待执行的步骤"""

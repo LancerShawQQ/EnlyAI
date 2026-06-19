@@ -100,8 +100,15 @@ class PipelineOrchestrator:
         self.logger.info(f"任务已提交 job_id={job_id}")
         return job_id
 
-    def run_job(self, job_id: str) -> bool:
+    def run_job(
+        self, job_id: str,
+        progress_callback: Optional[Callable[[str, str, dict], None]] = None,
+    ) -> bool:
         """运行任务（支持断点续跑）
+
+        Args:
+            job_id: 任务 ID
+            progress_callback: 进度回调 (step_name, status, data)
 
         Returns:
             True 表示任务成功完成
@@ -134,6 +141,8 @@ class PipelineOrchestrator:
                     job_id, step_name, StepStatus.SKIPPED,
                     result={"reason": "step not registered"},
                 )
+                if progress_callback:
+                    progress_callback(step_name, "skipped", {})
                 continue
 
             # 检查跳过条件
@@ -143,10 +152,18 @@ class PipelineOrchestrator:
                     job_id, step_name, StepStatus.SKIPPED,
                     result={"reason": "skip condition met"},
                 )
+                if progress_callback:
+                    progress_callback(step_name, "skipped", {})
                 continue
 
+            # 通知开始
+            if progress_callback:
+                progress_callback(step_name, "running", {})
+
             # 执行步骤（带重试）
-            success = self._execute_step_with_retry(job_id, step_def, ctx)
+            success = self._execute_step_with_retry(
+                job_id, step_def, ctx, progress_callback,
+            )
             if not success:
                 if step_def.optional:
                     self.logger.warning(
@@ -169,7 +186,8 @@ class PipelineOrchestrator:
         return True
 
     def _execute_step_with_retry(
-        self, job_id: str, step_def: StepDef, ctx: JobContext
+        self, job_id: str, step_def: StepDef, ctx: JobContext,
+        progress_callback: Optional[Callable] = None,
     ) -> bool:
         """带重试的步骤执行"""
         last_error = None
@@ -189,12 +207,18 @@ class PipelineOrchestrator:
                 )
                 # 持久化中间产物，支持断点续跑
                 self._save_context(ctx)
+                if progress_callback:
+                    progress_callback(step_def.name, "success", result.data)
                 return True
 
             last_error = result.error
             self.logger.warning(
                 f"步骤 {step_def.name} 第 {attempt} 次失败: {result.error}"
             )
+            if progress_callback:
+                progress_callback(step_def.name, "retry", {
+                    "attempt": attempt, "error": result.error,
+                })
             if attempt < self.max_retries:
                 wait = self.retry_backoff * (2 ** (attempt - 1))
                 self.logger.info(f"等待 {wait}s 后重试")
@@ -204,6 +228,8 @@ class PipelineOrchestrator:
             job_id, step_def.name, StepStatus.FAILED,
             error=last_error, duration=0,
         )
+        if progress_callback:
+            progress_callback(step_def.name, "failed", {"error": last_error})
         return False
 
     def _find_resume_point(self, job_id: str) -> Optional[str]:

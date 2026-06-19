@@ -143,9 +143,12 @@ def test_gpt_sovits_no_audio_data(isolated_config, job_work_dir):
     assert "无音频" in result.error
 
 
-def test_register_voice_mock(tts_mock):
-    """Mock 模式注册音色直接成功"""
-    ok = tts_mock.register_voice("alice", Path("/tmp/sample.wav"))
+def test_register_voice_mock(tts_mock, tmp_path):
+    """Mock 模式注册音色：本地保存样本音频"""
+    from krvoiceai.core.audio_utils import generate_silent_wav
+    sample = tmp_path / "sample.wav"
+    generate_silent_wav(sample, duration=2.0)
+    ok = tts_mock.register_voice("alice", sample)
     assert ok is True
 
 

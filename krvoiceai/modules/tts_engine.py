@@ -202,9 +202,18 @@ class TTSEngine(BaseModule):
         return info.path, info.duration, timestamps
 
     def register_voice(self, voice_id: str, sample_audio: Path) -> bool:
-        """注册音色（仅 gpt_sovits 模式有效）"""
+        """注册音色"""
+        sample_audio = Path(sample_audio)
+        voices_dir = Path(self.config.get("tts.voices_dir", "./config/voices"))
+        voice_dir = voices_dir / voice_id
+        voice_dir.mkdir(parents=True, exist_ok=True)
+
         if self.provider != "gpt_sovits":
-            self.logger.info("Mock/edge 模式无需注册音色")
+            # Mock/edge 模式：本地保存样本音频
+            import shutil
+            dest = voice_dir / f"sample{sample_audio.suffix or '.wav'}"
+            shutil.copy2(sample_audio, dest)
+            self.logger.info(f"本地音色注册成功: {voice_id} -> {dest}")
             return True
 
         try:
@@ -214,6 +223,11 @@ class TTSEngine(BaseModule):
                 "voice_id": voice_id,
                 "sample_audio_base64": audio_b64,
             })
+            # 云端注册成功后也本地保存一份
+            if resp.get("success"):
+                import shutil
+                dest = voice_dir / f"sample{sample_audio.suffix or '.wav'}"
+                shutil.copy2(sample_audio, dest)
             return resp.get("success", False)
         except Exception as e:
             self.logger.error(f"音色注册失败: {e}")
