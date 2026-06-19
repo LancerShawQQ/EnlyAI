@@ -1,0 +1,94 @@
+# KrVoiceAI 云端 GPU 镜像
+#
+# 用途：在云 GPU 实例上运行 TTS / 数字人推理服务
+# 包含 PyTorch + GPT-SoVITS + MuseTalk + FunASR
+#
+# 构建：
+#   docker build -f docker/Dockerfile.gpu -t krvoiceai:gpu .
+#
+# 运行（需要 NVIDIA Container Toolkit）：
+#   docker run --gpus all -it --rm \
+#     -p 9880:9880 -p 8010:8010 \
+#     -v $(pwd)/models:/app/models \
+#     -v $(pwd)/config:/app/config \
+#     krvoiceai:gpu
+
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+
+# 避免交互
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ffmpeg \
+    libsndfile1 \
+    libgl1 \
+    libglib2.0-0 \
+    git \
+    wget \
+    curl \
+    python3.10 \
+    python3.10-venv \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# 设置 Python 3.10 为默认
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 && \
+    update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+
+WORKDIR /app
+
+# 安装 PyTorch (CUDA 12.1)
+RUN pip install --no-cache-dir torch==2.3.0 torchvision==0.18.0 torchaudio==2.3.0 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# 复制项目文件并安装 KrVoiceAI
+COPY pyproject.toml ./
+COPY krvoiceai/ ./krvoiceai/
+COPY config/ ./config/
+
+RUN pip install --no-cache-dir \
+    fastapi==0.111.0 \
+    uvicorn[standard]==0.30.1 \
+    pydantic==2.7.1 \
+    httpx==0.27.0 \
+    loguru==0.7.2 \
+    Pillow==10.3.0 \
+    numpy==1.26.4 \
+    soundfile==0.12.1 \
+    funasr==1.0.27 \
+    modelscope==1.11.0
+
+# 安装 GPT-SoVITS（克隆并安装依赖）
+RUN git clone https://github.com/RVC-Boss/GPT-SoVITS.git /opt/GPT-SoVITS && \
+    cd /opt/GPT-SoVITS && \
+    pip install --no-cache-dir -r requirements.txt || true
+
+# 安装 MuseTalk
+RUN git clone https://github.com/TMElyralab/MuseTalk.git /opt/MuseTalk && \
+    cd /opt/MuseTalk && \
+    pip install --no-cache-dir -r requirements.txt || true
+
+# 创建工作目录
+RUN mkdir -p /app/workspace_data/logs /app/workspace_data/tmp \
+    /app/config/avatars /app/config/voices \
+    /app/models
+
+# 环境变量
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app:/opt/GPT-SoVITS:/opt/MuseTalk \
+    VOICES_DIR=/app/config/voices \
+    AVATARS_DIR=/app/config/avatars \
+    MODELS_DIR=/app/models
+
+# 暴露端口
+# 9880: TTS 服务
+# 8010: 数字人服务
+EXPOSE 9880 8010
+
+# 启动脚本（同时启动 TTS 和数字人服务）
+COPY docker/entrypoint.gpu.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+CMD ["/entrypoint.sh"]

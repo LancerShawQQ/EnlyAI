@@ -1,0 +1,135 @@
+# KrVoiceAI 默认配置
+# 所有配置项均可通过环境变量覆盖，环境变量格式：KRVOICEAI_<大写路径>
+# 例如：KRVOICEAI_LLM_API_KEY 覆盖 llm.api_key
+
+project:
+  name: KrVoiceAI
+  version: 0.1.0
+  # 工作根目录，所有任务产物存放于此
+  work_root: ./workspace_data
+  # 临时目录
+  temp_root: ./workspace_data/tmp
+
+# 日志配置
+logging:
+  level: INFO  # DEBUG / INFO / WARNING / ERROR
+  file: ./workspace_data/logs/krvoiceai.log
+  rotation: "10 MB"
+  retention: "30 days"
+  console: true
+
+# LLM 配置（文案/标题生成）
+llm:
+  provider: deepseek  # deepseek / qwen / openai / mock
+  api_key: ""         # 从环境变量 KRVOICEAI_LLM_API_KEY 读取
+  base_url: https://api.deepseek.com/v1
+  model: deepseek-chat
+  temperature: 0.7
+  max_tokens: 2000
+  timeout: 60
+
+# TTS 配置（声音克隆）
+tts:
+  provider: gpt_sovits  # gpt_sovits / edge_tts / mock
+  # GPT-SoVITS 云端服务地址
+  api_base: http://localhost:9880
+  api_key: ""
+  timeout: 120
+  # edge-tts 降级配置
+  edge_voice: zh-CN-XiaoxiaoNeural
+  # 音色库目录
+  voices_dir: ./config/voices
+  default_voice: default
+
+# 数字人配置（口播生成）
+avatar:
+  provider: musetalk  # musetalk / latentsync / echomimic / mock
+  # 云端服务地址
+  api_base: http://localhost:8010
+  api_key: ""
+  timeout: 300
+  # 形象库目录
+  avatars_dir: ./config/avatars
+  default_avatar: default
+  # 输出视频参数
+  output_fps: 25
+  output_resolution: [1080, 1920]  # 竖版
+
+# ASR 配置（字幕/文案提取）
+asr:
+  provider: funasr  # funasr / whisper / mock
+  model: paraformer-zh
+  # 本地运行时模型缓存目录
+  model_cache: ./workspace_data/models/asr
+  language: zh
+  # 字幕样式
+  subtitle:
+    font_size: 24
+    font_color: "&HFFFFFF"
+    outline_color: "&H000000"
+    outline_width: 2
+    max_chars_per_line: 18
+
+# 视频合成配置
+composer:
+  ffmpeg_path: ffmpeg  # 可指定绝对路径
+  # 输出参数
+  output_fps: 30
+  output_resolution: [1080, 1920]
+  video_bitrate: "8M"
+  audio_bitrate: "192k"
+  # BGM 库
+  bgm_dir: ./config/bgm
+  bgm_volume: 0.15  # BGM 音量（0-1）
+
+# 封面生成配置
+cover:
+  mode: frame_overlay  # frame_overlay / sdxl / template
+  # 模板目录
+  templates_dir: ./config/cover_templates
+  # 字体
+  font_path: ./config/fonts/SourceHanSansCN-Bold.otf
+  title_max_chars: 20
+
+# 发布配置
+publisher:
+  mode: semi_auto  # auto / semi_auto / manual
+  # Cookie 存储目录
+  cookies_dir: ./config/cookies
+  # 平台配置
+  platforms:
+    bilibili:
+      enabled: true
+      api_base: https://api.bilibili.com
+    douyin:
+      enabled: false
+      method: playwright
+    kuaishou:
+      enabled: false
+      method: playwright
+    wechat_video:
+      enabled: false
+      method: playwright
+  # 发布间隔（秒），避免频率限制
+  publish_interval: 60
+
+# 编排配置
+pipeline:
+  # 任务数据库
+  db_path: ./workspace_data/jobs.db
+  # 最大重试次数
+  max_retries: 3
+  # 重试退避基数（秒）
+  retry_backoff: 5
+  # 并发数
+  concurrency: 1
+  # 是否启用 GPU 模块（false 时使用 mock）
+  gpu_enabled: false
+
+# GPU 调度配置
+gpu_runner:
+  # 云 GPU 服务地址（TTS + Avatar API）
+  tts_endpoint: http://localhost:9880
+  avatar_endpoint: http://localhost:8010
+  # 健康检查超时
+  health_check_timeout: 10

@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+
+# 测试缓存
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 项目运行时数据（不入库）
+workspace_data/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# 模型文件（体积大，不入库）
+models/
+*.pth
+*.bin
+*.onnx
+*.safetensors
+
+# 配置中的敏感信息
+config/secrets.yaml
+config/.env
+.env
+.env.local
+.env.cloud
+
+# Cookie 文件（含登录凭据）
+config/cookies/
+*.cookies
+*.cookie
+
+# 音色/形象样本（用户私有数据）
+config/voices/*/sample.*
+config/avatars/*/reference.*
+config/avatars/*/meta.json
+
+# 临时文件
+*.tmp
+*.bak
+*.orig
+
+# 系统文件
+Thumbs.db

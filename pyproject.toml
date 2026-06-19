@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "krvoiceai"
+version = "0.1.0"
+description = "虚拟人口播智能体 - 对标旗博士的离线批量口播视频自动化生成系统"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "KrVoiceAI Team" }]
+
+dependencies = [
+    # 基础
+    "pyyaml>=6.0",
+    "pydantic>=2.5",
+    "python-dotenv>=1.0",
+    # 日志
+    "loguru>=0.7",
+    # HTTP
+    "requests>=2.31",
+    "httpx>=0.25",
+    # 媒体
+    "ffmpeg-python>=0.2",
+    "Pillow>=10.0",
+    "numpy>=1.24",
+    # LLM
+    "openai>=1.10",
+    # 下载
+    "yt-dlp>=2024.0",
+    # 界面
+    "gradio>=4.0",
+    # 任务
+    "rq>=1.16",
+    # 工具
+    "tqdm>=4.66",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "pytest-mock>=3.12",
+    "ruff>=0.1",
+]
+gpu = [
+    # GPU 模块按需在云端安装，本地不强制
+    "torch>=2.1",
+    "torchaudio>=2.1",
+]
+tts = [
+    "edge-tts>=6.1",  # CPU 降级方案
+]
+
+[project.scripts]
+krvoiceai = "krvoiceai.ui.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

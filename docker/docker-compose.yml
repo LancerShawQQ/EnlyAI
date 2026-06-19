@@ -1,0 +1,94 @@
+# KrVoiceAI Docker Compose 编排
+#
+# 用途：一键启动本地 KrVoiceAI + 云端 GPU 服务
+#
+# 使用方式：
+#   docker-compose up -d                    # 启动本地服务
+#   docker-compose --profile gpu up -d      # 同时启动 GPU 服务（需在 GPU 机器上）
+#
+# 说明：
+#   - local: 本地 CPU 服务（Gradio UI + CLI），使用 mock 模式或调用云端 GPU
+#   - tts: 云端 TTS 服务（GPT-SoVITS），需 GPU
+#   - avatar: 云端数字人服务（MuseTalk），需 GPU
+
+version: "3.9"
+
+services:
+  # 本地服务（CPU）
+  local:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.local
+    image: krvoiceai:local
+    container_name: krvoiceai-local
+    ports:
+      - "7860:7860"  # Gradio UI
+    volumes:
+      - ./workspace_data:/app/workspace_data
+      - ./config:/app/config
+    environment:
+      - KRVOICEAI_GPU_RUNNER_TTS_ENDPOINT=${TTS_ENDPOINT:-http://tts:9880}
+      - KRVOICEAI_GPU_RUNNER_AVATAR_ENDPOINT=${AVATAR_ENDPOINT:-http://avatar:8010}
+    networks:
+      - krvoiceai-net
+    restart: unless-stopped
+
+  # 云端 TTS 服务（GPU）
+  tts:
+    profiles: ["gpu"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gpu
+    image: krvoiceai:gpu
+    container_name: krvoiceai-tts
+    ports:
+      - "9880:9880"
+    volumes:
+      - ./models:/app/models
+      - ./config/voices:/app/config/voices
+    environment:
+      - VOICES_DIR=/app/config/voices
+      - MODELS_DIR=/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: ["python", "-m", "krvoiceai.api.tts_server", "--host", "0.0.0.0", "--port", "9880"]
+    networks:
+      - krvoiceai-net
+    restart: unless-stopped
+
+  # 云端数字人服务（GPU）
+  avatar:
+    profiles: ["gpu"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gpu
+    image: krvoiceai:gpu
+    container_name: krvoiceai-avatar
+    ports:
+      - "8010:8010"
+    volumes:
+      - ./models:/app/models
+      - ./config/avatars:/app/config/avatars
+    environment:
+      - AVATARS_DIR=/app/config/avatars
+      - MODELS_DIR=/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: ["python", "-m", "krvoiceai.api.avatar_server", "--host", "0.0.0.0", "--port", "8010"]
+    networks:
+      - krvoiceai-net
+    restart: unless-stopped
+
+networks:
+  krvoiceai-net:
+    driver: bridge

@@ -1,0 +1,56 @@
+# KrVoiceAI 本地 CPU 镜像
+#
+# 用途：本地运行 KrVoiceAI（mock 模式或调用云端 GPU 服务）
+# 不包含 GPU 依赖，镜像体积小
+#
+# 构建：
+#   docker build -f docker/Dockerfile.local -t krvoiceai:local .
+#
+# 运行：
+#   docker run -it --rm \
+#     -p 7860:7860 \
+#     -v $(pwd)/workspace_data:/app/workspace_data \
+#     -v $(pwd)/config:/app/config \
+#     krvoiceai:local
+
+FROM python:3.10-slim
+
+# 系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ffmpeg \
+    libsndfile1 \
+    libgl1 \
+    libglib2.0-0 \
+    fonts-noto-cjk \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 先复制依赖文件，利用 Docker 缓存
+COPY pyproject.toml ./
+
+# 安装 Python 依赖（不含 GPU/tts 可选依赖）
+RUN pip install --no-cache-dir -e ".[dev,tts]"
+
+# 复制项目代码
+COPY . .
+
+# 创建工作目录
+RUN mkdir -p /app/workspace_data/logs /app/workspace_data/tmp \
+    /app/config/avatars /app/config/voices /app/config/bgm \
+    /app/config/cookies /app/config/fonts /app/config/cover_templates
+
+# 环境变量
+ENV PYTHONUNBUFFERED=1 \
+    KRVOICEAI_PROJECT_WORK_ROOT=/app/workspace_data \
+    KRVOICEAI_PROJECT_TEMP_ROOT=/app/workspace_data/tmp \
+    KRVOICEAI_LOGGING_FILE=/app/workspace_data/logs/krvoiceai.log \
+    KRVOICEAI_PIPELINE_DB_PATH=/app/workspace_data/jobs.db
+
+# 暴露端口（Gradio UI）
+EXPOSE 7860
+
+# 默认启动 Gradio UI
+CMD ["python", "-m", "krvoiceai.ui.cli", "serve", "--host", "0.0.0.0", "--port", "7860"]
