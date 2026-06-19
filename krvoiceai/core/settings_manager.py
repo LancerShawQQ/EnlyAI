@@ -139,6 +139,122 @@ PROVIDER_PRESETS = {
     },
 }
 
+# 字幕样式预设（对标剪映/简影，6 种风格）
+SUBTITLE_STYLE_PRESETS = {
+    "minimal_white": {
+        "label": "简约白",
+        "preview": "白字黑边，经典百搭",
+        "primary_color": "&H00FFFFFF",
+        "outline_color": "&H00000000",
+        "outline_width": 2,
+        "shadow_color": "&H80000000",
+        "bold": True,
+    },
+    "tech_blue": {
+        "label": "科技蓝",
+        "preview": "蓝字白边，科技感强",
+        "primary_color": "&H00FFD040",
+        "outline_color": "&H00FFFFFF",
+        "outline_width": 1,
+        "shadow_color": "&H00000000",
+        "bold": True,
+    },
+    "classic_gold": {
+        "label": "古风金",
+        "preview": "金字黑边，典雅古朴",
+        "primary_color": "&H0000D4FF",
+        "outline_color": "&H00000000",
+        "outline_width": 2,
+        "shadow_color": "&H80000000",
+        "bold": True,
+    },
+    "pop_pink": {
+        "label": "卡点粉",
+        "preview": "粉字白边，活泼吸睛",
+        "primary_color": "&H00FF80FF",
+        "outline_color": "&H00FFFFFF",
+        "outline_width": 2,
+        "shadow_color": "&H00000000",
+        "bold": True,
+    },
+    "news_red": {
+        "label": "新闻红",
+        "preview": "红字白边，严肃权威",
+        "primary_color": "&H000000FF",
+        "outline_color": "&H00FFFFFF",
+        "outline_width": 2,
+        "shadow_color": "&H80000000",
+        "bold": True,
+    },
+    "dark_black": {
+        "label": "极简黑",
+        "preview": "黑字白边，硬核极客",
+        "primary_color": "&H00000000",
+        "outline_color": "&H00FFFFFF",
+        "outline_width": 2,
+        "shadow_color": "&H80000000",
+        "bold": True,
+    },
+}
+
+# 字幕入场动画预设（对标剪映/Sayatoo）
+SUBTITLE_ANIMATION_PRESETS = {
+    "none": {"label": "无动画", "description": "静态显示"},
+    "fade": {"label": "淡入淡出", "description": "平滑过渡，适合大多数场景"},
+    "slide": {"label": "滑入", "description": "从下方滑入，动感明快"},
+    "zoom": {"label": "缩放", "description": "由小变大，强调重点"},
+    "bounce": {"label": "弹跳", "description": "活泼俏皮，适合娱乐"},
+    "typewriter": {"label": "打字机", "description": "逐字出现，复古风格"},
+    "karaoke": {"label": "卡拉OK", "description": "逐字点亮，节奏感强"},
+}
+
+# 情感预设（对标腾讯智影/HeyGen）
+EMOTION_PRESETS = {
+    "neutral": {"label": "中性", "description": "自然平稳，适合大多数场景"},
+    "calm": {"label": "平静", "description": "舒缓从容，适合讲述"},
+    "excited": {"label": "激昂", "description": "热情饱满，适合带货"},
+    "gentle": {"label": "温柔", "description": "柔和细腻，适合情感"},
+    "serious": {"label": "严肃", "description": "庄重权威，适合新闻"},
+    "cheerful": {"label": "欢快", "description": "明朗活泼，适合科普"},
+}
+
+# 数字人姿态预设（对标腾讯智影）
+POSE_PRESETS = {
+    "standing": {"label": "站姿全身", "description": "全身站立，适合展示"},
+    "sitting": {"label": "坐姿半身", "description": "坐着半身，适合访谈"},
+    "half_body": {"label": "半身", "description": "腰部以上，口播标配"},
+    "closeup": {"label": "特写", "description": "面部特写，表情清晰"},
+}
+
+# 滤镜预设（对标剪映/vsub）
+FILTER_PRESETS = {
+    "none": {"label": "无滤镜", "description": "原始画面"},
+    "warm": {"label": "暖色", "description": "偏黄偏红，温馨感"},
+    "cool": {"label": "冷色", "description": "偏蓝偏青，科技感"},
+    "bw": {"label": "黑白", "description": "去色黑白，复古感"},
+    "vintage": {"label": "复古", "description": "褪色颗粒，怀旧感"},
+    "vivid": {"label": "鲜艳", "description": "高饱和度，吸睛感"},
+}
+
+# 转场预设
+TRANSITION_PRESETS = {
+    "none": {"label": "无转场"},
+    "fade": {"label": "淡入淡出"},
+    "slide": {"label": "滑动"},
+    "zoom": {"label": "缩放"},
+    "swipe": {"label": "强滑"},
+}
+
+# 所有创作预设汇总（供前端一次性加载）
+CREATIVE_PRESETS = {
+    "subtitle_styles": SUBTITLE_STYLE_PRESETS,
+    "subtitle_animations": SUBTITLE_ANIMATION_PRESETS,
+    "emotions": EMOTION_PRESETS,
+    "poses": POSE_PRESETS,
+    "filters": FILTER_PRESETS,
+    "transitions": TRANSITION_PRESETS,
+}
+
 
 class SettingsManager:
     """用户设置管理器（线程安全单例）"""
@@ -198,6 +314,79 @@ class SettingsManager:
         """获取 provider 预设（供前端下拉选择）"""
         return deepcopy(PROVIDER_PRESETS)
 
+    def get_creative_presets(self) -> dict[str, Any]:
+        """获取创作预设（字幕样式/动画/情感/姿态/滤镜/转场）"""
+        return deepcopy(CREATIVE_PRESETS)
+
+    def get_templates(self) -> dict[str, Any]:
+        """获取创作模板列表"""
+        cfg = get_config()
+        templates = cfg.get("templates", {}) or {}
+        return deepcopy(templates)
+
+    def apply_template(self, template_id: str) -> dict[str, Any]:
+        """应用创作模板：一键设置字幕/BGM/情感/滤镜/转场
+
+        Args:
+            template_id: 模板 ID（如 news_broadcast）
+
+        Returns:
+            {"success": bool, "message": str, "applied": {...}}
+        """
+        cfg = get_config()
+        templates = cfg.get("templates", {}) or {}
+        if template_id not in templates:
+            return {"success": False, "message": f"模板不存在: {template_id}"}
+
+        tpl = templates[template_id]
+        applied: dict[str, Any] = {}
+
+        # 1. 字幕样式预设 + 动画
+        style_preset = tpl.get("subtitle_preset", "minimal_white")
+        animation = tpl.get("subtitle_animation", "fade")
+        style = SUBTITLE_STYLE_PRESETS.get(style_preset, {})
+        subtitle_payload = {
+            "preset": style_preset,
+            "animation": animation,
+            "primary_color": style.get("primary_color", "&H00FFFFFF"),
+            "outline_color": style.get("outline_color", "&H00000000"),
+            "outline_width": style.get("outline_width", 2),
+            "shadow_color": style.get("shadow_color", "&H80000000"),
+            "bold": style.get("bold", True),
+        }
+        self.update_section("subtitle", subtitle_payload)
+        applied["subtitle"] = subtitle_payload
+
+        # 2. BGM + 情感
+        audio_payload = {
+            "emotion": tpl.get("emotion", "neutral"),
+            "bgm": {
+                "enabled": True,
+                "track": tpl.get("bgm_track", "soft_piano"),
+                "volume": 15,
+                "fade_in": 1.0,
+                "fade_out": 1.0,
+            },
+        }
+        self.update_section("audio", audio_payload)
+        applied["audio"] = audio_payload
+
+        # 3. 滤镜 + 转场
+        effects_payload = {
+            "transition": tpl.get("transition", "fade"),
+            "filter": tpl.get("filter", "none"),
+        }
+        self.update_section("effects", effects_payload)
+        applied["effects"] = effects_payload
+
+        logger.info(f"已应用创作模板: {template_id} ({tpl.get('label', '')})")
+        return {
+            "success": True,
+            "message": f"已应用模板「{tpl.get('label', template_id)}」",
+            "template_id": template_id,
+            "applied": applied,
+        }
+
     def _mask_sensitive(self, data: dict[str, Any]) -> dict[str, Any]:
         """对 API Key 等敏感字段掩码"""
         result = deepcopy(data)
@@ -245,7 +434,8 @@ class SettingsManager:
             {"success": bool, "message": str, "section": str}
         """
         if section not in ("llm", "tts", "avatar", "asr", "composer",
-                           "cover", "publisher", "pipeline", "project", "logging"):
+                           "cover", "publisher", "pipeline", "project", "logging",
+                           "subtitle", "scene", "audio", "effects"):
             return {"success": False, "message": f"不允许修改的配置段: {section}", "section": section}
 
         # 处理掩码字段：若值形如 "sk-x****abcd" 视为未修改，保留原值

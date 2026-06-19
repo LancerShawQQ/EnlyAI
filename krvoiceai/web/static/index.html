@@ -22,7 +22,10 @@
       <nav class="sidebar-nav">
         <div class="nav-section">
           <div class="nav-label">创作</div>
-          <button class="nav-item active" id="nav-generate">
+          <button class="nav-item active" id="nav-wizard">
+            <span class="nav-icon">🧙</span><span>创作向导</span>
+          </button>
+          <button class="nav-item" id="nav-generate">
             <span class="nav-icon">🚀</span><span>一键生成</span>
           </button>
           <button class="nav-item" id="nav-script">
@@ -44,6 +47,9 @@
           <button class="nav-item" id="nav-voices">
             <span class="nav-icon">🎙️</span><span>音色管理</span>
           </button>
+          <button class="nav-item" id="nav-templates">
+            <span class="nav-icon">🎨</span><span>模板中心</span>
+          </button>
           <button class="nav-item" id="nav-jobs">
             <span class="nav-icon">📋</span><span>任务管理</span>
           </button>
@@ -56,6 +62,9 @@
           </button>
           <button class="nav-item" id="nav-settings-video">
             <span class="nav-icon">🎬</span><span>视频设置</span>
+          </button>
+          <button class="nav-item" id="nav-settings-scene">
+            <span class="nav-icon">✨</span><span>场景与效果</span>
           </button>
           <button class="nav-item" id="nav-settings-publish">
             <span class="nav-icon">📤</span><span>发布设置</span>
@@ -81,8 +90,481 @@
     <!-- ========== 主内容区 ========== -->
     <main class="main-content">
 
+      <!-- ===== 页面 0: 创作向导（默认激活） ===== -->
+      <div class="page active" id="page-wizard">
+        <div class="page-header">
+          <h1 class="page-title">创作向导</h1>
+          <p class="page-subtitle">流水线式引导创作，6 步完成商业级数字人口播视频</p>
+        </div>
+
+        <!-- 步骤指示器 -->
+        <div class="wizard-stepper" id="wizard-stepper">
+          <div class="wizard-step active" data-step="1" onclick="wizardGoToStep(1)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">1</span></div>
+            <div class="wizard-step-text">选择模板</div>
+          </div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="2" onclick="wizardGoToStep(2)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">2</span></div>
+            <div class="wizard-step-text">数字人形象</div>
+          </div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="3" onclick="wizardGoToStep(3)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">3</span></div>
+            <div class="wizard-step-text">文案输入</div>
+          </div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="4" onclick="wizardGoToStep(4)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">4</span></div>
+            <div class="wizard-step-text">声音设置</div>
+          </div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="5" onclick="wizardGoToStep(5)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">5</span></div>
+            <div class="wizard-step-text">字幕与效果</div>
+          </div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="6" onclick="wizardGoToStep(6)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">6</span></div>
+            <div class="wizard-step-text">预览与生成</div>
+          </div>
+        </div>
+
+        <!-- 步骤1：选择模板 -->
+        <div class="wizard-panel active" id="wizard-panel-1">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">📰</span> 选择创作模板</div>
+              <span class="hint">点击卡片选中，可一键应用全套样式</span>
+            </div>
+            <div class="template-grid" id="wizard-template-grid"></div>
+            <div class="form-row" style="margin-top:20px">
+              <button class="btn btn-primary btn-lg" id="wizard-apply-template-btn">✓ 应用此模板</button>
+              <button class="btn btn-secondary btn-lg" id="wizard-skip-template-btn">跳过，自定义</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤2：数字人形象 -->
+        <div class="wizard-panel" id="wizard-panel-2">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">👤</span> 数字人形象</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">形象选择</label>
+              <select class="form-select" id="wiz-avatar"></select>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">⚙️</span> 高级设置</div>
+              <button class="btn btn-sm btn-secondary" type="button" onclick="toggleCollapse('wiz-avatar-advanced', this)">展开</button>
+            </div>
+            <div class="collapse-body" id="wiz-avatar-advanced" style="display:none">
+              <div class="form-group">
+                <label class="form-label">姿态</label>
+                <div class="btn-card-grid" id="wiz-pose-grid"></div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">水平位置</label>
+                <div class="btn-card-grid btn-card-grid-3" id="wiz-position-grid">
+                  <button class="btn-card" data-value="left" type="button"><div class="btn-card-label">左</div></button>
+                  <button class="btn-card active" data-value="center" type="button"><div class="btn-card-label">中</div></button>
+                  <button class="btn-card" data-value="right" type="button"><div class="btn-card-label">右</div></button>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">大小 <span class="hint" id="wiz-scale-val">1.0</span></label>
+                <input type="range" class="form-range" id="wiz-scale" min="0.5" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('wiz-scale-val').textContent=this.value">
+              </div>
+              <div class="form-group">
+                <label class="form-label">背景类型</label>
+                <div class="btn-card-grid btn-card-grid-4" id="wiz-bg-type-grid">
+                  <button class="btn-card active" data-value="transparent" type="button"><div class="btn-card-label">透明</div></button>
+                  <button class="btn-card" data-value="solid" type="button"><div class="btn-card-label">纯色</div></button>
+                  <button class="btn-card" data-value="image" type="button"><div class="btn-card-label">图片</div></button>
+                  <button class="btn-card" data-value="green_screen" type="button"><div class="btn-card-label">绿幕</div></button>
+                </div>
+              </div>
+              <div class="form-group" id="wiz-bg-color-group" style="display:none">
+                <label class="form-label">背景颜色</label>
+                <input type="color" class="form-input" id="wiz-bg-color" value="#1a1a2e" style="height:42px;padding:4px">
+              </div>
+              <div class="form-group" id="wiz-bg-image-group" style="display:none">
+                <label class="form-label">背景图片路径</label>
+                <input class="form-input" id="wiz-bg-image" placeholder="./config/backgrounds/bg01.jpg">
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>显示 Logo</span>
+                  <label class="toggle-switch"><input type="checkbox" id="wiz-show-logo"><span class="toggle-slider"></span></label>
+                </label>
+              </div>
+              <div class="form-group" id="wiz-logo-position-group" style="display:none">
+                <label class="form-label">Logo 位置</label>
+                <select class="form-select" id="wiz-logo-position">
+                  <option value="top-left">左上</option>
+                  <option value="top-right">右上</option>
+                  <option value="bottom-left">左下</option>
+                  <option value="bottom-right" selected>右下</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤3：文案输入 -->
+        <div class="wizard-panel" id="wizard-panel-3">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">📝</span> 文案输入</div>
+              <span class="hint" id="wiz-script-count">0 字</span>
+            </div>
+            <div class="sub-tabs">
+              <button class="sub-tab active" data-wiztab="manual" type="button">✍️ 手动输入</button>
+              <button class="sub-tab" data-wiztab="ai" type="button">🤖 AI 生成</button>
+              <button class="sub-tab" data-wiztab="extract" type="button">🔗 对标提取</button>
+            </div>
+            <div class="sub-page active" id="wiz-script-manual">
+              <div class="form-group">
+                <textarea class="form-textarea" id="wiz-script" style="min-height:200px" placeholder="输入口播文案，建议 150-500 字..."></textarea>
+              </div>
+            </div>
+            <div class="sub-page" id="wiz-script-ai">
+              <div class="form-group">
+                <label class="form-label">创作主题 / 要点</label>
+                <input class="form-input" id="wiz-ai-topic" placeholder="如：3个提高短视频完播率的技巧">
+              </div>
+              <div class="form-group">
+                <label class="form-label">目标风格</label>
+                <select class="form-select" id="wiz-ai-style">
+                  <option value="幽默">幽默风趣</option>
+                  <option value="严肃">严肃专业</option>
+                  <option value="活泼">活泼可爱</option>
+                  <option value="专业">专业权威</option>
+                  <option value="口语化">口语化</option>
+                  <option value="煽情">煽情走心</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" id="wiz-ai-generate-btn" type="button">💡 生成文案</button>
+            </div>
+            <div class="sub-page" id="wiz-script-extract">
+              <div class="form-group">
+                <label class="form-label">参考视频链接</label>
+                <input class="form-input" id="wiz-ref-url" placeholder="粘贴抖音/快手/B站视频链接">
+              </div>
+              <button class="btn btn-primary" id="wiz-extract-btn" type="button">🔗 提取文案</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">🤖</span> 文案 AI 处理</div>
+            </div>
+            <div class="action-grid">
+              <button class="action-btn" data-wizaction="polish" type="button">✨ 润色</button>
+              <button class="action-btn" data-wizaction="rewrite" type="button">🔄 仿写</button>
+              <button class="action-btn" data-wizaction="expand" type="button">📈 扩写</button>
+              <button class="action-btn" data-wizaction="shorten" type="button">📉 缩写</button>
+              <button class="action-btn" data-wizaction="style" type="button">🎨 风格转换</button>
+            </div>
+            <div class="form-group" id="wiz-style-group" style="display:none;margin-top:16px">
+              <label class="form-label">目标风格</label>
+              <select class="form-select" id="wiz-process-style">
+                <option value="幽默">幽默风趣</option>
+                <option value="严肃">严肃专业</option>
+                <option value="活泼">活泼可爱</option>
+                <option value="专业">专业权威</option>
+                <option value="口语化">口语化</option>
+                <option value="煽情">煽情走心</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-top:16px">
+              <button class="btn btn-primary btn-block" id="wiz-script-process-btn" type="button">▶️ 执行 AI 处理</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤4：声音设置 -->
+        <div class="wizard-panel" id="wizard-panel-4">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">🎙️</span> 音色选择</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">音色</label>
+              <select class="form-select" id="wiz-voice"></select>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">⚙️</span> 语音高级设置</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">语速 <span class="hint" id="wiz-speed-val">1.0</span></label>
+                <input type="range" class="form-range" id="wiz-speed" min="0.5" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('wiz-speed-val').textContent=this.value">
+              </div>
+              <div class="form-group">
+                <label class="form-label">音量 <span class="hint" id="wiz-volume-val">100</span></label>
+                <input type="range" class="form-range" id="wiz-volume" min="0" max="200" step="5" value="100" oninput="document.getElementById('wiz-volume-val').textContent=this.value">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">音高 <span class="hint" id="wiz-pitch-val">0</span></label>
+                <input type="range" class="form-range" id="wiz-pitch" min="-12" max="12" step="1" value="0" oninput="document.getElementById('wiz-pitch-val').textContent=this.value">
+              </div>
+              <div class="form-group">
+                <label class="form-label">句间停顿 <span class="hint" id="wiz-pause-val">0.5s</span></label>
+                <input type="range" class="form-range" id="wiz-pause" min="0" max="2" step="0.1" value="0.5" oninput="document.getElementById('wiz-pause-val').textContent=this.value+'s'">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">情感</label>
+              <div class="btn-card-grid" id="wiz-emotion-grid"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                <span>自动去静音</span>
+                <label class="toggle-switch"><input type="checkbox" id="wiz-remove-silence"><span class="toggle-slider"></span></label>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                <span>人声增强</span>
+                <label class="toggle-switch"><input type="checkbox" id="wiz-voice-enhance"><span class="toggle-slider"></span></label>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤5：字幕与效果 -->
+        <div class="wizard-panel" id="wizard-panel-5">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">💬</span> 字幕样式</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">字幕样式预设</label>
+              <div class="subtitle-style-grid" id="wiz-subtitle-style-grid"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">字幕动画</label>
+              <select class="form-select" id="wiz-sub-anim"></select>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">字幕位置</label>
+                <select class="form-select" id="wiz-sub-position">
+                  <option value="top">上</option>
+                  <option value="center">中</option>
+                  <option value="bottom" selected>下</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">字号 <span class="hint" id="wiz-sub-size-val">24</span></label>
+                <input type="range" class="form-range" id="wiz-sub-size" min="12" max="60" step="1" value="24" oninput="document.getElementById('wiz-sub-size-val').textContent=this.value">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>双行字幕</span>
+                  <label class="toggle-switch"><input type="checkbox" id="wiz-sub-dual"><span class="toggle-slider"></span></label>
+                </label>
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>卡拉OK逐字</span>
+                  <label class="toggle-switch"><input type="checkbox" id="wiz-sub-karaoke"><span class="toggle-slider"></span></label>
+                </label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">字间距 <span class="hint" id="wiz-sub-letter-val">0</span></label>
+              <input type="range" class="form-range" id="wiz-sub-letter" min="0" max="10" step="1" value="0" oninput="document.getElementById('wiz-sub-letter-val').textContent=this.value">
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">🎵</span> 背景音乐 (BGM)</div>
+              <label class="toggle-switch"><input type="checkbox" id="wiz-bgm-enabled"><span class="toggle-slider"></span></label>
+            </div>
+            <div id="wiz-bgm-group">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">曲目</label>
+                  <select class="form-select" id="wiz-bgm-track"></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">音量 <span class="hint" id="wiz-bgm-vol-val">15</span></label>
+                  <input type="range" class="form-range" id="wiz-bgm-vol" min="0" max="100" step="5" value="15" oninput="document.getElementById('wiz-bgm-vol-val').textContent=this.value">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">淡入 <span class="hint" id="wiz-bgm-fadein-val">1.0s</span></label>
+                  <input type="range" class="form-range" id="wiz-bgm-fadein" min="0" max="5" step="0.5" value="1.0" oninput="document.getElementById('wiz-bgm-fadein-val').textContent=this.value+'s'">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">淡出 <span class="hint" id="wiz-bgm-fadeout-val">1.0s</span></label>
+                  <input type="range" class="form-range" id="wiz-bgm-fadeout" min="0" max="5" step="0.5" value="1.0" oninput="document.getElementById('wiz-bgm-fadeout-val').textContent=this.value+'s'">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">🎬</span> 视频效果</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">转场</label>
+                <select class="form-select" id="wiz-transition"></select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">滤镜</label>
+                <select class="form-select" id="wiz-filter"></select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">滤镜强度 <span class="hint" id="wiz-filter-intensity-val">50</span></label>
+              <input type="range" class="form-range" id="wiz-filter-intensity" min="0" max="100" step="5" value="50" oninput="document.getElementById('wiz-filter-intensity-val').textContent=this.value">
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">💧</span> 水印</div>
+              <label class="toggle-switch"><input type="checkbox" id="wiz-watermark-enabled"><span class="toggle-slider"></span></label>
+            </div>
+            <div id="wiz-watermark-group">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">水印文字</label>
+                  <input class="form-input" id="wiz-watermark-text" placeholder="@我的账号">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">位置</label>
+                  <select class="form-select" id="wiz-watermark-position">
+                    <option value="top-left">左上</option>
+                    <option value="top-right">右上</option>
+                    <option value="bottom-left">左下</option>
+                    <option value="bottom-right" selected>右下</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">透明度 <span class="hint" id="wiz-watermark-opacity-val">50</span></label>
+                <input type="range" class="form-range" id="wiz-watermark-opacity" min="0" max="100" step="5" value="50" oninput="document.getElementById('wiz-watermark-opacity-val').textContent=this.value">
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">🎞️</span> 片头片尾</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>启用片头</span>
+                  <label class="toggle-switch"><input type="checkbox" id="wiz-intro-enabled"><span class="toggle-slider"></span></label>
+                </label>
+                <input class="form-input" id="wiz-intro-text" style="margin-top:8px" placeholder="片头文字">
+                <input type="number" class="form-input" id="wiz-intro-duration" style="margin-top:8px" value="3" min="1" max="10" placeholder="时长(秒)">
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>启用片尾</span>
+                  <label class="toggle-switch"><input type="checkbox" id="wiz-outro-enabled"><span class="toggle-slider"></span></label>
+                </label>
+                <input class="form-input" id="wiz-outro-text" style="margin-top:8px" placeholder="片尾文字">
+                <input type="number" class="form-input" id="wiz-outro-duration" style="margin-top:8px" value="3" min="1" max="10" placeholder="时长(秒)">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤6：预览与生成 -->
+        <div class="wizard-panel" id="wizard-panel-6">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">📋</span> 配置汇总</div>
+            </div>
+            <div id="wiz-summary" class="summary-grid"></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">📤</span> 发布设置</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">目标平台</label>
+                <select class="form-select" id="wiz-platform">
+                  <option value="douyin">抖音</option>
+                  <option value="bilibili">哔哩哔哩</option>
+                  <option value="kuaishou">快手</option>
+                  <option value="wechat_video">微信视频号</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>自动发布</span>
+                  <label class="toggle-switch"><input type="checkbox" id="wiz-auto-publish"><span class="toggle-slider"></span></label>
+                </label>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-lg btn-block" id="wiz-generate-btn" style="margin-top:8px">🚀 开始生成视频</button>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">📊</span> 流水线进度</div>
+            </div>
+            <div class="pipeline" id="wiz-pipeline"></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">🎬</span> 生成结果</div>
+            </div>
+            <div class="result-grid">
+              <div>
+                <div class="result-video" id="wiz-result-video">
+                  <div class="result-video-placeholder">
+                    <div style="font-size:48px;margin-bottom:12px">🎬</div>
+                    <div>视频将在此处展示</div>
+                  </div>
+                </div>
+              </div>
+              <div class="result-meta">
+                <div class="meta-item">
+                  <div class="meta-label">标题</div>
+                  <div class="meta-value" id="wiz-result-title">—</div>
+                </div>
+                <div class="meta-item">
+                  <div class="meta-label">最终文案</div>
+                  <div class="meta-value" id="wiz-result-script" style="max-height:120px;overflow-y:auto;font-size:13px">—</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 向导底部导航 -->
+        <div class="wizard-footer">
+          <button class="btn btn-secondary btn-lg" id="wiz-prev-btn">← 上一步</button>
+          <span class="wizard-progress-text" id="wiz-progress-text">第 1 / 6 步</span>
+          <button class="btn btn-primary btn-lg" id="wiz-next-btn">下一步 →</button>
+        </div>
+      </div>
+
       <!-- ===== 页面 1: 一键生成 ===== -->
-      <div class="page active" id="page-generate">
+      <div class="page" id="page-generate">
         <div class="page-header">
           <h1 class="page-title">一键生成视频</h1>
           <p class="page-subtitle">输入文案，自动完成文案仿写、语音合成、数字人口播、字幕、视频合成全流程</p>
@@ -524,6 +1006,21 @@
         </div>
       </div>
 
+      <!-- ===== 页面 6.5: 模板中心 ===== -->
+      <div class="page" id="page-templates">
+        <div class="page-header">
+          <h1 class="page-title">模板中心</h1>
+          <p class="page-subtitle">一键应用创作模板，快速套用字幕/BGM/情感/滤镜/转场全套样式</p>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon">🎨</span> 创作模板库</div>
+            <button class="btn btn-sm btn-secondary" id="refresh-templates-btn">🔄 刷新</button>
+          </div>
+          <div class="template-grid" id="templates-grid"></div>
+        </div>
+      </div>
+
       <!-- ===== 页面 7: 任务管理 ===== -->
       <div class="page" id="page-jobs">
         <div class="page-header">
@@ -813,6 +1310,24 @@
             <div class="card-header">
               <div class="card-title"><span class="card-title-icon">💬</span> 字幕样式</div>
             </div>
+            <div class="form-group">
+              <label class="form-label">字幕样式预设</label>
+              <div class="subtitle-style-grid" id="video-subtitle-style-grid"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">字幕动画</label>
+                <select class="form-select" id="sub-animation"></select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">字幕位置</label>
+                <select class="form-select" id="sub-position">
+                  <option value="top">上</option>
+                  <option value="center">中</option>
+                  <option value="bottom" selected>下</option>
+                </select>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">字号</label>
@@ -833,9 +1348,29 @@
                 <input type="color" class="form-input" id="sub-outline-color" value="#000000" style="height:42px;padding:4px">
               </div>
             </div>
-            <div class="form-group">
-              <label class="form-label">描边宽度</label>
-              <input type="number" class="form-input" id="sub-outline-width" value="2" min="0" max="10" step="0.5">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">描边宽度</label>
+                <input type="number" class="form-input" id="sub-outline-width" value="2" min="0" max="10" step="0.5">
+              </div>
+              <div class="form-group">
+                <label class="form-label">字间距</label>
+                <input type="number" class="form-input" id="sub-letter-spacing" value="0" min="0" max="10" step="1">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>双行字幕</span>
+                  <label class="toggle-switch"><input type="checkbox" id="sub-dual-line"><span class="toggle-slider"></span></label>
+                </label>
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>卡拉OK逐字</span>
+                  <label class="toggle-switch"><input type="checkbox" id="sub-karaoke"><span class="toggle-slider"></span></label>
+                </label>
+              </div>
             </div>
           </div>
 
@@ -925,6 +1460,202 @@
           <div class="form-row">
             <button class="btn btn-primary btn-lg" id="video-save-btn">💾 保存视频设置</button>
             <button class="btn btn-secondary" id="video-reset-btn">↩️ 重置默认</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面 9.5: 场景与效果设置 ===== -->
+      <div class="page" id="page-settings-scene">
+        <div class="page-header">
+          <h1 class="page-title">场景与效果</h1>
+          <p class="page-subtitle">数字人场景、音频效果、视频转场/滤镜/水印/片头片尾等高级效果配置</p>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+          <!-- 数字人场景 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">👤</span> 数字人场景</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">姿态</label>
+              <div class="btn-card-grid" id="scene-pose-grid"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">水平位置</label>
+              <div class="btn-card-grid btn-card-grid-3" id="scene-position-grid">
+                <button class="btn-card" data-value="left" type="button"><div class="btn-card-label">左</div></button>
+                <button class="btn-card active" data-value="center" type="button"><div class="btn-card-label">中</div></button>
+                <button class="btn-card" data-value="right" type="button"><div class="btn-card-label">右</div></button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">大小 <span class="hint" id="scene-scale-val">1.0</span></label>
+              <input type="range" class="form-range" id="scene-scale" min="0.5" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('scene-scale-val').textContent=this.value">
+            </div>
+            <div class="form-group">
+              <label class="form-label">背景类型</label>
+              <div class="btn-card-grid btn-card-grid-4" id="scene-bg-type-grid">
+                <button class="btn-card active" data-value="transparent" type="button"><div class="btn-card-label">透明</div></button>
+                <button class="btn-card" data-value="solid" type="button"><div class="btn-card-label">纯色</div></button>
+                <button class="btn-card" data-value="image" type="button"><div class="btn-card-label">图片</div></button>
+                <button class="btn-card" data-value="green_screen" type="button"><div class="btn-card-label">绿幕</div></button>
+              </div>
+            </div>
+            <div class="form-group" id="scene-bg-color-group" style="display:none">
+              <label class="form-label">背景颜色</label>
+              <input type="color" class="form-input" id="scene-bg-color" value="#1a1a2e" style="height:42px;padding:4px">
+            </div>
+            <div class="form-group" id="scene-bg-image-group" style="display:none">
+              <label class="form-label">背景图片路径</label>
+              <input class="form-input" id="scene-bg-image" placeholder="./config/backgrounds/bg01.jpg">
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                <span>显示 Logo</span>
+                <label class="toggle-switch"><input type="checkbox" id="scene-show-logo"><span class="toggle-slider"></span></label>
+              </label>
+            </div>
+            <div class="form-group" id="scene-logo-position-group" style="display:none">
+              <label class="form-label">Logo 位置</label>
+              <select class="form-select" id="scene-logo-position">
+                <option value="top-left">左上</option>
+                <option value="top-right">右上</option>
+                <option value="bottom-left">左下</option>
+                <option value="bottom-right" selected>右下</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 音频效果 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">🎙️</span> 音频效果</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">语速 <span class="hint" id="audio-speed-val">1.0</span></label>
+                <input type="range" class="form-range" id="audio-speed" min="0.5" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('audio-speed-val').textContent=this.value">
+              </div>
+              <div class="form-group">
+                <label class="form-label">音量 <span class="hint" id="audio-volume-val">100</span></label>
+                <input type="range" class="form-range" id="audio-volume" min="0" max="200" step="5" value="100" oninput="document.getElementById('audio-volume-val').textContent=this.value">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">音高 <span class="hint" id="audio-pitch-val">0</span></label>
+                <input type="range" class="form-range" id="audio-pitch" min="-12" max="12" step="1" value="0" oninput="document.getElementById('audio-pitch-val').textContent=this.value">
+              </div>
+              <div class="form-group">
+                <label class="form-label">句间停顿 <span class="hint" id="audio-pause-val">0.5s</span></label>
+                <input type="range" class="form-range" id="audio-pause" min="0" max="2" step="0.1" value="0.5" oninput="document.getElementById('audio-pause-val').textContent=this.value+'s'">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">情感</label>
+              <div class="btn-card-grid" id="audio-emotion-grid"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                <span>自动去静音</span>
+                <label class="toggle-switch"><input type="checkbox" id="audio-remove-silence"><span class="toggle-slider"></span></label>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                <span>人声增强</span>
+                <label class="toggle-switch"><input type="checkbox" id="audio-voice-enhance"><span class="toggle-slider"></span></label>
+              </label>
+            </div>
+          </div>
+
+          <!-- 视频效果 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">🎬</span> 视频效果</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">转场</label>
+                <select class="form-select" id="effect-transition"></select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">转场时长 <span class="hint" id="effect-transition-dur-val">0.5s</span></label>
+                <input type="range" class="form-range" id="effect-transition-dur" min="0.1" max="2" step="0.1" value="0.5" oninput="document.getElementById('effect-transition-dur-val').textContent=this.value+'s'">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">滤镜</label>
+                <select class="form-select" id="effect-filter"></select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">滤镜强度 <span class="hint" id="effect-filter-intensity-val">50</span></label>
+                <input type="range" class="form-range" id="effect-filter-intensity" min="0" max="100" step="5" value="50" oninput="document.getElementById('effect-filter-intensity-val').textContent=this.value">
+              </div>
+            </div>
+          </div>
+
+          <!-- 水印 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">💧</span> 水印</div>
+              <label class="toggle-switch"><input type="checkbox" id="effect-watermark-enabled"><span class="toggle-slider"></span></label>
+            </div>
+            <div id="effect-watermark-group">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">水印文字</label>
+                  <input class="form-input" id="effect-watermark-text" placeholder="@我的账号">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">位置</label>
+                  <select class="form-select" id="effect-watermark-position">
+                    <option value="top-left">左上</option>
+                    <option value="top-right">右上</option>
+                    <option value="bottom-left">左下</option>
+                    <option value="bottom-right" selected>右下</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">透明度 <span class="hint" id="effect-watermark-opacity-val">50</span></label>
+                <input type="range" class="form-range" id="effect-watermark-opacity" min="0" max="100" step="5" value="50" oninput="document.getElementById('effect-watermark-opacity-val').textContent=this.value">
+              </div>
+            </div>
+          </div>
+
+          <!-- 片头片尾 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">🎞️</span> 片头片尾</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>启用片头</span>
+                  <label class="toggle-switch"><input type="checkbox" id="effect-intro-enabled"><span class="toggle-slider"></span></label>
+                </label>
+                <input class="form-input" id="effect-intro-text" style="margin-top:8px" placeholder="片头文字">
+                <input type="number" class="form-input" id="effect-intro-duration" style="margin-top:8px" value="3" min="1" max="10" placeholder="时长(秒)">
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>启用片尾</span>
+                  <label class="toggle-switch"><input type="checkbox" id="effect-outro-enabled"><span class="toggle-slider"></span></label>
+                </label>
+                <input class="form-input" id="effect-outro-text" style="margin-top:8px" placeholder="片尾文字">
+                <input type="number" class="form-input" id="effect-outro-duration" style="margin-top:8px" value="3" min="1" max="10" placeholder="时长(秒)">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="form-row">
+            <button class="btn btn-primary btn-lg" id="scene-save-btn">💾 保存场景与效果</button>
+            <button class="btn btn-secondary" id="scene-reset-btn">↩️ 重置默认</button>
           </div>
         </div>
       </div>

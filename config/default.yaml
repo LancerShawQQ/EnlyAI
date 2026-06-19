@@ -62,13 +62,219 @@ asr:
   # 本地运行时模型缓存目录
   model_cache: ./workspace_data/models/asr
   language: zh
-  # 字幕样式
+  # 字幕基础样式
   subtitle:
     font_size: 24
     font_color: "&HFFFFFF"
     outline_color: "&H000000"
     outline_width: 2
     max_chars_per_line: 18
+
+# 字幕高级样式与效果（对标剪映/Sayatoo/腾讯智影）
+subtitle:
+  # 样式预设：minimal_white / tech_blue / classic_gold / pop_pink / news_red / dark_black
+  preset: minimal_white
+  # 入场动画：none / fade / slide / zoom / bounce / typewriter / karaoke
+  animation: fade
+  # 字体名称（系统字体）
+  font_name: "Source Han Sans CN"
+  # 字号
+  font_size: 28
+  # 主色（ASS 格式 &HBBGGRR）
+  primary_color: "&H00FFFFFF"
+  # 描边色
+  outline_color: "&H00000000"
+  # 描边宽度
+  outline_width: 2
+  # 阴影色
+  shadow_color: "&H80000000"
+  # 阴影距离
+  shadow_distance: 1
+  # 字间距
+  letter_spacing: 0
+  # 行高倍数
+  line_spacing: 1.2
+  # 位置：top / center / bottom
+  position: bottom
+  # 水平对齐：left / center / right
+  alignment: center
+  # 垂直边距（像素）
+  margin_v: 80
+  # 双行字幕（长句自动折行）
+  dual_line: true
+  # 卡拉OK逐字点亮
+  karaoke: false
+  # 加粗
+  bold: true
+  # 斜体
+  italic: false
+
+# 数字人场景设置（对标腾讯智影/HeyGen）
+scene:
+  # 姿态预设：standing / sitting / half_body / closeup
+  pose: half_body
+  # 水平位置：left / center / right
+  position: center
+  # 数字人大小（0.5-2.0，1.0 为原始）
+  scale: 1.0
+  # 背景类型：transparent / solid / image / green_screen
+  background_type: transparent
+  # 纯色背景色（#RRGGBB）
+  background_color: "#1A1A2E"
+  # 背景图片路径
+  background_image: ""
+  # 是否显示 Logo
+  show_logo: false
+  # Logo 位置：top_left / top_right / bottom_left / bottom_right
+  logo_position: top_right
+  # Logo 路径
+  logo_image: ""
+
+# 音频效果设置（对标剪映/腾讯智影）
+audio:
+  # 语速（0.5-2.0，1.0 为正常）
+  speed: 1.0
+  # 音量（0-200，100 为正常）
+  volume: 100
+  # 音高（-12 到 +12 半音）
+  pitch: 0
+  # 情感：neutral / calm / excited / gentle / serious / cheerful
+  emotion: neutral
+  # 句间停顿（秒）
+  pause_duration: 0.5
+  # 自动去除静音
+  remove_silence: true
+  # 人声增强
+  voice_enhance: true
+  # BGM 设置
+  bgm:
+    # 是否启用 BGM
+    enabled: true
+    # BGM 曲目（从 bgm_library 选择）
+    track: "soft_piano"
+    # BGM 音量（0-100，建议 10-20）
+    volume: 15
+    # 淡入时长（秒）
+    fade_in: 1.0
+    # 淡出时长（秒）
+    fade_out: 1.0
+
+# 视频效果设置（对标 vsub/剪映）
+effects:
+  # 转场效果：none / fade / slide / zoom / swipe
+  transition: fade
+  # 转场时长（秒）
+  transition_duration: 0.5
+  # 滤镜：none / warm / cool / bw / vintage / vivid
+  filter: none
+  # 滤镜强度（0-100）
+  filter_intensity: 50
+  # 水印
+  watermark:
+    enabled: false
+    text: "KrVoiceAI"
+    position: bottom_right
+    opacity: 50
+  # 片头
+  intro:
+    enabled: false
+    text: ""
+    duration: 2.0
+  # 片尾
+  outro:
+    enabled: false
+    text: "关注点赞支持一下"
+    duration: 2.0
+
+# BGM 素材库（预设曲目）
+bgm_library:
+  soft_piano:
+    label: "轻柔钢琴"
+    mood: "舒缓"
+    duration: 180
+  upbeat_corporate:
+    label: "企业活力"
+    mood: "激昂"
+    duration: 120
+  tech_electronic:
+    label: "科技电子"
+    mood: "科技"
+    duration: 150
+  warm_acoustic:
+    label: "温暖原声"
+    mood: "温馨"
+    duration: 160
+  chinese_guzheng:
+    label: "古风古筝"
+    mood: "古风"
+    duration: 200
+  news_serious:
+    label: "新闻严肃"
+    mood: "严肃"
+    duration: 140
+
+# 创作模板系统（对标腾讯智影/vsub，一键应用全套样式）
+templates:
+  news_broadcast:
+    label: "新闻播报"
+    icon: "📰"
+    description: "严肃专业，适合资讯/政策/财经内容"
+    subtitle_preset: news_red
+    subtitle_animation: fade
+    bgm_track: news_serious
+    emotion: serious
+    filter: none
+    transition: fade
+  knowledge_popular:
+    label: "知识科普"
+    icon: "📚"
+    description: "清晰明快，适合科普/教程/解读"
+    subtitle_preset: tech_blue
+    subtitle_animation: slide
+    bgm_track: tech_electronic
+    emotion: cheerful
+    filter: vivid
+    transition: slide
+  emotional_story:
+    label: "情感故事"
+    icon: "💝"
+    description: "温柔细腻，适合情感/故事/治愈"
+    subtitle_preset: minimal_white
+    subtitle_animation: fade
+    bgm_track: warm_acoustic
+    emotion: gentle
+    filter: warm
+    transition: fade
+  product_intro:
+    label: "产品介绍"
+    icon: "🛍️"
+    description: "活力吸睛，适合带货/产品/营销"
+    subtitle_preset: pop_pink
+    subtitle_animation: bounce
+    bgm_track: upbeat_corporate
+    emotion: excited
+    filter: vivid
+    transition: zoom
+  chinese_style:
+    label: "古风文化"
+    icon: "🏮"
+    description: "典雅古朴，适合历史/文化/国学"
+    subtitle_preset: classic_gold
+    subtitle_animation: typewriter
+    bgm_track: chinese_guzheng
+    emotion: calm
+    filter: vintage
+    transition: fade
+  tech_review:
+    label: "科技解读"
+    icon: "🔬"
+    description: "硬核极客，适合数码/科技/测评"
+    subtitle_preset: dark_black
+    subtitle_animation: zoom
+    bgm_track: tech_electronic
+    emotion: neutral
+    filter: cool
+    transition: swipe
 
 # 视频合成配置
 composer:

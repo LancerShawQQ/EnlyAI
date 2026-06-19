@@ -102,6 +102,10 @@ class BatchGenerateRequest(BaseModel):
     parallel: int = 1  # 并发数（目前仅支持 1）
 
 
+class TemplateApplyRequest(BaseModel):
+    template_id: str
+
+
 # ============ FastAPI 应用 ============
 
 def create_app() -> FastAPI:
@@ -280,6 +284,27 @@ def create_app() -> FastAPI:
     async def get_presets():
         """获取 provider 预设（供前端下拉）"""
         return get_settings_manager().get_provider_presets()
+
+    @app.get("/api/creative/presets")
+    async def get_creative_presets():
+        """获取创作预设（字幕样式/动画/情感/姿态/滤镜/转场）"""
+        return get_settings_manager().get_creative_presets()
+
+    @app.get("/api/templates")
+    async def get_templates():
+        """获取创作模板列表"""
+        return get_settings_manager().get_templates()
+
+    @app.post("/api/templates/apply")
+    async def apply_template(req: TemplateApplyRequest):
+        """一键应用创作模板"""
+        return get_settings_manager().apply_template(req.template_id)
+
+    @app.get("/api/bgm/library")
+    async def get_bgm_library():
+        """获取 BGM 素材库"""
+        cfg = _get_app().config
+        return cfg.get("bgm_library", {}) or {}
 
     @app.post("/api/settings/test/llm")
     async def test_llm(req: TestLLMRequest):

@@ -466,24 +466,49 @@ async function testAvatarConnection() {
 
 // ========== 视频设置 ==========
 
+let _videoSubStyleSelected = null;  // 视频设置页选中的字幕样式预设
+
 async function loadVideoSettings() {
   if (!_currentSettings) {
     _currentSettings = await api('/api/settings');
   }
   const asr = _currentSettings.asr || {};
   const subtitle = asr.subtitle || {};
+  const subtitleAdv = _currentSettings.subtitle || {};  // 新增字幕高级段
   const composer = _currentSettings.composer || {};
   const cover = _currentSettings.cover || {};
 
-  // 字幕
+  // 字幕样式预设网格 + 动画下拉
+  try {
+    const presets = await ensureCreativePresets();
+    renderSubtitleStyleGrid('video-subtitle-style-grid', presets.subtitle_styles, subtitleAdv.preset, (key) => {
+      _videoSubStyleSelected = key;
+      // 应用预设颜色到颜色选择器
+      const style = presets.subtitle_styles[key];
+      if (style) {
+        document.getElementById('sub-font-color').value = assToHex(style.primary_color);
+        document.getElementById('sub-outline-color').value = assToHex(style.outline_color);
+        if (style.outline_width != null) document.getElementById('sub-outline-width').value = style.outline_width;
+      }
+    });
+    _videoSubStyleSelected = subtitleAdv.preset || null;
+    fillSelect('sub-animation', presets.subtitle_animations);
+  } catch (e) { /* 忽略预设加载失败 */ }
+
+  // 字幕基础（asr.subtitle）
   document.getElementById('sub-font-size').value = subtitle.font_size || 24;
   document.getElementById('sub-max-chars').value = subtitle.max_chars_per_line || 18;
-  // ASS 颜色转换 &HFFFFFF -> #FFFFFF
-  const fontColor = (subtitle.font_color || '&HFFFFFF').replace('&H', '#');
-  document.getElementById('sub-font-color').value = fontColor.length === 7 ? fontColor : '#FFFFFF';
-  const outlineColor = (subtitle.outline_color || '&H000000').replace('&H', '#');
-  document.getElementById('sub-outline-color').value = outlineColor.length === 7 ? outlineColor : '#000000';
+  // ASS 颜色转换 &HBBGGRR -> #RRGGBB
+  document.getElementById('sub-font-color').value = assToHex(subtitle.font_color || '&H00FFFFFF');
+  document.getElementById('sub-outline-color').value = assToHex(subtitle.outline_color || '&H00000000');
   document.getElementById('sub-outline-width').value = subtitle.outline_width || 2;
+
+  // 字幕高级（subtitle 段）
+  if (subtitleAdv.animation) document.getElementById('sub-animation').value = subtitleAdv.animation;
+  if (subtitleAdv.position) document.getElementById('sub-position').value = subtitleAdv.position;
+  document.getElementById('sub-letter-spacing').value = subtitleAdv.letter_spacing || 0;
+  document.getElementById('sub-dual-line').checked = !!subtitleAdv.dual_line;
+  document.getElementById('sub-karaoke').checked = !!subtitleAdv.karaoke;
 
   // BGM
   document.getElementById('bgm-volume').value = composer.bgm_volume ?? 0.15;
@@ -510,12 +535,12 @@ function onVideoRatioChange(val) {
 }
 
 async function saveVideoSettings() {
-  // 字幕颜色转回 ASS 格式
-  const fontColor = '&H' + document.getElementById('sub-font-color').value.replace('#', '').toUpperCase();
-  const outlineColor = '&H' + document.getElementById('sub-outline-color').value.replace('#', '').toUpperCase();
+  // 字幕颜色转回 ASS 格式 #RRGGBB -> &HBBGGRR
+  const fontColor = hexToAss(document.getElementById('sub-font-color').value);
+  const outlineColor = hexToAss(document.getElementById('sub-outline-color').value);
   const maxChars = parseInt(document.getElementById('sub-max-chars').value);
 
-  // ASR 段（字幕样式）
+  // ASR 段（字幕基础样式）
   const asrData = {
     subtitle: {
       font_size: parseInt(document.getElementById('sub-font-size').value),
@@ -524,6 +549,19 @@ async function saveVideoSettings() {
       outline_width: parseFloat(document.getElementById('sub-outline-width').value),
       max_chars_per_line: maxChars,
     },
+  };
+  // 字幕高级段（subtitle）
+  const subtitleData = {
+    preset: _videoSubStyleSelected || 'minimal_white',
+    animation: document.getElementById('sub-animation').value,
+    position: document.getElementById('sub-position').value,
+    font_size: parseInt(document.getElementById('sub-font-size').value),
+    primary_color: fontColor,
+    outline_color: outlineColor,
+    outline_width: parseFloat(document.getElementById('sub-outline-width').value),
+    letter_spacing: parseInt(document.getElementById('sub-letter-spacing').value),
+    dual_line: document.getElementById('sub-dual-line').checked,
+    karaoke: document.getElementById('sub-karaoke').checked,
   };
   // Composer 段
   const ratio = document.getElementById('video-ratio').value.split('x');
@@ -545,6 +583,7 @@ async function saveVideoSettings() {
 
   try {
     await api('/api/settings/asr', { method: 'PUT', body: { section: 'asr', data: asrData } });
+    await api('/api/settings/subtitle', { method: 'PUT', body: { section: 'subtitle', data: subtitleData } });
     await api('/api/settings/composer', { method: 'PUT', body: { section: 'composer', data: composerData } });
     await api('/api/settings/cover', { method: 'PUT', body: { section: 'cover', data: coverData } });
     toast('视频设置已保存', 'success');
@@ -558,11 +597,174 @@ async function resetVideoSettings() {
   if (!confirm('确定重置视频设置为默认？')) return;
   try {
     await api('/api/settings/asr', { method: 'DELETE' });
+    await api('/api/settings/subtitle', { method: 'DELETE' });
     await api('/api/settings/composer', { method: 'DELETE' });
     await api('/api/settings/cover', { method: 'DELETE' });
     toast('已重置', 'success');
     _currentSettings = await api('/api/settings');
     loadVideoSettings();
+  } catch (e) {
+    toast(`重置失败: ${e.message}`, 'error');
+  }
+}
+
+// ========== 场景与效果设置 ==========
+
+async function loadSceneEffectSettings() {
+  if (!_currentSettings) {
+    _currentSettings = await api('/api/settings');
+  }
+  const scene = _currentSettings.scene || {};
+  const audio = _currentSettings.audio || {};
+  const effects = _currentSettings.effects || {};
+
+  let presets;
+  try { presets = await ensureCreativePresets(); } catch (e) { presets = null; }
+
+  // 数字人场景
+  if (presets) {
+    renderBtnCardGrid('scene-pose-grid', presets.poses, POSE_ICONS);
+    fillSelect('effect-transition', presets.transitions);
+    fillSelect('effect-filter', presets.filters);
+    renderBtnCardGrid('audio-emotion-grid', presets.emotions, EMOTION_ICONS);
+  }
+  setBtnCardValue('scene-pose-grid', scene.pose || 'half_body');
+  setBtnCardValue('scene-position-grid', scene.position || 'center');
+  setBtnCardValue('scene-bg-type-grid', scene.background_type || 'transparent');
+  setBtnCardValue('audio-emotion-grid', audio.emotion || 'neutral');
+  bindBtnCardGrid('scene-pose-grid');
+  bindBtnCardGrid('scene-position-grid');
+  bindBtnCardGrid('scene-bg-type-grid', (val) => {
+    document.getElementById('scene-bg-color-group').style.display = val === 'solid' ? 'block' : 'none';
+    document.getElementById('scene-bg-image-group').style.display = val === 'image' ? 'block' : 'none';
+  });
+  bindBtnCardGrid('audio-emotion-grid');
+
+  // 场景数值
+  document.getElementById('scene-scale').value = scene.scale ?? 1.0;
+  document.getElementById('scene-scale-val').textContent = scene.scale ?? 1.0;
+  document.getElementById('scene-bg-color').value = scene.background_color || '#1a1a2e';
+  document.getElementById('scene-bg-image').value = scene.background_image || '';
+  document.getElementById('scene-show-logo').checked = !!scene.show_logo;
+  document.getElementById('scene-logo-position').value = scene.logo_position || 'bottom-right';
+  document.getElementById('scene-logo-position-group').style.display = scene.show_logo ? 'block' : 'none';
+  document.getElementById('scene-bg-color-group').style.display = (scene.background_type === 'solid') ? 'block' : 'none';
+  document.getElementById('scene-bg-image-group').style.display = (scene.background_type === 'image') ? 'block' : 'none';
+
+  // 音频效果
+  document.getElementById('audio-speed').value = audio.speed ?? 1.0;
+  document.getElementById('audio-speed-val').textContent = audio.speed ?? 1.0;
+  document.getElementById('audio-volume').value = audio.volume ?? 100;
+  document.getElementById('audio-volume-val').textContent = audio.volume ?? 100;
+  document.getElementById('audio-pitch').value = audio.pitch ?? 0;
+  document.getElementById('audio-pitch-val').textContent = audio.pitch ?? 0;
+  document.getElementById('audio-pause').value = audio.pause_duration ?? 0.5;
+  document.getElementById('audio-pause-val').textContent = (audio.pause_duration ?? 0.5) + 's';
+  document.getElementById('audio-remove-silence').checked = !!audio.remove_silence;
+  document.getElementById('audio-voice-enhance').checked = !!audio.voice_enhance;
+
+  // 视频效果
+  if (effects.transition && presets) document.getElementById('effect-transition').value = effects.transition;
+  if (effects.filter && presets) document.getElementById('effect-filter').value = effects.filter;
+  document.getElementById('effect-transition-dur').value = effects.transition_duration ?? 0.5;
+  document.getElementById('effect-transition-dur-val').textContent = (effects.transition_duration ?? 0.5) + 's';
+  document.getElementById('effect-filter-intensity').value = effects.filter_intensity ?? 50;
+  document.getElementById('effect-filter-intensity-val').textContent = effects.filter_intensity ?? 50;
+
+  // 水印
+  const watermark = effects.watermark || {};
+  document.getElementById('effect-watermark-enabled').checked = !!watermark.enabled;
+  document.getElementById('effect-watermark-text').value = watermark.text || '';
+  document.getElementById('effect-watermark-position').value = watermark.position || 'bottom-right';
+  document.getElementById('effect-watermark-opacity').value = watermark.opacity ?? 50;
+  document.getElementById('effect-watermark-opacity-val').textContent = watermark.opacity ?? 50;
+  document.getElementById('effect-watermark-group').style.display = watermark.enabled ? 'block' : 'none';
+
+  // 片头片尾
+  const intro = effects.intro || {};
+  const outro = effects.outro || {};
+  document.getElementById('effect-intro-enabled').checked = !!intro.enabled;
+  document.getElementById('effect-intro-text').value = intro.text || '';
+  document.getElementById('effect-intro-duration').value = intro.duration || 3;
+  document.getElementById('effect-outro-enabled').checked = !!outro.enabled;
+  document.getElementById('effect-outro-text').value = outro.text || '';
+  document.getElementById('effect-outro-duration').value = outro.duration || 3;
+
+  // 开关联动
+  const logoCheck = document.getElementById('scene-show-logo');
+  if (!logoCheck._bound) {
+    logoCheck._bound = true;
+    logoCheck.addEventListener('change', e => {
+      document.getElementById('scene-logo-position-group').style.display = e.target.checked ? 'block' : 'none';
+    });
+    document.getElementById('effect-watermark-enabled').addEventListener('change', e => {
+      document.getElementById('effect-watermark-group').style.display = e.target.checked ? 'block' : 'none';
+    });
+  }
+}
+
+async function saveSceneEffectSettings() {
+  const sceneData = {
+    pose: getBtnCardValue('scene-pose-grid') || 'half_body',
+    position: getBtnCardValue('scene-position-grid') || 'center',
+    scale: parseFloat(document.getElementById('scene-scale').value),
+    background_type: getBtnCardValue('scene-bg-type-grid') || 'transparent',
+    background_color: document.getElementById('scene-bg-color').value,
+    background_image: document.getElementById('scene-bg-image').value,
+    show_logo: document.getElementById('scene-show-logo').checked,
+    logo_position: document.getElementById('scene-logo-position').value,
+  };
+  const audioData = {
+    speed: parseFloat(document.getElementById('audio-speed').value),
+    volume: parseInt(document.getElementById('audio-volume').value),
+    pitch: parseInt(document.getElementById('audio-pitch').value),
+    emotion: getBtnCardValue('audio-emotion-grid') || 'neutral',
+    pause_duration: parseFloat(document.getElementById('audio-pause').value),
+    remove_silence: document.getElementById('audio-remove-silence').checked,
+    voice_enhance: document.getElementById('audio-voice-enhance').checked,
+  };
+  const effectsData = {
+    transition: document.getElementById('effect-transition').value,
+    transition_duration: parseFloat(document.getElementById('effect-transition-dur').value),
+    filter: document.getElementById('effect-filter').value,
+    filter_intensity: parseInt(document.getElementById('effect-filter-intensity').value),
+    watermark: {
+      enabled: document.getElementById('effect-watermark-enabled').checked,
+      text: document.getElementById('effect-watermark-text').value,
+      position: document.getElementById('effect-watermark-position').value,
+      opacity: parseInt(document.getElementById('effect-watermark-opacity').value),
+    },
+    intro: {
+      enabled: document.getElementById('effect-intro-enabled').checked,
+      text: document.getElementById('effect-intro-text').value,
+      duration: parseInt(document.getElementById('effect-intro-duration').value) || 3,
+    },
+    outro: {
+      enabled: document.getElementById('effect-outro-enabled').checked,
+      text: document.getElementById('effect-outro-text').value,
+      duration: parseInt(document.getElementById('effect-outro-duration').value) || 3,
+    },
+  };
+  try {
+    await api('/api/settings/scene', { method: 'PUT', body: { section: 'scene', data: sceneData } });
+    await api('/api/settings/audio', { method: 'PUT', body: { section: 'audio', data: audioData } });
+    await api('/api/settings/effects', { method: 'PUT', body: { section: 'effects', data: effectsData } });
+    toast('场景与效果设置已保存', 'success');
+    _currentSettings = await api('/api/settings');
+  } catch (e) {
+    toast(`保存失败: ${e.message}`, 'error');
+  }
+}
+
+async function resetSceneEffectSettings() {
+  if (!confirm('确定重置场景与效果设置为默认？')) return;
+  try {
+    await api('/api/settings/scene', { method: 'DELETE' });
+    await api('/api/settings/audio', { method: 'DELETE' });
+    await api('/api/settings/effects', { method: 'DELETE' });
+    toast('已重置', 'success');
+    _currentSettings = await api('/api/settings');
+    loadSceneEffectSettings();
   } catch (e) {
     toast(`重置失败: ${e.message}`, 'error');
   }
@@ -698,6 +900,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Video
   document.getElementById('video-save-btn')?.addEventListener('click', saveVideoSettings);
   document.getElementById('video-reset-btn')?.addEventListener('click', resetVideoSettings);
+  // Scene & Effects
+  document.getElementById('scene-save-btn')?.addEventListener('click', saveSceneEffectSettings);
+  document.getElementById('scene-reset-btn')?.addEventListener('click', resetSceneEffectSettings);
   // Publish
   document.getElementById('publish-save-btn')?.addEventListener('click', savePublishSettings);
   document.getElementById('publish-reset-btn')?.addEventListener('click', resetPublishSettings);
