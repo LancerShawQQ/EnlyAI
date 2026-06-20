@@ -61,7 +61,7 @@ function statusBadge(status) {
 // ========== 页面导航 ==========
 
 const PAGES = [
-  'wizard', 'generate', 'script', 'step-by-step', 'batch',
+  'dashboard', 'wizard', 'generate', 'script', 'step-by-step', 'batch',
   'avatars', 'voices', 'templates', 'jobs',
   'settings-models', 'settings-video', 'settings-scene', 'settings-publish',
   'health',
@@ -80,6 +80,7 @@ function navigate(page) {
   if (targetNav) targetNav.classList.add('active');
 
   // 页面加载时刷新数据
+  if (page === 'dashboard') loadDashboard();
   if (page === 'jobs') loadJobs();
   if (page === 'avatars') loadAvatars();
   if (page === 'voices') loadVoices();
@@ -93,6 +94,126 @@ function navigate(page) {
   if (page === 'settings-video') loadVideoSettings();
   if (page === 'settings-scene') loadSceneEffectSettings();
   if (page === 'settings-publish') loadPublishSettings();
+}
+
+// ========== 首页仪表盘 ==========
+
+async function loadDashboard() {
+  loadDashboardJobs();
+  loadDashboardTemplates();
+  loadDashboardStatus();
+}
+
+async function loadDashboardJobs() {
+  const container = document.getElementById('dash-recent-list');
+  if (!container) return;
+  try {
+    const jobs = await api('/api/jobs?limit=8');
+    if (!jobs || !jobs.length) {
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎬</div><div>还没有创作记录，点击上方按钮开始吧</div></div>';
+      return;
+    }
+    // 并行获取每个 job 的详情以拿到标题/封面
+    const detailPromises = jobs.slice(0, 8).map(j =>
+      api(`/api/jobs/${j.job_id}`).catch(() => null)
+    );
+    const details = await Promise.all(detailPromises);
+    container.innerHTML = jobs.slice(0, 8).map((j, i) => {
+      const detail = details[i] || {};
+      const output = detail.output || {};
+      const input = detail.input || {};
+      const title = output.title || input.script?.substring(0, 20) || j.job_id;
+      const coverPath = output.cover;
+      const coverHtml = coverPath
+        ? `<img src="/api/files?path=${encodeURIComponent(coverPath)}" alt="封面" onerror="this.parentElement.innerHTML='🎬'">`
+        : '🎬';
+      return `
+        <div class="recent-card" onclick="showJobDetail('${j.job_id}');navigate('jobs')">
+          <div class="recent-card-thumb">${coverHtml}</div>
+          <div class="recent-card-body">
+            <div class="recent-card-title">${escapeHtml(title)}</div>
+            <div class="recent-card-meta">
+              ${statusBadge(j.status)}
+              <span class="recent-card-time">${formatTime(j.created_at)}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎬</div><div>加载失败，请稍后重试</div></div>';
+  }
+}
+
+async function loadDashboardTemplates() {
+  const grid = document.getElementById('dash-template-grid');
+  if (!grid) return;
+  try {
+    const templates = await ensureTemplates();
+    const entries = Object.entries(templates).slice(0, 6);
+    grid.innerHTML = entries.map(([key, tpl]) => `
+      <div class="template-card" data-key="${key}">
+        <div class="template-card-icon">${tpl.icon}</div>
+        <div class="template-card-label">${tpl.label}</div>
+        <div class="template-card-desc">${tpl.description}</div>
+        <div class="template-card-tags">
+          <span class="template-card-tag">${tpl.subtitle_preset}</span>
+          <span class="template-card-tag">${tpl.emotion}</span>
+        </div>
+      </div>
+    `).join('');
+    grid.querySelectorAll('.template-card').forEach(card => {
+      card.addEventListener('click', () => applyDashboardTemplate(card.dataset.key));
+    });
+  } catch (e) {
+    grid.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎨</div><div>模板加载失败</div></div>';
+  }
+}
+
+async function applyDashboardTemplate(templateId) {
+  try {
+    const result = await api('/api/templates/apply', {
+      method: 'POST',
+      body: { template_id: templateId },
+    });
+    if (result.success) {
+      toast(result.message || '模板已应用，即将进入创作向导', 'success');
+      navigate('wizard');
+    } else {
+      toast(result.message || '应用失败', 'error');
+    }
+  } catch (e) {
+    toast(`应用模板失败: ${e.message}`, 'error');
+  }
+}
+
+async function loadDashboardStatus() {
+  const bar = document.getElementById('dash-status-bar');
+  if (!bar) return;
+  try {
+    const health = await api('/api/health');
+    const items = bar.querySelectorAll('.status-bar-item');
+    items.forEach(item => {
+      const key = item.dataset.key;
+      item.classList.remove('ok', 'warn', 'error');
+      let ok = false, warn = false;
+      if (key === 'ffmpeg') ok = !!health.ffmpeg;
+      else if (key === 'llm') ok = !health.llm_mock;
+      else if (key === 'tts') ok = !!health.gpu_tts;
+      else if (key === 'avatar') ok = !!health.gpu_avatar;
+      if (ok) item.classList.add('ok');
+      else item.classList.add('warn');
+    });
+  } catch (e) {
+    /* 忽略 */
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
 }
 
 // ========== ASS 颜色转换 ==========
@@ -201,7 +322,7 @@ function renderBtnCardGrid(gridId, presets, iconMap) {
   `).join('');
 }
 
-// 渲染字幕样式预设网格
+// 渲染字幕样式预设网格（可视化预览）
 function renderSubtitleStyleGrid(gridId, presets, selectedKey, onSelect) {
   const grid = document.getElementById(gridId);
   if (!grid) return;
@@ -209,9 +330,10 @@ function renderSubtitleStyleGrid(gridId, presets, selectedKey, onSelect) {
     const color = assToHex(info.primary_color);
     const outline = assToHex(info.outline_color);
     const stroke = info.outline_width || 2;
+    const shadow = info.shadow_color ? assToHex(info.shadow_color) : 'transparent';
     return `
       <div class="subtitle-style-card ${key === selectedKey ? 'active' : ''}" data-key="${key}">
-        <div class="subtitle-style-preview" style="color:${color};text-shadow:-${stroke}px -${stroke}px 0 ${outline},${stroke}px -${stroke}px 0 ${outline},-${stroke}px ${stroke}px 0 ${outline},${stroke}px ${stroke}px 0 ${outline}">字幕示例</div>
+        <div class="subtitle-style-preview" style="color:${color};text-shadow:-${stroke}px -${stroke}px 0 ${outline},${stroke}px -${stroke}px 0 ${outline},-${stroke}px ${stroke}px 0 ${outline},${stroke}px ${stroke}px 0 ${outline},2px 2px 4px ${shadow}">示例字幕效果</div>
         <div class="subtitle-style-name">${info.label}</div>
       </div>
     `;
@@ -278,11 +400,9 @@ async function loadWizardData() {
       document.getElementById('wiz-bg-image-group').style.display = val === 'image' ? 'block' : 'none';
     });
 
-    // 形象/音色下拉
-    const avatarIds = avatars.length ? avatars.map(a => a.avatar_id) : ['default'];
-    const voiceIds = voices.length ? voices.map(v => v.voice_id) : ['default'];
-    document.getElementById('wiz-avatar').innerHTML = avatarIds.map(id => `<option value="${id}">${id}</option>`).join('');
-    document.getElementById('wiz-voice').innerHTML = voiceIds.map(id => `<option value="${id}">${id}</option>`).join('');
+    // 形象/音色卡片网格
+    renderWizardAvatarGrid(avatars);
+    renderWizardVoiceGrid(voices);
 
     // 步骤3：文案 Tab 切换
     document.querySelectorAll('[data-wiztab]').forEach(tab => {
@@ -338,10 +458,13 @@ async function loadWizardData() {
       document.getElementById('wiz-watermark-group').style.display = e.target.checked ? 'block' : 'none';
     });
 
-    // 文案字数统计
+    // 文案字数统计 + 时长预估 + 警告
     document.getElementById('wiz-script').addEventListener('input', e => {
-      document.getElementById('wiz-script-count').textContent = `${e.target.value.length} 字`;
+      updateScriptStats(e.target.value);
     });
+
+    // 文案 AI 工具栏
+    bindScriptToolbar();
 
     // 绑定向导按钮
     document.getElementById('wizard-apply-template-btn').addEventListener('click', wizardApplyTemplate);
@@ -388,6 +511,234 @@ function renderWizardTemplateGrid(templates) {
       wizardState.selectedTemplate = card.dataset.key;
     });
   });
+}
+
+// 渲染数字人卡片网格
+function renderWizardAvatarGrid(avatars) {
+  const grid = document.getElementById('wiz-avatar-grid');
+  if (!grid) return;
+  const list = avatars && avatars.length ? avatars : [{ avatar_id: 'default', reference_image: null }];
+  grid.innerHTML = list.map(a => {
+    const id = a.avatar_id;
+    const img = a.reference_image;
+    const imgHtml = img
+      ? `<img src="/api/files?path=${encodeURIComponent(img)}" alt="${id}" onerror="this.parentElement.innerHTML='👤'">`
+      : '👤';
+    return `
+      <div class="avatar-card" data-id="${id}">
+        <div class="avatar-card-img">${imgHtml}</div>
+        <div class="avatar-card-id">${id}</div>
+      </div>
+    `;
+  }).join('');
+  // 默认选中第一个
+  const firstId = list[0].avatar_id;
+  document.getElementById('wiz-avatar').value = firstId;
+  grid.querySelectorAll('.avatar-card').forEach(card => {
+    if (card.dataset.id === firstId) card.classList.add('selected');
+    card.addEventListener('click', () => {
+      const isSelected = card.classList.contains('selected');
+      grid.querySelectorAll('.avatar-card').forEach(c => c.classList.remove('selected'));
+      if (isSelected) {
+        // 再次点击取消，但仍保留一个默认值
+        document.getElementById('wiz-avatar').value = firstId;
+      } else {
+        card.classList.add('selected');
+        document.getElementById('wiz-avatar').value = card.dataset.id;
+      }
+    });
+  });
+}
+
+// 渲染音色卡片网格
+function renderWizardVoiceGrid(voices) {
+  const grid = document.getElementById('wiz-voice-grid');
+  if (!grid) return;
+  const list = voices && voices.length ? voices : [{ voice_id: 'default', type: 'provider_default', provider: 'mock' }];
+  grid.innerHTML = list.map(v => {
+    const id = v.voice_id;
+    const type = v.type || 'custom';
+    const provider = v.provider || 'mock';
+    const typeLabel = type === 'provider_default' || type === 'default' ? '默认' : '自定义';
+    const typeClass = type === 'provider_default' || type === 'default' ? 'type-default' : 'type-custom';
+    return `
+      <div class="voice-card" data-id="${id}">
+        <div class="voice-card-header">
+          <div class="voice-card-info">
+            <div class="voice-card-name">${id}</div>
+            <div class="voice-card-tags">
+              <span class="voice-card-tag ${typeClass}">${typeLabel}</span>
+              <span class="voice-card-tag provider">${provider}</span>
+            </div>
+          </div>
+          <button class="voice-preview-btn" data-voice="${id}" type="button" title="试听">▶️</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+  // 默认选中第一个
+  const firstId = list[0].voice_id;
+  document.getElementById('wiz-voice').value = firstId;
+  grid.querySelectorAll('.voice-card').forEach(card => {
+    if (card.dataset.id === firstId) card.classList.add('selected');
+    card.addEventListener('click', e => {
+      // 点击试听按钮不触发选中
+      if (e.target.closest('.voice-preview-btn')) return;
+      const isSelected = card.classList.contains('selected');
+      grid.querySelectorAll('.voice-card').forEach(c => c.classList.remove('selected'));
+      if (isSelected) {
+        document.getElementById('wiz-voice').value = firstId;
+      } else {
+        card.classList.add('selected');
+        document.getElementById('wiz-voice').value = card.dataset.id;
+      }
+    });
+  });
+  // 试听按钮
+  grid.querySelectorAll('.voice-preview-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      playVoicePreview(btn.dataset.voice, btn);
+    });
+  });
+}
+
+// 试听音色
+let _currentPreviewAudio = null;
+let _currentPreviewBtn = null;
+
+async function playVoicePreview(voiceId, btn) {
+  // 如果正在播放，停止
+  if (_currentPreviewAudio && !_currentPreviewAudio.paused) {
+    _currentPreviewAudio.pause();
+    if (_currentPreviewBtn) {
+      _currentPreviewBtn.classList.remove('playing');
+      _currentPreviewBtn.textContent = '▶️';
+    }
+    // 如果点的是同一个按钮，仅停止
+    if (_currentPreviewBtn === btn) {
+      _currentPreviewAudio = null;
+      _currentPreviewBtn = null;
+      return;
+    }
+  }
+  btn.classList.add('playing');
+  btn.textContent = '⏸️';
+  _currentPreviewBtn = btn;
+  try {
+    // 调用 module/run 执行 TTS 合成短句
+    const result = await api('/api/module/run', {
+      method: 'POST',
+      body: {
+        module_name: 'tts',
+        script: '你好，这是音色试听',
+        avatar_id: document.getElementById('wiz-avatar').value || 'default',
+        voice_id: voiceId,
+        script_mode: 'polish',
+        platform: 'douyin',
+      },
+    });
+    const ctx = result.context || {};
+    const audioPath = ctx.audio_path;
+    if (!audioPath) {
+      throw new Error('未返回音频文件');
+    }
+    const audio = new Audio(`/api/files?path=${encodeURIComponent(audioPath)}`);
+    _currentPreviewAudio = audio;
+    audio.addEventListener('ended', () => {
+      btn.classList.remove('playing');
+      btn.textContent = '▶️';
+      _currentPreviewAudio = null;
+      _currentPreviewBtn = null;
+    });
+    audio.addEventListener('error', () => {
+      btn.classList.remove('playing');
+      btn.textContent = '▶️';
+      _currentPreviewAudio = null;
+      _currentPreviewBtn = null;
+      toast('音频播放失败', 'error');
+    });
+    await audio.play();
+  } catch (e) {
+    btn.classList.remove('playing');
+    btn.textContent = '▶️';
+    _currentPreviewAudio = null;
+    _currentPreviewBtn = null;
+    toast(`试听失败: ${e.message}`, 'error');
+  }
+}
+
+// 文案字数统计 + 时长预估 + 警告
+function updateScriptStats(text) {
+  const len = text.length;
+  const duration = Math.ceil(len / 4); // 每秒4字
+  const countEl = document.getElementById('wiz-script-count');
+  if (countEl) countEl.textContent = `${len} 字`;
+  const statsEl = document.getElementById('wiz-script-stats');
+  if (statsEl) {
+    statsEl.querySelector('.script-stats-count').textContent = `字数 ${len} 字`;
+    statsEl.querySelector('.script-stats-duration').textContent = `预估时长 ${duration} 秒`;
+  }
+  const warningEl = document.getElementById('wiz-script-warning');
+  if (warningEl) {
+    if (len > 500) {
+      warningEl.style.display = 'block';
+      warningEl.textContent = '⚠️ 文案较长，生成时间可能增加';
+    } else {
+      warningEl.style.display = 'none';
+    }
+  }
+}
+
+// 绑定文案 AI 工具栏
+function bindScriptToolbar() {
+  const polishBtn = document.getElementById('wiz-polish-btn');
+  const polishMenu = document.getElementById('wiz-polish-menu');
+  if (polishBtn && polishMenu) {
+    polishBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      polishMenu.classList.toggle('open');
+    });
+    polishMenu.querySelectorAll('.script-dropdown-item').forEach(item => {
+      item.addEventListener('click', () => {
+        polishMenu.classList.remove('open');
+        wizardScriptQuickProcess('polish', item.dataset.style);
+      });
+    });
+    document.addEventListener('click', () => polishMenu.classList.remove('open'));
+  }
+  const expandBtn = document.getElementById('wiz-expand-btn');
+  if (expandBtn) expandBtn.addEventListener('click', () => wizardScriptQuickProcess('expand', null));
+  const shortenBtn = document.getElementById('wiz-shorten-btn');
+  if (shortenBtn) shortenBtn.addEventListener('click', () => wizardScriptQuickProcess('shorten', null));
+  const clearBtn = document.getElementById('wiz-clear-btn');
+  if (clearBtn) clearBtn.addEventListener('click', () => {
+    document.getElementById('wiz-script').value = '';
+    updateScriptStats('');
+    toast('已清空文案', 'info');
+  });
+}
+
+// 文案快速 AI 处理（工具栏）
+async function wizardScriptQuickProcess(action, style) {
+  const script = document.getElementById('wiz-script').value.trim();
+  if (!script) { toast('请先输入文案', 'error'); return; }
+  toast(`正在执行 AI ${action === 'polish' ? '润色' : action === 'expand' ? '扩写' : '缩写'}...`, 'info');
+  try {
+    const result = await api('/api/script/process', {
+      method: 'POST',
+      body: { script, action, style },
+    });
+    if (result.success) {
+      document.getElementById('wiz-script').value = result.script;
+      updateScriptStats(result.script);
+      toast(`处理成功${result.mock ? '（Mock 模式）' : ''}`, 'success');
+    } else {
+      toast(`处理失败: ${result.error}`, 'error');
+    }
+  } catch (e) {
+    toast(`处理失败: ${e.message}`, 'error');
+  }
 }
 
 function renderWizardStepper() {
@@ -614,7 +965,7 @@ async function wizardAiGenerate() {
     });
     if (result.success) {
       document.getElementById('wiz-script').value = result.script;
-      document.getElementById('wiz-script-count').textContent = `${result.char_count} 字`;
+      updateScriptStats(result.script);
       toast(`生成成功${result.mock ? '（Mock 模式）' : ''}`, 'success');
     } else {
       toast(`生成失败: ${result.error}`, 'error');
@@ -640,7 +991,7 @@ async function wizardExtractScript() {
     });
     if (result.success) {
       document.getElementById('wiz-script').value = result.script;
-      document.getElementById('wiz-script-count').textContent = `${result.char_count} 字`;
+      updateScriptStats(result.script);
       toast('文案提取成功', 'success');
     } else {
       toast(`提取失败: ${result.error}`, 'error');
@@ -668,7 +1019,7 @@ async function wizardScriptProcess() {
     });
     if (result.success) {
       document.getElementById('wiz-script').value = result.script;
-      document.getElementById('wiz-script-count').textContent = `${result.char_count} 字`;
+      updateScriptStats(result.script);
       toast(`处理成功${result.mock ? '（Mock 模式）' : ''}`, 'success');
     } else {
       toast(`处理失败: ${result.error}`, 'error');
@@ -759,12 +1110,15 @@ async function wizardGenerate() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> 生成中...';
 
-  // 渲染初始进度
+  // 渲染初始进度（向导页内）
   const wizPipeline = document.getElementById('wiz-pipeline');
   if (wizPipeline) wizPipeline.innerHTML = STEP_ORDER.map(step => {
     const info = STEP_INFO[step];
     return `<div class="pipeline-step pending"><div class="step-icon">○</div><div class="step-info"><div class="step-name">${info.icon} ${info.name}</div><div class="step-status">等待中</div></div></div>`;
   }).join('');
+
+  // 显示进度模态框
+  showProgressModal();
 
   try {
     // 先保存所有配置
@@ -801,7 +1155,10 @@ async function wizardGenerate() {
       }).join('');
     }
 
-    // 展示结果
+    // 更新模态框进度
+    updateProgressModal(stepsState, result);
+
+    // 展示结果（向导页内）
     const output = result.output || {};
     const videoPath = output.final_video;
     const title = output.title || '';
@@ -819,10 +1176,121 @@ async function wizardGenerate() {
   } catch (e) {
     toast(`生成失败: ${e.message}`, 'error');
     console.error(e);
+    // 模态框显示错误
+    finishProgressModalError(e.message);
   } finally {
     btn.disabled = false;
     btn.innerHTML = '🚀 开始生成视频';
   }
+}
+
+// ========== 进度模态框 ==========
+
+let _progressStartTime = 0;
+
+function showProgressModal() {
+  const modal = document.getElementById('progress-modal');
+  if (!modal) return;
+  _progressStartTime = Date.now();
+  modal.style.display = 'flex';
+  document.getElementById('progress-modal-title').textContent = '正在生成视频...';
+  document.getElementById('progress-modal-close').style.display = 'none';
+  document.getElementById('progress-modal-result').style.display = 'none';
+  document.getElementById('progress-bar-fill').style.width = '0%';
+  document.getElementById('progress-percent').textContent = '0%';
+  document.getElementById('progress-eta').textContent = '预估剩余时间 计算中...';
+  // 渲染 9 个阶段
+  const stagesEl = document.getElementById('progress-stages');
+  stagesEl.innerHTML = STEP_ORDER.map(step => {
+    const info = STEP_INFO[step];
+    return `
+      <div class="progress-stage pending" data-step="${step}">
+        <div class="progress-stage-icon">○</div>
+        <div class="progress-stage-name">${info.icon} ${info.name}</div>
+        <div class="progress-stage-status">等待中</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function updateProgressModal(stepsState, result) {
+  const stagesEl = document.getElementById('progress-stages');
+  if (!stagesEl) return;
+  const icons = { pending: '○', running: '⟳', success: '✓', failed: '✕', skipped: '−' };
+  const statusText = { pending: '等待中', running: '执行中', success: '已完成', failed: '失败', skipped: '已跳过' };
+  let completed = 0;
+  let failed = 0;
+  stagesEl.querySelectorAll('.progress-stage').forEach(stage => {
+    const step = stage.dataset.step;
+    const status = stepsState[step] || 'pending';
+    stage.className = `progress-stage ${status}`;
+    stage.querySelector('.progress-stage-icon').textContent = icons[status] || '○';
+    stage.querySelector('.progress-stage-status').textContent = statusText[status] || status;
+    if (status === 'success' || status === 'skipped') completed++;
+    if (status === 'failed') failed++;
+  });
+  // 进度百分比
+  const percent = Math.round((completed / STEP_ORDER.length) * 100);
+  document.getElementById('progress-bar-fill').style.width = percent + '%';
+  document.getElementById('progress-percent').textContent = percent + '%';
+  // 预估剩余时间
+  const elapsed = (Date.now() - _progressStartTime) / 1000;
+  if (completed > 0 && completed < STEP_ORDER.length) {
+    const avgPerStep = elapsed / completed;
+    const remaining = Math.round(avgPerStep * (STEP_ORDER.length - completed));
+    document.getElementById('progress-eta').textContent = `预估剩余时间 ${remaining} 秒`;
+  } else if (completed >= STEP_ORDER.length) {
+    document.getElementById('progress-eta').textContent = `已完成 · 用时 ${elapsed.toFixed(1)} 秒`;
+  }
+  // 完成或失败时显示结果
+  if (result && (result.success || failed > 0 || completed >= STEP_ORDER.length)) {
+    finishProgressModal(result, failed > 0);
+  }
+}
+
+function finishProgressModal(result, hasFailed) {
+  document.getElementById('progress-modal-title').textContent = hasFailed ? '生成未完全成功' : '视频生成成功！';
+  document.getElementById('progress-modal-close').style.display = 'flex';
+  const resultEl = document.getElementById('progress-modal-result');
+  const output = result.output || {};
+  const videoPath = output.final_video;
+  const title = output.title || '';
+  if (videoPath) {
+    resultEl.innerHTML = `
+      <div class="progress-modal-result-title">${escapeHtml(title)}</div>
+      <video src="/api/files?path=${encodeURIComponent(videoPath)}" controls autoplay></video>
+      <div class="progress-modal-result-actions">
+        <a class="btn btn-primary" href="/api/files?path=${encodeURIComponent(videoPath)}" target="_blank" download>⬇️ 下载视频</a>
+        <button class="btn btn-secondary" type="button" onclick="closeProgressModal()">🔄 再做一个</button>
+      </div>
+    `;
+  } else {
+    resultEl.innerHTML = `
+      <div class="progress-modal-result-title">视频未生成</div>
+      <div class="progress-modal-result-actions">
+        <button class="btn btn-secondary" type="button" onclick="closeProgressModal()">🔄 再做一个</button>
+      </div>
+    `;
+  }
+  resultEl.style.display = 'block';
+}
+
+function finishProgressModalError(message) {
+  document.getElementById('progress-modal-title').textContent = '生成失败';
+  document.getElementById('progress-modal-close').style.display = 'flex';
+  const resultEl = document.getElementById('progress-modal-result');
+  resultEl.innerHTML = `
+    <div class="progress-modal-result-title" style="color:var(--color-error)">❌ ${escapeHtml(message)}</div>
+    <div class="progress-modal-result-actions">
+      <button class="btn btn-secondary" type="button" onclick="closeProgressModal()">关闭</button>
+    </div>
+  `;
+  resultEl.style.display = 'block';
+}
+
+function closeProgressModal() {
+  const modal = document.getElementById('progress-modal');
+  if (modal) modal.style.display = 'none';
 }
 
 // ========== 模板中心页面 ==========
@@ -1545,10 +2013,23 @@ document.addEventListener('DOMContentLoaded', () => {
     loadTemplatesCenter();
   });
 
+  // 首页仪表盘按钮
+  document.getElementById('dash-new-video-btn')?.addEventListener('click', () => navigate('wizard'));
+  document.getElementById('dash-from-template-btn')?.addEventListener('click', () => navigate('templates'));
+  document.getElementById('dash-view-all-jobs')?.addEventListener('click', () => navigate('jobs'));
+  document.getElementById('dash-view-all-templates')?.addEventListener('click', () => navigate('templates'));
+  // 场景卡点击跳转到创作向导
+  document.querySelectorAll('.scene-card').forEach(card => {
+    card.addEventListener('click', () => navigate('wizard'));
+  });
+
+  // 进度模态框关闭
+  document.getElementById('progress-modal-close')?.addEventListener('click', closeProgressModal);
+
   // 初始渲染进度
   renderPipeline({});
 
-  // 加载首页数据（默认创作向导）
-  navigate('wizard');
+  // 加载首页数据（默认首页仪表盘）
+  navigate('dashboard');
   loadHealth();
 });

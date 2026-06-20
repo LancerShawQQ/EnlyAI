@@ -21,8 +21,15 @@
 
       <nav class="sidebar-nav">
         <div class="nav-section">
+          <div class="nav-label">开始</div>
+          <button class="nav-item active" id="nav-dashboard">
+            <span class="nav-icon">🏠</span><span>首页</span>
+          </button>
+        </div>
+
+        <div class="nav-section">
           <div class="nav-label">创作</div>
-          <button class="nav-item active" id="nav-wizard">
+          <button class="nav-item" id="nav-wizard">
             <span class="nav-icon">🧙</span><span>创作向导</span>
           </button>
           <button class="nav-item" id="nav-generate">
@@ -90,8 +97,94 @@
     <!-- ========== 主内容区 ========== -->
     <main class="main-content">
 
-      <!-- ===== 页面 0: 创作向导（默认激活） ===== -->
-      <div class="page active" id="page-wizard">
+      <!-- ===== 页面: 首页仪表盘（默认激活） ===== -->
+      <div class="page active" id="page-dashboard">
+        <!-- 1.1 Hero 欢迎区 -->
+        <div class="dashboard-hero">
+          <div class="hero-content">
+            <h1 class="hero-title">开始创作你的数字人口播视频</h1>
+            <p class="hero-subtitle">AI 驱动 · 全流程自动化 · 商业级品质</p>
+            <div class="hero-actions">
+              <button class="btn btn-primary btn-lg" id="dash-new-video-btn">🚀 新建口播视频</button>
+              <button class="btn btn-secondary btn-lg" id="dash-from-template-btn">📋 从模板开始</button>
+            </div>
+          </div>
+          <div class="hero-decoration">
+            <div class="hero-orb"></div>
+            <div class="hero-orb hero-orb-2"></div>
+            <div class="hero-icon-big">🎬</div>
+          </div>
+        </div>
+
+        <!-- 1.2 场景化入口卡 -->
+        <div class="section-header">
+          <h2 class="section-title">按场景开始</h2>
+        </div>
+        <div class="scene-card-grid">
+          <div class="scene-card" data-scene="self_media">
+            <div class="scene-card-icon">📢</div>
+            <div class="scene-card-title">自媒体口播</div>
+            <div class="scene-card-desc">短视频口播、知识分享、Vlog</div>
+          </div>
+          <div class="scene-card" data-scene="marketing">
+            <div class="scene-card-icon">🛒</div>
+            <div class="scene-card-title">营销推广</div>
+            <div class="scene-card-desc">产品介绍、直播带货、广告投放</div>
+          </div>
+          <div class="scene-card" data-scene="knowledge">
+            <div class="scene-card-icon">📚</div>
+            <div class="scene-card-title">知识科普</div>
+            <div class="scene-card-desc">教程讲解、课程录制、科普视频</div>
+          </div>
+          <div class="scene-card" data-scene="enterprise">
+            <div class="scene-card-icon">🏢</div>
+            <div class="scene-card-title">政企宣传</div>
+            <div class="scene-card-desc">企业宣传、新闻播报、培训视频</div>
+          </div>
+        </div>
+
+        <!-- 1.3 最近创作 -->
+        <div class="section-header">
+          <h2 class="section-title">最近创作</h2>
+          <button class="btn btn-sm btn-secondary" id="dash-view-all-jobs">查看全部 →</button>
+        </div>
+        <div class="recent-scroll" id="dash-recent-list">
+          <div class="empty-state">
+            <div class="empty-state-icon">🎬</div>
+            <div>还没有创作记录，点击上方按钮开始吧</div>
+          </div>
+        </div>
+
+        <!-- 1.4 模板画廊预览 -->
+        <div class="section-header">
+          <h2 class="section-title">热门模板</h2>
+          <button class="btn btn-sm btn-secondary" id="dash-view-all-templates">查看全部 →</button>
+        </div>
+        <div class="template-grid" id="dash-template-grid"></div>
+
+        <!-- 1.5 系统状态条 -->
+        <div class="dashboard-status-bar" id="dash-status-bar">
+          <div class="status-bar-item" data-key="ffmpeg">
+            <span class="status-bar-dot"></span>
+            <span class="status-bar-label">FFmpeg</span>
+          </div>
+          <div class="status-bar-item" data-key="llm">
+            <span class="status-bar-dot"></span>
+            <span class="status-bar-label">LLM</span>
+          </div>
+          <div class="status-bar-item" data-key="tts">
+            <span class="status-bar-dot"></span>
+            <span class="status-bar-label">TTS</span>
+          </div>
+          <div class="status-bar-item" data-key="avatar">
+            <span class="status-bar-dot"></span>
+            <span class="status-bar-label">Avatar</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面 0: 创作向导 ===== -->
+      <div class="page" id="page-wizard">
         <div class="page-header">
           <h1 class="page-title">创作向导</h1>
           <p class="page-subtitle">流水线式引导创作，6 步完成商业级数字人口播视频</p>
@@ -150,11 +243,10 @@
           <div class="card">
             <div class="card-header">
               <div class="card-title"><span class="card-title-icon">👤</span> 数字人形象</div>
+              <span class="hint">点击卡片选中，再次点击取消</span>
             </div>
-            <div class="form-group">
-              <label class="form-label">形象选择</label>
-              <select class="form-select" id="wiz-avatar"></select>
-            </div>
+            <div class="avatar-card-grid" id="wiz-avatar-grid"></div>
+            <input type="hidden" id="wiz-avatar" value="default">
           </div>
 
           <div class="card">
@@ -228,9 +320,32 @@
               <button class="sub-tab" data-wiztab="extract" type="button">🔗 对标提取</button>
             </div>
             <div class="sub-page active" id="wiz-script-manual">
+              <div class="script-toolbar">
+                <div class="script-toolbar-group">
+                  <div class="script-dropdown">
+                    <button class="btn btn-sm btn-secondary" id="wiz-polish-btn" type="button">AI润色 ▼</button>
+                    <div class="script-dropdown-menu" id="wiz-polish-menu">
+                      <div class="script-dropdown-item" data-style="口语化">口语化</div>
+                      <div class="script-dropdown-item" data-style="专业">专业</div>
+                      <div class="script-dropdown-item" data-style="幽默">幽默</div>
+                      <div class="script-dropdown-item" data-style="激情">激情</div>
+                      <div class="script-dropdown-item" data-style="温柔">温柔</div>
+                    </div>
+                  </div>
+                  <button class="btn btn-sm btn-secondary" id="wiz-expand-btn" type="button">AI扩写</button>
+                  <button class="btn btn-sm btn-secondary" id="wiz-shorten-btn" type="button">AI缩写</button>
+                  <button class="btn btn-sm btn-secondary" id="wiz-clear-btn" type="button">清空</button>
+                </div>
+              </div>
               <div class="form-group">
                 <textarea class="form-textarea" id="wiz-script" style="min-height:200px" placeholder="输入口播文案，建议 150-500 字..."></textarea>
               </div>
+              <div class="script-stats" id="wiz-script-stats">
+                <span class="script-stats-count">字数 0 字</span>
+                <span class="script-stats-sep">·</span>
+                <span class="script-stats-duration">预估时长 0 秒</span>
+              </div>
+              <div class="script-warning" id="wiz-script-warning" style="display:none"></div>
             </div>
             <div class="sub-page" id="wiz-script-ai">
               <div class="form-group">
@@ -292,11 +407,10 @@
           <div class="card">
             <div class="card-header">
               <div class="card-title"><span class="card-title-icon">🎙️</span> 音色选择</div>
+              <span class="hint">点击卡片选中，▶️ 试听音色</span>
             </div>
-            <div class="form-group">
-              <label class="form-label">音色</label>
-              <select class="form-select" id="wiz-voice"></select>
-            </div>
+            <div class="voice-card-grid" id="wiz-voice-grid"></div>
+            <input type="hidden" id="wiz-voice" value="default">
           </div>
           <div class="card">
             <div class="card-header">
@@ -1734,6 +1848,27 @@
       </div>
 
     </main>
+  </div>
+
+  <!-- 生成进度模态框 -->
+  <div class="progress-modal-overlay" id="progress-modal" style="display:none">
+    <div class="progress-modal">
+      <div class="progress-modal-header">
+        <h2 class="progress-modal-title" id="progress-modal-title">正在生成视频...</h2>
+        <button class="progress-modal-close" id="progress-modal-close" style="display:none" type="button">✕</button>
+      </div>
+      <div class="progress-stages" id="progress-stages"></div>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progress-bar-fill" style="width:0%"></div>
+        </div>
+        <div class="progress-bar-meta">
+          <span id="progress-percent">0%</span>
+          <span id="progress-eta">预估剩余时间 计算中...</span>
+        </div>
+      </div>
+      <div class="progress-modal-result" id="progress-modal-result" style="display:none"></div>
+    </div>
   </div>
 
   <!-- Toast 容器 -->
