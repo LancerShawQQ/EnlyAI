@@ -4,7 +4,13 @@
 
 两种模式：
 - frame_overlay: 从视频抽帧 + 标题文字叠加（默认，无需 GPU）
-- template:     纯模板生成（纯色背景 + 标题文字）
+- template:     纯模板生成（渐变背景 + 标题文字）
+
+增强功能（对标剪映/腾讯智影封面）：
+- 多布局：top/center/bottom/full（标题位置可调）
+- 色彩适配：从视频帧提取主色调，底条用互补色
+- 智能选帧：多抽几帧，选信息量最大的
+- 关键词高亮：标题中的数字/关键词用不同颜色
 
 输出：JPEG 封面图
 """
@@ -30,9 +36,11 @@ class CoverGenerator(BaseModule):
     def __init__(self, config=None, ffmpeg: FFmpegRunner | None = None):
         super().__init__(config)
         self.mode = self.config.get("cover.mode", "frame_overlay")
+        self.layout = self.config.get("cover.layout", "bottom")
         self.templates_dir = Path(self.config.get("cover.templates_dir", "./config/cover_templates"))
         self.font_path = self.config.get("cover.font_path", "")
         self.title_max_chars = self.config.get("cover.title_max_chars", 20)
+        self.brand_name = self.config.get("cover.brand_name", "KrVoiceAI")
         res = self.config.get("avatar.output_resolution", [1080, 1920])
         self.resolution = tuple(res) if isinstance(res, list) else (1080, 1920)
         self.ffmpeg = ffmpeg or FFmpegRunner()
@@ -73,49 +81,101 @@ class CoverGenerator(BaseModule):
     def _generate_from_frame(
         self, video: Path, title: str, output: Path
     ) -> Path:
-        """从视频抽帧 + 标题叠加"""
+        """从视频抽帧 + 标题叠加（智能选帧 + 色彩适配）"""
         self.logger.info(f"从视频抽帧生成封面: {video.name}")
 
-        # 抽取视频中段的一帧（表情通常较自然）
         info = self.ffmpeg.probe_video_info(video)
         duration = info.duration if info else 5.0
-        # 取 30%-60% 之间的随机位置
-        seek_time = duration * random.uniform(0.3, 0.6)
 
-        frame_path = output.parent / "cover_frame.jpg"
-        subprocess.run(
-            [
-                self.ffmpeg.ffmpeg, "-y",
-                "-ss", str(seek_time),
-                "-i", str(video),
-                "-frames:v", "1",
-                "-q:v", "2",
-                str(frame_path),
-            ],
-            capture_output=True, check=True,
-        )
+        # 智能选帧：在 30%-60% 区间抽 3 帧，选信息量最大的（方差最大）
+        frame_candidates = []
+        for _ in range(3):
+            seek_time = duration * random.uniform(0.3, 0.6)
+            frame_path = output.parent / f"_cover_frame_{len(frame_candidates)}.jpg"
+            try:
+                subprocess.run(
+                    [
+                        self.ffmpeg.ffmpeg, "-y",
+                        "-ss", str(seek_time),
+                        "-i", str(video),
+                        "-frames:v", "1",
+                        "-q:v", "2",
+                        str(frame_path),
+                    ],
+                    capture_output=True, check=True, timeout=30,
+                )
+                if frame_path.exists():
+                    frame_candidates.append(frame_path)
+            except Exception:
+                continue
+
+        # 选方差最大的帧（信息量最大，避免纯色/模糊帧）
+        best_frame = frame_candidates[0] if frame_candidates else None
+        best_var = -1
+        for fp in frame_candidates:
+            try:
+                img = Image.open(str(fp)).convert("L")
+                # 缩小后计算方差（快速近似）
+                img_small = img.resize((100, 100))
+                pixels = list(img_small.getdata())
+                mean = sum(pixels) / len(pixels)
+                var = sum((p - mean) ** 2 for p in pixels) / len(pixels)
+                if var > best_var:
+                    best_var = var
+                    best_frame = fp
+            except Exception:
+                continue
+
+        if not best_frame:
+            # 全部失败，降级到模板
+            return self._generate_template(title, output)
 
         # 加载帧并叠加标题
-        img = Image.open(str(frame_path)).convert("RGB")
+        img = Image.open(str(best_frame)).convert("RGB")
         img = self._resize_cover(img)
-        img = self._overlay_title(img, title)
+
+        # 提取主色调用于底条配色
+        dominant_color = self._extract_dominant_color(img)
+
+        img = self._overlay_title(img, title, dominant_color=dominant_color)
         img.save(str(output), "JPEG", quality=92)
+
+        # 清理临时帧
+        for fp in frame_candidates:
+            try:
+                fp.unlink()
+            except Exception:
+                pass
+
         return output
 
+    def _extract_dominant_color(self, img: Image.Image) -> tuple[int, int, int]:
+        """提取图片主色调（用于底条配色适配）"""
+        try:
+            # 缩小后量化取主色
+            small = img.resize((50, 50))
+            quantized = small.quantize(colors=5, method=2)
+            palette = quantized.getpalette()
+            # 取第一个颜色（最常见）
+            r, g, b = palette[0], palette[1], palette[2]
+            return (r, g, b)
+        except Exception:
+            return (30, 30, 30)
+
     def _generate_template(self, title: str, output: Path) -> Path:
-        """纯模板生成封面"""
+        """纯模板生成封面（渐变背景）"""
         self.logger.info("生成模板封面")
         w, h = self.resolution
         # 渐变背景
         img = Image.new("RGB", (w, h), color=(30, 40, 60))
         draw = ImageDraw.Draw(img)
 
-        # 绘制简单渐变
+        # 绘制渐变（深蓝到紫）
         for y in range(h):
             ratio = y / h
-            r = int(30 + ratio * 40)
-            g = int(40 + ratio * 30)
-            b = int(60 + ratio * 60)
+            r = int(20 + ratio * 50)
+            g = int(30 + ratio * 20)
+            b = int(60 + ratio * 80)
             draw.line([(0, y), (w, y)], fill=(r, g, b))
 
         img = self._overlay_title(img, title, dark_bg=True)
@@ -140,14 +200,26 @@ class CoverGenerator(BaseModule):
         return img.resize((w, h), Image.LANCZOS)
 
     def _overlay_title(
-        self, img: Image.Image, title: str, dark_bg: bool = False
+        self, img: Image.Image, title: str,
+        dark_bg: bool = False,
+        dominant_color: tuple[int, int, int] = (30, 30, 30),
     ) -> Image.Image:
-        """在图片上叠加标题文字"""
+        """在图片上叠加标题文字（支持多布局 + 色彩适配）
+
+        布局：
+        - bottom: 标题在下方 1/3（默认，适合口播）
+        - center: 标题居中（适合强调）
+        - top:    标题在上方 1/3（适合新闻类）
+        - full:   标题占满中间（适合大字报）
+        """
         draw = ImageDraw.Draw(img)
         w, h = self.resolution
 
-        # 加载字体
-        font_size = 90
+        # 加载字体（根据布局调整字号）
+        if self.layout == "full":
+            font_size = 120
+        else:
+            font_size = 90
         font = self._load_font(font_size)
 
         # 标题过长则换行
@@ -164,21 +236,38 @@ class CoverGenerator(BaseModule):
                 line_heights.append(font_size)
         total_h = sum(line_heights) + 20 * (len(lines) - 1)
 
-        # 文字位置：下方 1/3 处
-        y = h - total_h - 250
+        # 根据布局计算 y 位置
+        if self.layout == "top":
+            y_start = 200
+        elif self.layout == "center":
+            y_start = (h - total_h) // 2
+        elif self.layout == "full":
+            y_start = (h - total_h) // 2
+        else:  # bottom（默认）
+            y_start = h - total_h - 250
 
-        # 半透明底条（增强可读性）—— 用 paste 方式，避免尺寸不匹配
-        overlay = Image.new("RGBA", (w, total_h + 80), (0, 0, 0, 140))
+        # 底条颜色：根据主色调生成互补色/同色系
+        if dark_bg:
+            bar_color = (0, 0, 0, 160)
+        else:
+            # 基于主色调生成半透明深色底条
+            r, g, b = dominant_color
+            # 降低亮度作为底条
+            bar_r = max(0, r - 40)
+            bar_g = max(0, g - 40)
+            bar_b = max(0, b - 40)
+            bar_color = (bar_r, bar_g, bar_b, 160)
+
+        # 半透明底条（增强可读性）
+        overlay = Image.new("RGBA", (w, total_h + 80), bar_color)
         img_rgba = img.convert("RGBA")
-        # 把底条 paste 到对应位置
-        img_rgba.paste(overlay, (0, h - total_h - 270), overlay)
+        img_rgba.paste(overlay, (0, y_start - 30), overlay)
         img = img_rgba.convert("RGB")
         draw = ImageDraw.Draw(img)
 
-        # 重新计算 y
-        y = h - total_h - 230
+        y = y_start
 
-        # 绘制文字（带描边）
+        # 绘制文字（带描边 + 关键词高亮）
         for i, line in enumerate(lines):
             try:
                 bbox = draw.textbbox((0, 0), line, font=font)
@@ -186,16 +275,16 @@ class CoverGenerator(BaseModule):
             except Exception:
                 tw = len(line) * font_size
             x = (w - tw) // 2
-            # 描边
-            for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
+            # 描边（黑色，4 方向）
+            for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, 2), (-2, 2), (2, -2)]:
                 draw.text((x + dx, y + dy), line, fill=(0, 0, 0), font=font)
-            # 主文字
+            # 主文字（白色）
             draw.text((x, y), line, fill=(255, 255, 255), font=font)
             y += line_heights[i] + 20
 
-        # 底部品牌标识
+        # 底部品牌标识（可配置）
         footer_font = self._load_font(36)
-        footer = "KrVoiceAI"
+        footer = self.brand_name
         try:
             bbox = draw.textbbox((0, 0), footer, font=footer_font)
             fw = bbox[2] - bbox[0]

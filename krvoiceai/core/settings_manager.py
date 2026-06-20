@@ -216,6 +216,33 @@ SUBTITLE_STYLE_PRESETS = {
         "shadow_color": "&H80000000",
         "bold": True,
     },
+    "douyin_hot": {
+        "label": "抖音爆款",
+        "preview": "黄字黑边，爆款标配",
+        "primary_color": "&H0000FFFF",
+        "outline_color": "&H00000000",
+        "outline_width": 3,
+        "shadow_color": "&H80000000",
+        "bold": True,
+    },
+    "neon_glow": {
+        "label": "霓虹发光",
+        "preview": "霓虹紫发光，赛博风",
+        "primary_color": "&H00FF00FF",
+        "outline_color": "&H00FF00FF",
+        "outline_width": 4,
+        "shadow_color": "&H00FF00FF",
+        "bold": True,
+    },
+    "variety_pop": {
+        "label": "综艺花字",
+        "preview": "白字红边，综艺感",
+        "primary_color": "&H00FFFFFF",
+        "outline_color": "&H000000FF",
+        "outline_width": 4,
+        "shadow_color": "&H80000000",
+        "bold": True,
+    },
 }
 
 # 字幕入场动画预设（对标剪映/Sayatoo）
@@ -247,7 +274,7 @@ POSE_PRESETS = {
     "closeup": {"label": "特写", "description": "面部特写，表情清晰"},
 }
 
-# 滤镜预设（对标剪映/vsub）
+# 滤镜预设（对标剪映/vsub，10 种滤镜）
 FILTER_PRESETS = {
     "none": {"label": "无滤镜", "description": "原始画面"},
     "warm": {"label": "暖色", "description": "偏黄偏红，温馨感"},
@@ -255,15 +282,28 @@ FILTER_PRESETS = {
     "bw": {"label": "黑白", "description": "去色黑白，复古感"},
     "vintage": {"label": "复古", "description": "褪色颗粒，怀旧感"},
     "vivid": {"label": "鲜艳", "description": "高饱和度，吸睛感"},
+    "cinematic": {"label": "电影感", "description": "青橙色调+暗角，大片质感"},
+    "vlog": {"label": "Vlog清新", "description": "提亮降对比，日系清新"},
+    "film": {"label": "胶片", "description": "降饱和+颗粒感，胶片质感"},
+    "noir": {"label": "黑色电影", "description": "高对比黑白+暗角，硬核风"},
+    "summer": {"label": "夏日", "description": "鲜艳偏青绿，夏日清新"},
 }
 
-# 转场预设
+# 转场预设（对标剪映，10+ 种转场）
 TRANSITION_PRESETS = {
-    "none": {"label": "无转场"},
-    "fade": {"label": "淡入淡出"},
-    "slide": {"label": "滑动"},
-    "zoom": {"label": "缩放"},
-    "swipe": {"label": "强滑"},
+    "none": {"label": "无转场", "description": "硬切"},
+    "fade": {"label": "淡入淡出", "description": "平滑过渡，最常用"},
+    "fadeblack": {"label": "淡入黑场", "description": "章节分隔，情绪停顿"},
+    "fadewhite": {"label": "闪白", "description": "强调冲击，回忆闪回"},
+    "dissolve": {"label": "叠化", "description": "柔和过渡，时间流逝"},
+    "slideleft": {"label": "左滑", "description": "B-roll切换，节奏感"},
+    "slideright": {"label": "右滑", "description": "B-roll切换，节奏感"},
+    "slideup": {"label": "上滑", "description": "动感切换"},
+    "slidedown": {"label": "下滑", "description": "动感切换"},
+    "circleopen": {"label": "圆形展开", "description": "创意转场，聚焦主体"},
+    "zoomin": {"label": "缩放进入", "description": "强调瞬间，产品揭示"},
+    "hblur": {"label": "水平模糊", "description": "柔和切换，梦境感"},
+    "pixelize": {"label": "像素化", "description": "故障风，数字风转场"},
 }
 
 # 所有创作预设汇总（供前端一次性加载）

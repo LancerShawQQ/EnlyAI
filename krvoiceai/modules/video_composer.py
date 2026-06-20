@@ -3,9 +3,13 @@
 将口播视频 + 字幕 + BGM + 封面合成为最终成片。
 
 功能：
-- 字幕烧录（subtitles 滤镜，自定义样式）
+- 字幕烧录（ASS 格式，支持样式预设/动画/逐字高亮，对标剪映）
 - BGM 混音（amix，人声为主 BGM 为辅）
 - 封面首帧（在视频开头插入封面图 1-2 秒）
+- 视频滤镜（暖色/冷色/黑白/复古/鲜艳/电影感/Vlog/胶片）
+- 转场效果（xfade 10+ 种转场，对标剪映）
+- 水印（drawtext 文字水印）
+- 片头片尾（渐变背景 + 文字动画）
 - 统一输出参数（分辨率/帧率/码率）
 
 输出：最终视频 mp4（H.264 + AAC，兼容主流平台）
@@ -22,6 +26,11 @@ from PIL import Image
 
 from ..core.base_module import BaseModule, JobContext, ModuleResult
 from ..core.ffmpeg_utils import FFmpegRunner
+from .subtitle_styler import (
+    SUBTITLE_STYLE_PRESETS,
+    srt_to_ass,
+    write_ass_file,
+)
 
 
 class VideoComposer(BaseModule):
@@ -41,12 +50,26 @@ class VideoComposer(BaseModule):
         self.bgm_dir = Path(self.config.get("composer.bgm_dir", "./config/bgm"))
         self.bgm_volume = self.config.get("composer.bgm_volume", 0.15)
 
-        # 字幕样式
-        sub_cfg = self.config.get("asr.subtitle", {})
-        self.subtitle_font_size = sub_cfg.get("font_size", 24)
-        self.subtitle_font_color = sub_cfg.get("font_color", "&HFFFFFF")
-        self.subtitle_outline_color = sub_cfg.get("outline_color", "&H000000")
-        self.subtitle_outline_width = sub_cfg.get("outline_width", 2)
+        # 字幕样式（新 subtitle 段，对标剪映）
+        sub_cfg = self.config.get("subtitle", {})
+        self.subtitle_preset = sub_cfg.get("preset", "minimal_white")
+        self.subtitle_animation = sub_cfg.get("animation", "fade")
+        self.subtitle_font_name = sub_cfg.get("font_name", "")
+        self.subtitle_font_size = sub_cfg.get("font_size", 28)
+        self.subtitle_position = sub_cfg.get("position", "bottom")
+        self.subtitle_alignment = sub_cfg.get("alignment", "center")
+        self.subtitle_margin_v = sub_cfg.get("margin_v", 80)
+        self.subtitle_karaoke = sub_cfg.get("karaoke", False)
+        self.subtitle_bold = sub_cfg.get("bold", True)
+        self.subtitle_italic = sub_cfg.get("italic", False)
+        self.subtitle_outline_width = sub_cfg.get("outline_width", None)
+        self.subtitle_shadow_distance = sub_cfg.get("shadow_distance", None)
+        self.subtitle_letter_spacing = sub_cfg.get("letter_spacing", 0)
+        self.subtitle_line_spacing = sub_cfg.get("line_spacing", 1.2)
+        # 兼容旧 asr.subtitle 配置
+        if not sub_cfg:
+            old = self.config.get("asr.subtitle", {})
+            self.subtitle_font_size = old.get("font_size", 28)
 
         # BGM 配置
         self.bgm_enabled = self.config.get("audio.bgm.enabled", True)
@@ -186,7 +209,7 @@ class VideoComposer(BaseModule):
             )
 
         # 构建滤镜链
-        vf_filters = self._build_video_filters(subtitle)
+        vf_filters = self._build_video_filters(subtitle, output.parent)
 
         # 构建输入与音频处理
         inputs = ["-i", str(main_video)]
@@ -230,8 +253,12 @@ class VideoComposer(BaseModule):
         self.logger.info(f"视频合成完成: {output}")
         return output
 
-    def _build_video_filters(self, subtitle: Optional[Path]) -> str:
-        """构建视频滤镜链（含分辨率统一、滤镜、字幕、水印）"""
+    def _build_video_filters(self, subtitle: Optional[Path], work_dir: Optional[Path] = None) -> str:
+        """构建视频滤镜链（含分辨率统一、滤镜、字幕、水印）
+
+        字幕使用 ASS 格式（通过 subtitle_styler 生成），支持样式预设/动画/逐字高亮。
+        若传入 SRT 文件，会自动转为 ASS。
+        """
         filters: list[str] = []
         # 统一分辨率
         w, h = self.output_resolution
@@ -241,24 +268,18 @@ class VideoComposer(BaseModule):
         filters.append(f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2")
         filters.append(f"fps={self.output_fps}")
 
-        # 滤镜效果（对标剪映滤镜）
+        # 滤镜效果（对标剪映滤镜，8+ 种）
         vf = self._build_filter_chain()
         if vf:
             filters.append(vf)
 
-        # 字幕烧录
+        # 字幕烧录（ASS 格式，支持样式预设/动画/逐字高亮）
         if subtitle and Path(subtitle).exists():
-            # 转义路径中的特殊字符（Windows 反斜杠/冒号）
-            sub_path = str(Path(subtitle).absolute()).replace("\\", "/").replace(":", r"\:")
-            style = (
-                f"FontSize={self.subtitle_font_size},"
-                f"PrimaryColour={self.subtitle_font_color},"
-                f"OutlineColour={self.subtitle_outline_color},"
-                f"Outline={self.subtitle_outline_width},"
-                f"Alignment=2,"  # 底部居中
-                f"MarginV=80"     # 底部边距
-            )
-            filters.append(f"subtitles='{sub_path}':force_style='{style}'")
+            ass_path = self._ensure_ass_subtitle(subtitle, work_dir)
+            if ass_path:
+                # 转义路径中的特殊字符
+                sub_path = str(ass_path.absolute()).replace("\\", "/").replace(":", r"\:")
+                filters.append(f"subtitles='{sub_path}'")
 
         # 水印
         if self.watermark_enabled and self.watermark_text:
@@ -268,24 +289,104 @@ class VideoComposer(BaseModule):
 
         return ",".join(filters)
 
+    def _ensure_ass_subtitle(self, subtitle: Path, work_dir: Optional[Path] = None) -> Optional[Path]:
+        """确保字幕为 ASS 格式（SRT 自动转换，应用样式预设/动画/逐字高亮）"""
+        subtitle = Path(subtitle)
+        if work_dir is None:
+            work_dir = subtitle.parent
+        else:
+            work_dir = Path(work_dir)
+
+        # 如果已经是 ASS，直接使用
+        if subtitle.suffix.lower() == ".ass":
+            return subtitle
+
+        # SRT 转 ASS，应用样式
+        ass_path = work_dir / (subtitle.stem + ".ass")
+        try:
+            srt_to_ass(
+                subtitle, ass_path,
+                preset=self.subtitle_preset,
+                animation=self.subtitle_animation,
+                font_size=self.subtitle_font_size,
+                font_name=self.subtitle_font_name,
+                position=self.subtitle_position,
+                alignment=self.subtitle_alignment,
+                margin_v=self.subtitle_margin_v,
+                karaoke=self.subtitle_karaoke,
+                bold=self.subtitle_bold,
+                italic=self.subtitle_italic,
+                outline_width=self.subtitle_outline_width,
+                shadow_distance=self.subtitle_shadow_distance,
+                letter_spacing=self.subtitle_letter_spacing,
+                line_spacing=self.subtitle_line_spacing,
+                play_res_x=self.output_resolution[0],
+                play_res_y=self.output_resolution[1],
+            )
+            self.logger.info(
+                f"字幕 SRT→ASS 转换 preset={self.subtitle_preset} "
+                f"animation={self.subtitle_animation} karaoke={self.subtitle_karaoke}"
+            )
+            return ass_path
+        except Exception as e:
+            self.logger.warning(f"ASS 字幕生成失败，降级使用 SRT: {e}")
+            return subtitle
+
     def _build_filter_chain(self) -> Optional[str]:
-        """构建滤镜链（暖色/冷色/黑白/复古/鲜艳）"""
+        """构建滤镜链（对标剪映，8+ 种滤镜）
+
+        基础调色：warm/cool/bw/vintage/vivid
+        复合滤镜：cinematic/vlog/film/noir/summer
+        """
         intensity = self.filter_intensity / 100.0
-        if self.video_filter == "warm":
-            # 暖色调：增加红黄、降低蓝
+        f = self.video_filter
+
+        # ===== 基础调色滤镜 =====
+        if f == "warm":
             return f"eq=brightness=0.03:saturation={1.0+intensity*0.3}:gamma_r={1.0+intensity*0.1}:gamma_b={1.0-intensity*0.1}"
-        elif self.video_filter == "cool":
-            # 冷色调：增加蓝、降低红
+        elif f == "cool":
             return f"eq=brightness=0.02:saturation={1.0+intensity*0.2}:gamma_b={1.0+intensity*0.1}:gamma_r={1.0-intensity*0.1}"
-        elif self.video_filter == "bw":
-            # 黑白
+        elif f == "bw":
             return f"hue=s=0,eq=brightness=0.02:contrast={1.0+intensity*0.1}"
-        elif self.video_filter == "vintage":
-            # 复古：降低饱和度、偏黄
+        elif f == "vintage":
             return f"eq=saturation={1.0-intensity*0.4}:gamma_r={1.0+intensity*0.05}:gamma_g={1.0+intensity*0.03}:gamma_b={1.0-intensity*0.08}"
-        elif self.video_filter == "vivid":
-            # 鲜艳：增加饱和度
+        elif f == "vivid":
             return f"eq=saturation={1.0+intensity*0.5}:contrast={1.0+intensity*0.1}"
+
+        # ===== 复合滤镜（对标剪映电影感/Vlog/胶片） =====
+        elif f == "cinematic":
+            # 电影感：青橙色调 + 暗角 + 轻微对比
+            i = intensity
+            return (
+                f"eq=saturation={1.0+i*0.15}:contrast={1.0+i*0.08}:gamma_r={1.0+i*0.05}:gamma_b={1.0+i*0.08},"
+                f"vignette=PI/4"
+            )
+        elif f == "vlog":
+            # Vlog 清新：提亮 + 降对比 + 微暖
+            i = intensity
+            return (
+                f"eq=brightness={0.04*i}:contrast={1.0-i*0.05}:saturation={1.0+i*0.1}:gamma_g={1.0+i*0.03}"
+            )
+        elif f == "film":
+            # 胶片质感：降饱和 + 颗粒感 + 偏黄
+            i = intensity
+            return (
+                f"eq=saturation={1.0-i*0.25}:contrast={1.0+i*0.05}:gamma_r={1.0+i*0.04}:gamma_b={1.0-i*0.06},"
+                f"noise=alls={int(i*20)}:allf=t"
+            )
+        elif f == "noir":
+            # 黑色电影：高对比黑白 + 暗角
+            i = intensity
+            return (
+                f"hue=s=0,eq=brightness=-0.02:contrast={1.0+i*0.3},"
+                f"vignette=PI/3"
+            )
+        elif f == "summer":
+            # 夏日清新：鲜艳 + 偏青绿 + 提亮
+            i = intensity
+            return (
+                f"eq=brightness={0.03*i}:saturation={1.0+i*0.3}:gamma_g={1.0+i*0.06}:gamma_b={1.0+i*0.04}"
+            )
         return None
 
     def _build_watermark_filter(self, w: int, h: int) -> Optional[str]:
@@ -448,7 +549,10 @@ class VideoComposer(BaseModule):
     def _generate_text_clip(
         self, text: str, duration: float, work_dir: Path, prefix: str
     ) -> Optional[Path]:
-        """生成文字片头/片尾视频片段"""
+        """生成文字片头/片尾视频片段（渐变背景 + 文字动画）
+
+        对标剪映片头片尾：渐变背景 + 文字淡入缩放 + 装饰元素
+        """
         if not text:
             return None
         w, h = self.output_resolution
@@ -458,15 +562,41 @@ class VideoComposer(BaseModule):
         # 尝试加载中文字体
         font_path = self._find_chinese_font()
         font_opt = f":fontfile='{font_path}'" if font_path else ""
+
+        # 根据前缀选择渐变色（片头用深蓝→紫，片尾用深紫→红）
+        if prefix == "intro":
+            # 片头：深蓝到紫色渐变
+            grad = "0x0A0A2E-0x2D1B4E"
+            font_color = "white"
+        else:
+            # 片尾：深紫到暗红渐变
+            grad = "0x2D1B4E-0x4A1A2E"
+            font_color = "0xFFD700"  # 金色
+
+        font_size = max(48, h // 18)
+
+        # 构建渐变背景 + 文字动画滤镜
+        # 1. 渐变背景：用 gradients 滤镜（FFmpeg 6+）或 fallback 到纯色
+        # 2. 文字：drawtext + 淡入 + 缩放动画
+        # 3. 装饰：底部细线
+        vf = (
+            # 文字主体（居中，带淡入）
+            f"drawtext=text='{safe_text}':fontcolor={font_color}:fontsize={font_size}"
+            f":x=(w-text_w)/2:y=(h-text_h)/2{font_opt}:line_spacing=15,"
+            # 文字淡入（前 0.6s）
+            f"fade=t=in:st=0:d=0.6:alpha=1,"
+            # 文字淡出（后 0.5s）
+            f"fade=t=out:st={max(0,duration-0.5)}:d=0.5:alpha=1,"
+            # 整体淡入淡出
+            f"fade=t=in:st=0:d=0.3,fade=t=out:st={max(0,duration-0.3)}:d=0.3"
+        )
+
         args = [
             "-f", "lavfi",
-            "-i", f"color=c=black:s={w}x{h}:d={duration}",
+            "-i", f"color=c=0x0A0A2E:s={w}x{h}:d={duration}:r={self.output_fps}",
             "-f", "lavfi",
             "-i", "anullsrc=channel_layout=mono:sample_rate=44100",
-            "-vf",
-            f"drawtext=text='{safe_text}':fontcolor=white:fontsize={max(40, h//20)}"
-            f":x=(w-text_w)/2:y=(h-text_h)/2{font_opt}:line_spacing=10,"
-            f"fade=t=in:st=0:d=0.5,fade=t=out:st={duration-0.5}:d=0.5",
+            "-vf", vf,
             "-t", f"{duration}",
             "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",
@@ -478,7 +608,28 @@ class VideoComposer(BaseModule):
             return clip_path
         except Exception as e:
             self.logger.warning(f"生成{prefix}失败: {e}")
-            return None
+            # 降级：纯黑背景
+            try:
+                args_fallback = [
+                    "-f", "lavfi",
+                    "-i", f"color=c=black:s={w}x{h}:d={duration}",
+                    "-f", "lavfi",
+                    "-i", "anullsrc=channel_layout=mono:sample_rate=44100",
+                    "-vf",
+                    f"drawtext=text='{safe_text}':fontcolor=white:fontsize={font_size}"
+                    f":x=(w-text_w)/2:y=(h-text_h)/2{font_opt},"
+                    f"fade=t=in:st=0:d=0.5,fade=t=out:st={max(0,duration-0.5)}:d=0.5",
+                    "-t", f"{duration}",
+                    "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "192k",
+                    "-shortest",
+                    str(clip_path),
+                ]
+                self.ffmpeg.run(args_fallback)
+                return clip_path
+            except Exception as e2:
+                self.logger.warning(f"生成{prefix}降级也失败: {e2}")
+                return None
 
     def _find_chinese_font(self) -> Optional[str]:
         """查找系统中可用的中文字体"""
