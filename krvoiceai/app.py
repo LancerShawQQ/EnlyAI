@@ -18,6 +18,7 @@ from .core.logger import get_logger, setup_logging
 from .core.settings_manager import get_settings_manager
 from .core.storage import Storage
 from .modules.avatar_engine import AvatarEngine
+from .modules.broll_engine import BRollEngine
 from .modules.cover_generator import CoverGenerator
 from .modules.publisher import Publisher
 from .modules.script_extractor import ScriptExtractor
@@ -91,6 +92,7 @@ class KrVoiceAI:
             "tts": TTSEngine(gpu_runner=gpu),
             "avatar": AvatarEngine(gpu_runner=gpu, ffmpeg=ff),
             "subtitle": SubtitleEngine(),
+            "broll": BRollEngine(ffmpeg=ff),
             "compose": VideoComposer(ffmpeg=ff),
             "title": TitleGenerator(llm_client=llm),
             "cover": CoverGenerator(ffmpeg=ff),
@@ -102,7 +104,7 @@ class KrVoiceAI:
                 name=name,
                 module=module,
                 skip_when=self._make_skip_condition(name),
-                optional=name in ("title", "cover", "publish", "script_extract"),
+                optional=name in ("title", "cover", "publish", "script_extract", "broll"),
             ))
 
     def _make_skip_condition(self, step_name: str):
@@ -111,10 +113,14 @@ class KrVoiceAI:
             return step_name == "script_extract" and not ctx.reference_video_url
         def skip_publish_disabled(ctx):
             return step_name == "publish" and not ctx.metadata.get("auto_publish")
+        def skip_no_broll(ctx):
+            return step_name == "broll" and not ctx.broll_clips
         if step_name == "script_extract":
             return skip_no_ref_url
         if step_name == "publish":
             return skip_publish_disabled
+        if step_name == "broll":
+            return skip_no_broll
         return None
 
     # ============ 任务管理 ============
@@ -129,11 +135,13 @@ class KrVoiceAI:
         platform: str = "douyin",
         auto_publish: bool = False,
         metadata: Optional[dict] = None,
+        broll_clips: Optional[list] = None,
         progress_callback: Optional[Callable[[str, str, dict], None]] = None,
     ) -> dict:
         """提交并运行任务，返回结果
 
         Args:
+            broll_clips: B-roll 画中画/插播片段列表（可选）
             progress_callback: 可选的进度回调函数 (step_name, status, data)
 
         Returns:
@@ -151,6 +159,7 @@ class KrVoiceAI:
             voice_id=voice_id,
             script_mode=script_mode,
             metadata=meta,
+            broll_clips=broll_clips,
         )
         import time as _time
         t0 = _time.time()
@@ -202,6 +211,7 @@ class KrVoiceAI:
         script_mode: str = "polish",
         platform: str = "douyin",
         metadata: Optional[dict] = None,
+        broll_clips: Optional[list] = None,
     ) -> dict:
         """单独执行某个模块（用于 UI 单步调试）
 
@@ -225,6 +235,7 @@ class KrVoiceAI:
             voice_id=voice_id,
             script_mode=script_mode,
             metadata=meta,
+            broll_clips=broll_clips,
         )
         job = self.job_store.get_job(job_id)
         ctx = self.orchestrator._build_context(job_id, job["input"])

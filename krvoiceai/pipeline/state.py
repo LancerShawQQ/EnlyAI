@@ -34,6 +34,7 @@ PIPELINE_STEPS = [
     "tts",              # 语音合成
     "avatar",           # 数字人生成
     "subtitle",         # 字幕生成
+    "broll",            # B-roll 画中画/插播视频（可选）
     "compose",          # 视频合成
     "title",            # 标题生成
     "cover",            # 封面生成

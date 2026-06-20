@@ -44,6 +44,9 @@
           <button class="nav-item" id="nav-batch">
             <span class="nav-icon">📦</span><span>批量处理</span>
           </button>
+          <button class="nav-item" id="nav-timeline">
+            <span class="nav-icon">🎞️</span><span>时间轴剪辑</span>
+          </button>
         </div>
 
         <div class="nav-section">
@@ -1041,6 +1044,206 @@
                   <div>提交后将显示每条文案的处理进度</div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面: 时间轴剪辑（画中画/B-roll） ===== -->
+      <div class="page" id="page-timeline">
+        <div class="page-header">
+          <h1 class="page-title">时间轴剪辑</h1>
+          <p class="page-subtitle">画中画插播视频 + 快捷剪辑，对标剪映/HeyGen 的 B-roll 编辑能力</p>
+        </div>
+
+        <!-- 工作原理说明 -->
+        <div class="card" style="margin-bottom:20px;background:linear-gradient(135deg,#fff8e1,#fff3cd);border:1px solid #ffe082">
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="font-size:36px">🎞️</div>
+            <div style="flex:1">
+              <div style="font-weight:600;color:#8b6914;margin-bottom:6px">画中画与插播视频</div>
+              <div style="color:#6b5d2e;font-size:13px;line-height:1.6">
+                <strong>画中画模式（PIP）</strong>：B-roll 视频以小窗口叠加在数字人画面上，数字人仍可见（适合讲解类）<br>
+                <strong>整段切换模式（CUT）</strong>：在指定时间段用 B-roll 替换主画面，数字人暂离（适合展示实景素材）<br>
+                <strong>三种插入方式</strong>：① 点击字幕间的 <span class="tl-insert-plus">+</span> 在两段字幕之间插入；② 点击 B-roll 轨道空白处在任意位置插入；③ 点击"在播放头插入"按当前播放位置插入<br>
+                <strong>快捷剪辑</strong>：裁剪头尾、调整音量、片头片尾淡入淡出，一键应用
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:20px">
+          <!-- 左侧：任务选择 + 素材库 -->
+          <div>
+            <div class="card" style="margin-bottom:16px">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon">📋</span> 选择任务</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">选择已生成视频的任务</label>
+                <select class="form-input" id="tl-job-select" onchange="onTimelineJobSelected()">
+                  <option value="">-- 选择任务 --</option>
+                </select>
+              </div>
+              <div id="tl-job-info" style="font-size:12px;color:#666"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon">📁</span> B-roll 素材库</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">上传新素材</label>
+                <div class="upload-zone" style="padding:12px" onclick="document.getElementById('tl-broll-upload').click()">
+                  <div class="upload-icon" style="font-size:24px">📎</div>
+                  <div class="upload-text" style="font-size:12px" id="tl-upload-text">点击上传视频/图片</div>
+                  <input type="file" id="tl-broll-upload" accept="video/*,image/*" style="display:none" onchange="onBrollUpload(this)">
+                </div>
+              </div>
+              <div id="tl-broll-list" style="max-height:300px;overflow-y:auto"></div>
+            </div>
+          </div>
+
+          <!-- 右侧：时间轴编辑器 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon">🎬</span> 时间轴编辑器</div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-sm btn-secondary" onclick="clearAllBrollClips()">清空</button>
+                <button class="btn btn-sm btn-primary" id="tl-apply-btn" onclick="applyBrollToVideo()">应用 B-roll 合成</button>
+              </div>
+            </div>
+
+            <div id="tl-editor-empty" class="empty-state">
+              <div class="empty-state-icon">🎞️</div>
+              <div>请先选择一个任务</div>
+              <div style="font-size:12px;color:#999;margin-top:6px">选择任务后将显示字幕时间轴</div>
+            </div>
+
+            <div id="tl-editor" style="display:none">
+              <!-- 视频预览 -->
+              <div style="margin-bottom:12px;background:#000;border-radius:8px;overflow:hidden;position:relative">
+                <video id="tl-video-preview" controls style="width:100%;max-height:300px;display:block"></video>
+              </div>
+
+              <!-- 快捷剪辑工具栏 -->
+              <div class="tl-toolbar">
+                <div class="tl-toolbar-group">
+                  <span class="tl-toolbar-label">快捷剪辑</span>
+                  <button class="btn btn-sm btn-secondary" onclick="openQuickEditModal('trim')">✂️ 裁剪</button>
+                  <button class="btn btn-sm btn-secondary" onclick="openQuickEditModal('volume')">🔊 音量</button>
+                  <button class="btn btn-sm btn-secondary" onclick="openQuickEditModal('fade')">🌗 淡入淡出</button>
+                </div>
+                <div class="tl-toolbar-group">
+                  <span class="tl-toolbar-label">B-roll</span>
+                  <button class="btn btn-sm btn-secondary" onclick="insertBrollAtPlayhead()">➕ 在播放头插入</button>
+                </div>
+              </div>
+
+              <!-- 时间轴 -->
+              <div class="timeline-container" id="tl-timeline">
+                <div class="timeline-ruler" id="tl-ruler"></div>
+                <div class="timeline-track">
+                  <div class="timeline-track-label">主视频</div>
+                  <div class="timeline-track-content" id="tl-main-track"></div>
+                </div>
+                <div class="timeline-track">
+                  <div class="timeline-track-label">B-roll</div>
+                  <div class="timeline-track-content" id="tl-broll-track"></div>
+                </div>
+                <div class="timeline-track">
+                  <div class="timeline-track-label">字幕</div>
+                  <div class="timeline-track-content" id="tl-subtitle-track"></div>
+                </div>
+              </div>
+
+              <!-- 操作提示 -->
+              <div class="tl-tip-bar">
+                💡 点击字幕间的 <span class="tl-insert-plus">+</span> 可在两段字幕之间插入 B-roll 视频；点击 B-roll 轨道空白处可在任意位置插入；点击已添加的片段可编辑
+              </div>
+
+              <!-- 已添加的 B-roll 片段列表 -->
+              <div style="margin-top:12px">
+                <div style="font-weight:600;margin-bottom:8px">已添加的 B-roll 片段</div>
+                <div id="tl-clip-list" style="max-height:200px;overflow-y:auto"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- B-roll 片段编辑弹窗 -->
+        <div class="modal-overlay" id="tl-clip-modal" style="display:none">
+          <div class="modal" style="max-width:480px">
+            <div class="modal-header">
+              <div class="modal-title">编辑 B-roll 片段</div>
+              <button class="modal-close" onclick="closeClipModal()">×</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label class="form-label">插入模式</label>
+                <div style="display:flex;gap:12px">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                    <input type="radio" name="clip-mode" value="pip" checked onchange="onClipModeChange()">
+                    <span>🖼️ 画中画（小窗口叠加）</span>
+                  </label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                    <input type="radio" name="clip-mode" value="cut" onchange="onClipModeChange()">
+                    <span>✂️ 整段切换（替换画面）</span>
+                  </label>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">时间段（秒）</label>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <input type="number" class="form-input" id="clip-start" step="0.1" min="0" style="flex:1" placeholder="开始">
+                  <span>—</span>
+                  <input type="number" class="form-input" id="clip-end" step="0.1" min="0" style="flex:1" placeholder="结束">
+                </div>
+              </div>
+              <div class="form-group" id="clip-pip-settings">
+                <label class="form-label">画中画位置</label>
+                <select class="form-input" id="clip-position">
+                  <option value="top_left">左上角</option>
+                  <option value="top_right">右上角</option>
+                  <option value="bottom_left">左下角</option>
+                  <option value="bottom_right" selected>右下角</option>
+                  <option value="center">居中</option>
+                </select>
+              </div>
+              <div class="form-group" id="clip-scale-group">
+                <label class="form-label">画中画大小 <span id="clip-scale-val" style="color:#666">30%</span></label>
+                <input type="range" id="clip-scale" min="0.2" max="0.8" step="0.05" value="0.3" oninput="document.getElementById('clip-scale-val').textContent=Math.round(this.value*100)+'%'">
+              </div>
+              <div class="form-group">
+                <label class="form-label">B-roll 音量 <span id="clip-volume-val" style="color:#666">0%（静音）</span></label>
+                <input type="range" id="clip-volume" min="0" max="1" step="0.1" value="0" oninput="document.getElementById('clip-volume-val').textContent=Math.round(this.value*100)+'%'">
+              </div>
+              <div class="form-group">
+                <label class="form-label">转场效果</label>
+                <select class="form-input" id="clip-transition">
+                  <option value="none">无转场</option>
+                  <option value="fade">淡入淡出</option>
+                </select>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" onclick="closeClipModal()">取消</button>
+              <button class="btn btn-primary" onclick="confirmAddClip()">添加片段</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 快捷剪辑弹窗 -->
+        <div class="modal-overlay" id="tl-quickedit-modal" style="display:none">
+          <div class="modal" style="max-width:420px">
+            <div class="modal-header">
+              <div class="modal-title" id="qe-title">快捷剪辑</div>
+              <button class="modal-close" onclick="closeQuickEditModal()">×</button>
+            </div>
+            <div class="modal-body" id="qe-body"></div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" onclick="closeQuickEditModal()">取消</button>
+              <button class="btn btn-primary" id="qe-confirm-btn" onclick="confirmQuickEdit()">应用</button>
             </div>
           </div>
         </div>

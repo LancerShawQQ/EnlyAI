@@ -2569,3 +2569,434 @@ input[type="color"]::-webkit-color-swatch {
   }
 }
 
+/* ---------- 时间轴剪辑编辑器 ---------- */
+.timeline-container {
+  background: var(--bg-elevated, #1a1d24);
+  border: 1px solid var(--border-default, #2a2d34);
+  border-radius: 8px;
+  padding: 12px;
+  overflow-x: auto;
+}
+
+.timeline-ruler {
+  height: 24px;
+  background: var(--bg-surface, #22252c);
+  border-radius: 4px;
+  margin-left: 80px;
+  margin-bottom: 8px;
+  position: relative;
+  color: var(--text-secondary, #8b8f99);
+  font-size: 10px;
+}
+
+.timeline-ruler-tick {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  background: var(--border-default, #3a3d44);
+}
+
+.timeline-ruler-label {
+  position: absolute;
+  top: 4px;
+  font-size: 10px;
+  color: var(--text-secondary, #8b8f99);
+  transform: translateX(-50%);
+}
+
+.timeline-track {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  margin-bottom: 6px;
+  position: relative;
+}
+
+.timeline-track-label {
+  width: 72px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-secondary, #8b8f99);
+  padding-right: 8px;
+  text-align: right;
+}
+
+.timeline-track-content {
+  flex: 1;
+  height: 100%;
+  background: var(--bg-surface, #22252c);
+  border-radius: 4px;
+  position: relative;
+  min-width: 400px;
+  cursor: pointer;
+}
+
+.timeline-track-content:hover {
+  background: var(--bg-surface-hover, #2a2d34);
+}
+
+/* 主视频轨道片段 */
+.tl-main-segment {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: linear-gradient(135deg, #4a90d9, #357abd);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+  overflow: hidden;
+}
+
+/* B-roll 片段（画中画/切换） */
+.tl-broll-segment {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+  overflow: hidden;
+  cursor: move;
+  border: 2px solid rgba(255,255,255,0.3);
+}
+
+.tl-broll-segment.pip {
+  background: linear-gradient(135deg, #f5a623, #d68910);
+}
+
+.tl-broll-segment.cut {
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+}
+
+.tl-broll-segment .tl-segment-delete {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  width: 14px;
+  height: 14px;
+  background: rgba(0,0,0,0.5);
+  border-radius: 50%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #fff;
+  cursor: pointer;
+}
+
+.tl-broll-segment:hover .tl-segment-delete {
+  display: flex;
+}
+
+/* 字幕片段 */
+.tl-subtitle-segment {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: rgba(74, 144, 217, 0.2);
+  border-left: 2px solid #4a90d9;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  color: var(--text-primary, #e4e6eb);
+  font-size: 10px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 字幕间插入点（+号按钮） */
+.tl-insert-point {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 18px;
+  background: #10b981;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  z-index: 5;
+  box-shadow: 0 1px 4px rgba(16, 185, 129, 0.5);
+  transition: all 0.2s;
+  line-height: 1;
+}
+
+.tl-insert-point:hover {
+  background: #059669;
+  transform: translate(-50%, -50%) scale(1.25);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.7);
+}
+
+.tl-insert-point.disabled {
+  background: #6b7280;
+  cursor: not-allowed;
+  box-shadow: none;
+  opacity: 0.5;
+}
+
+/* 快捷剪辑工具栏 */
+.tl-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg-surface, #22252c);
+  border-radius: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.tl-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tl-toolbar-label {
+  font-size: 11px;
+  color: var(--text-secondary, #8b8f99);
+  margin-right: 4px;
+}
+
+/* 操作提示条 */
+.tl-tip-bar {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: rgba(74, 144, 217, 0.08);
+  border-left: 3px solid #4a90d9;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-secondary, #8b8f99);
+  line-height: 1.5;
+}
+
+.tl-insert-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  background: #10b981;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: bold;
+  vertical-align: middle;
+  margin: 0 2px;
+}
+
+/* 插入点提示 */
+.tl-insert-hint {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #10b981;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.timeline-track-content:hover .tl-insert-hint {
+  opacity: 0.6;
+}
+
+/* B-roll 素材卡片 */
+.broll-asset-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border-default, #2a2d34);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.broll-asset-card:hover {
+  border-color: var(--accent-primary, #4a90d9);
+  background: var(--bg-surface-hover, #2a2d34);
+}
+
+.broll-asset-card.selected {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.broll-asset-thumb {
+  width: 48px;
+  height: 36px;
+  background: var(--bg-elevated, #1a1d24);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.broll-asset-thumb img,
+.broll-asset-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.broll-asset-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.broll-asset-name {
+  font-size: 12px;
+  color: var(--text-primary, #e4e6eb);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.broll-asset-meta {
+  font-size: 10px;
+  color: var(--text-secondary, #8b8f99);
+}
+
+/* 已添加片段列表项 */
+.tl-clip-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-default, #2a2d34);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.tl-clip-item .clip-badge {
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.tl-clip-item .clip-badge.pip {
+  background: rgba(245, 166, 35, 0.2);
+  color: #f5a623;
+}
+
+.tl-clip-item .clip-badge.cut {
+  background: rgba(231, 76, 60, 0.2);
+  color: #e74c3c;
+}
+
+.tl-clip-item .clip-delete {
+  margin-left: auto;
+  color: var(--text-secondary, #8b8f99);
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.tl-clip-item .clip-delete:hover {
+  color: #e74c3c;
+}
+
+.tl-clip-item .clip-edit {
+  margin-left: auto;
+  color: var(--text-secondary, #8b8f99);
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.tl-clip-item .clip-edit:hover {
+  color: #4a90d9;
+}
+
+.tl-clip-item .clip-edit + .clip-delete {
+  margin-left: 0;
+}
+
+/* 通用模态框（B-roll 编辑弹窗用） */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(10, 13, 20, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.modal {
+  width: 90%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--bg-surface, #1a1d24);
+  border: 1px solid var(--border-default, #2a2d34);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-default, #2a2d34);
+}
+
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary, #e4e6eb);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary, #8b8f99);
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: var(--text-primary, #e4e6eb);
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-default, #2a2d34);
+}
+

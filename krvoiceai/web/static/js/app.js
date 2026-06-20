@@ -61,7 +61,7 @@ function statusBadge(status) {
 // ========== 页面导航 ==========
 
 const PAGES = [
-  'dashboard', 'wizard', 'generate', 'script', 'step-by-step', 'batch',
+  'dashboard', 'wizard', 'generate', 'script', 'step-by-step', 'batch', 'timeline',
   'avatars', 'voices', 'templates', 'jobs',
   'settings-models', 'settings-video', 'settings-scene', 'settings-publish',
   'health',
@@ -90,6 +90,7 @@ function navigate(page) {
   if (page === 'generate') { loadAvatarsForSelect(); loadVoicesForSelect(); }
   if (page === 'step-by-step') { loadAvatarsForSelect2(); loadVoicesForSelect2(); }
   if (page === 'batch') { loadAvatarsForSelect3(); loadVoicesForSelect3(); }
+  if (page === 'timeline') initTimelineEditor();
   if (page === 'settings-models') loadAllSettings();
   if (page === 'settings-video') loadVideoSettings();
   if (page === 'settings-scene') loadSceneEffectSettings();
@@ -2085,3 +2086,622 @@ document.addEventListener('DOMContentLoaded', () => {
   navigate('dashboard');
   loadHealth();
 });
+
+// ========== 时间轴剪辑编辑器（画中画/B-roll） ==========
+
+// 时间轴编辑器状态
+const tlState = {
+  jobs: [],              // 任务列表
+  currentJob: null,      // 当前选中的任务
+  videoPath: '',         // 当前视频路径
+  videoDuration: 0,      // 视频时长
+  subtitleSegments: [],  // 字幕片段 [{text, start, end}]
+  brollAssets: [],       // B-roll 素材库
+  selectedAsset: null,   // 当前选中的素材
+  clips: [],             // 已添加的 B-roll 片段
+  pendingClip: null,     // 正在编辑的片段（弹窗中）
+  editingClipIdx: -1,    // 正在编辑的已有片段索引（-1 表示新增）
+  timelineWidth: 800,    // 时间轴像素宽度
+  pxPerSec: 20,          // 每秒像素数
+  quickEditAction: '',   // 当前快捷剪辑操作
+};
+
+// 初始化时间轴编辑器
+async function initTimelineEditor() {
+  await Promise.all([loadTimelineJobs(), loadBrollAssets()]);
+}
+
+// 加载有视频的任务列表
+async function loadTimelineJobs() {
+  try {
+    const jobs = await api('/api/jobs?limit=50');
+    const select = document.getElementById('tl-job-select');
+    // 筛选有视频产物的任务
+    const videoJobs = [];
+    for (const job of jobs) {
+      const detail = await api(`/api/jobs/${job.job_id}`);
+      const output = detail.output || {};
+      const steps = detail.steps || [];
+      // 检查是否有 avatar 或 compose 步骤成功
+      const hasVideo = steps.some(s =>
+        (s.step === 'avatar' || s.step === 'compose') &&
+        s.status === 'success' && s.result
+      );
+      if (hasVideo) {
+        const videoPath = output.final_video || output.raw_video ||
+          (steps.find(s => s.step === 'avatar')?.result?.video_path) || '';
+        videoJobs.push({
+          job_id: job.job_id,
+          status: job.status,
+          created_at: job.created_at,
+          video_path: videoPath,
+          output,
+          steps,
+        });
+      }
+    }
+    tlState.jobs = videoJobs;
+    select.innerHTML = '<option value="">-- 选择任务 --</option>' +
+      videoJobs.map(j => {
+        const date = new Date(j.created_at * 1000).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+        return `<option value="${j.job_id}">${date} - ${j.job_id}</option>`;
+      }).join('');
+  } catch (e) {
+    toast(`加载任务失败: ${e.message}`, 'error');
+  }
+}
+
+// 选中任务后加载视频和字幕
+async function onTimelineJobSelected() {
+  const jobId = document.getElementById('tl-job-select').value;
+  if (!jobId) {
+    document.getElementById('tl-editor-empty').style.display = '';
+    document.getElementById('tl-editor').style.display = 'none';
+    return;
+  }
+  const job = tlState.jobs.find(j => j.job_id === jobId);
+  if (!job) return;
+  tlState.currentJob = job;
+
+  // 获取视频路径
+  let videoPath = job.video_path;
+  if (!videoPath) {
+    toast('该任务无视频产物', 'error');
+    return;
+  }
+  tlState.videoPath = videoPath;
+
+  // 显示编辑器
+  document.getElementById('tl-editor-empty').style.display = 'none';
+  document.getElementById('tl-editor').style.display = '';
+
+  // 加载视频预览
+  const videoEl = document.getElementById('tl-video-preview');
+  videoEl.src = `/api/files?path=${encodeURIComponent(videoPath)}`;
+  videoEl.onloadedmetadata = () => {
+    tlState.videoDuration = videoEl.duration;
+    renderTimeline();
+  };
+
+  // 获取字幕片段（从任务详情的 metadata）
+  try {
+    const detail = await api(`/api/jobs/${jobId}`);
+    // 字幕片段可能在 output.metadata.subtitle_segments 或 steps 中
+    let segments = [];
+    const output = detail.output || {};
+    if (output.subtitle_segments) {
+      segments = output.subtitle_segments;
+    }
+    // 尝试从 context.json 读取
+    if (!segments.length) {
+      try {
+        const ctxResp = await fetch(`/api/files?path=${encodeURIComponent(`workspace_data/jobs/${jobId}/context.json`)}`);
+        if (ctxResp.ok) {
+          const ctx = await ctxResp.json();
+          if (ctx.metadata?.subtitle_segments) {
+            segments = ctx.metadata.subtitle_segments;
+          }
+        }
+      } catch (e) {}
+    }
+    tlState.subtitleSegments = segments;
+    document.getElementById('tl-job-info').innerHTML =
+      `视频: ${videoPath.split('/').pop()}<br>字幕: ${segments.length} 段`;
+    renderTimeline();
+  } catch (e) {
+    document.getElementById('tl-job-info').textContent = `加载失败: ${e.message}`;
+  }
+
+  // 重置已添加片段
+  tlState.clips = [];
+  renderClipList();
+}
+
+// 渲染时间轴
+function renderTimeline() {
+  const duration = tlState.videoDuration || (tlState.subtitleSegments.length ?
+    tlState.subtitleSegments[tlState.subtitleSegments.length - 1].end : 30);
+  const container = document.getElementById('tl-timeline');
+  const trackWidth = container.offsetWidth - 100 || 800;
+  tlState.timelineWidth = trackWidth;
+  const pxPerSec = trackWidth / duration;
+  tlState.pxPerSec = pxPerSec;
+
+  // 渲染标尺
+  const ruler = document.getElementById('tl-ruler');
+  ruler.innerHTML = '';
+  ruler.style.width = trackWidth + 'px';
+  const tickInterval = duration > 60 ? 10 : duration > 20 ? 5 : 2;
+  for (let t = 0; t <= duration; t += tickInterval) {
+    const x = t * pxPerSec;
+    const tick = document.createElement('div');
+    tick.className = 'timeline-ruler-tick';
+    tick.style.left = x + 'px';
+    ruler.appendChild(tick);
+    const label = document.createElement('div');
+    label.className = 'timeline-ruler-label';
+    label.style.left = x + 'px';
+    label.textContent = t + 's';
+    ruler.appendChild(label);
+  }
+
+  // 主视频轨道
+  const mainTrack = document.getElementById('tl-main-track');
+  mainTrack.style.width = trackWidth + 'px';
+  mainTrack.innerHTML = `<div class="tl-main-segment" style="left:0;width:100%">数字人口播 ${duration.toFixed(1)}s</div>`;
+
+  // B-roll 轨道
+  const brollTrack = document.getElementById('tl-broll-track');
+  brollTrack.style.width = trackWidth + 'px';
+  brollTrack.innerHTML = '';
+  brollTrack.onclick = (e) => {
+    // 点击 B-roll 轨道空白处添加片段
+    if (e.target !== brollTrack) return;
+    if (!tlState.selectedAsset) {
+      toast('请先在左侧选择一个 B-roll 素材', 'error');
+      return;
+    }
+    const rect = brollTrack.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const clickTime = x / pxPerSec;
+    openClipModal(clickTime, duration);
+  };
+  // 渲染已添加的 B-roll 片段（可点击编辑）
+  tlState.clips.forEach((clip, idx) => {
+    const seg = document.createElement('div');
+    seg.className = `tl-broll-segment ${clip.mode}`;
+    seg.style.left = (clip.start * pxPerSec) + 'px';
+    seg.style.width = ((clip.end - clip.start) * pxPerSec) + 'px';
+    const modeIcon = clip.mode === 'pip' ? '🖼️' : '✂️';
+    const transIcon = clip.transition === 'fade' ? ' 🌗' : '';
+    seg.innerHTML = `${modeIcon}${transIcon} ${clip.filename || 'B-roll'}<span class="tl-segment-delete" onclick="event.stopPropagation();deleteClip(${idx})">×</span>`;
+    seg.title = `${clip.mode === 'pip' ? '画中画' : '整段切换'} · ${clip.start}s-${clip.end}s · 点击编辑`;
+    seg.onclick = (e) => {
+      e.stopPropagation();
+      openClipModalForEdit(idx);
+    };
+    brollTrack.appendChild(seg);
+  });
+
+  // 字幕轨道 + 字幕间插入点
+  const subTrack = document.getElementById('tl-subtitle-track');
+  subTrack.style.width = trackWidth + 'px';
+  subTrack.innerHTML = '';
+  if (tlState.subtitleSegments.length === 0) {
+    subTrack.innerHTML = '<div style="color:#666;font-size:11px;padding:0 8px;line-height:32px">无字幕数据（仍可点击 B-roll 轨道插入）</div>';
+  } else {
+    tlState.subtitleSegments.forEach((seg, i) => {
+      const el = document.createElement('div');
+      el.className = 'tl-subtitle-segment';
+      el.style.left = (seg.start * pxPerSec) + 'px';
+      el.style.width = ((seg.end - seg.start) * pxPerSec) + 'px';
+      el.textContent = seg.text || '';
+      el.title = `${seg.start.toFixed(1)}s - ${seg.end.toFixed(1)}s: ${seg.text || ''}`;
+      subTrack.appendChild(el);
+
+      // 在当前字幕结束后、下一段字幕开始前插入 "+" 按钮（字幕间隙）
+      if (i < tlState.subtitleSegments.length - 1) {
+        const nextSeg = tlState.subtitleSegments[i + 1];
+        const gapStart = seg.end;
+        const gapEnd = nextSeg.start;
+        if (gapEnd > gapStart + 0.1) {
+          const gapMid = (gapStart + gapEnd) / 2;
+          const insertBtn = document.createElement('div');
+          insertBtn.className = 'tl-insert-point';
+          insertBtn.style.left = (gapMid * pxPerSec) + 'px';
+          insertBtn.textContent = '+';
+          insertBtn.title = `在字幕间插入 B-roll（${gapStart.toFixed(1)}s - ${gapEnd.toFixed(1)}s 间隙）`;
+          insertBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (!tlState.selectedAsset) {
+              toast('请先在左侧选择一个 B-roll 素材', 'error');
+              return;
+            }
+            // 默认填充整个间隙
+            openClipModal(gapStart, gapEnd, true);
+          };
+          subTrack.appendChild(insertBtn);
+        }
+      }
+    });
+  }
+}
+
+// 加载 B-roll 素材库
+async function loadBrollAssets() {
+  try {
+    const assets = await api('/api/broll/assets');
+    tlState.brollAssets = assets;
+    renderBrollAssets();
+  } catch (e) {
+    // 素材库可能为空
+    tlState.brollAssets = [];
+    renderBrollAssets();
+  }
+}
+
+// 渲染素材库
+function renderBrollAssets() {
+  const list = document.getElementById('tl-broll-list');
+  if (!tlState.brollAssets.length) {
+    list.innerHTML = '<div style="text-align:center;color:#666;font-size:12px;padding:16px">暂无素材，请上传</div>';
+    return;
+  }
+  list.innerHTML = tlState.brollAssets.map(a => {
+    const sizeStr = a.size > 1024*1024 ? (a.size/1024/1024).toFixed(1)+'MB' : Math.round(a.size/1024)+'KB';
+    const icon = a.kind === 'video' ? '🎬' : '🖼️';
+    const thumb = a.kind === 'image'
+      ? `<img src="/api/broll/assets/${encodeURIComponent(a.filename)}" onerror="this.parentElement.innerHTML='${icon}'">`
+      : icon;
+    return `
+      <div class="broll-asset-card ${tlState.selectedAsset?.path === a.path ? 'selected' : ''}"
+           onclick="selectBrollAsset('${a.path}','${a.filename}','${a.kind}')">
+        <div class="broll-asset-thumb">${thumb}</div>
+        <div class="broll-asset-info">
+          <div class="broll-asset-name">${a.filename}</div>
+          <div class="broll-asset-meta">${a.kind === 'video' ? '视频' : '图片'} · ${sizeStr}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// 选择素材
+function selectBrollAsset(path, filename, kind) {
+  tlState.selectedAsset = { path, filename, kind };
+  renderBrollAssets();
+  toast(`已选择素材: ${filename}`, 'success');
+}
+
+// 上传 B-roll 素材
+async function onBrollUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById('tl-upload-text').textContent = file.name;
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const resp = await fetch('/api/broll/upload', { method: 'POST', body: formData });
+    const result = await resp.json();
+    if (result.success) {
+      toast(`素材上传成功: ${result.filename}`, 'success');
+      await loadBrollAssets();
+      // 自动选中新上传的素材
+      selectBrollAsset(result.path, result.filename, file.type.startsWith('video/') ? 'video' : 'image');
+      document.getElementById('tl-upload-text').textContent = '点击上传视频/图片';
+    } else {
+      toast('上传失败', 'error');
+    }
+  } catch (e) {
+    toast(`上传失败: ${e.message}`, 'error');
+  }
+  input.value = '';
+}
+
+// 打开片段编辑弹窗（新增模式）
+// clickTime: 开始时间；endOrDuration: 若 fillGap=true 则为结束时间，否则为视频总时长
+function openClipModal(clickTime, endOrDuration, fillGap = false) {
+  const asset = tlState.selectedAsset;
+  let startT, endT;
+  if (fillGap) {
+    // 字幕间隙插入：clickTime=间隙开始，endOrDuration=间隙结束
+    startT = clickTime;
+    endT = endOrDuration;
+  } else {
+    // 点击轨道：默认时长 3 秒，不超过视频剩余时长
+    const defaultDur = Math.min(3, endOrDuration - clickTime);
+    startT = clickTime;
+    endT = clickTime + defaultDur;
+  }
+  tlState.editingClipIdx = -1;
+  tlState.pendingClip = {
+    path: asset.path,
+    filename: asset.filename,
+    kind: asset.kind,
+    start: parseFloat(startT.toFixed(1)),
+    end: parseFloat(endT.toFixed(1)),
+    mode: 'pip',
+    position: 'bottom_right',
+    scale: 0.3,
+    volume: 0,
+    transition: 'none',
+  };
+  fillClipModalForm(tlState.pendingClip);
+  document.getElementById('tl-clip-modal').style.display = '';
+  document.querySelector('#tl-clip-modal .modal-title').textContent = '添加 B-roll 片段';
+  document.querySelector('#tl-clip-modal .btn-primary').textContent = '添加片段';
+}
+
+// 打开片段编辑弹窗（编辑已有片段）
+function openClipModalForEdit(idx) {
+  const clip = tlState.clips[idx];
+  if (!clip) return;
+  tlState.editingClipIdx = idx;
+  tlState.pendingClip = { ...clip };
+  fillClipModalForm(clip);
+  document.getElementById('tl-clip-modal').style.display = '';
+  document.querySelector('#tl-clip-modal .modal-title').textContent = '编辑 B-roll 片段';
+  document.querySelector('#tl-clip-modal .btn-primary').textContent = '保存修改';
+}
+
+// 填充弹窗表单
+function fillClipModalForm(clip) {
+  document.getElementById('clip-start').value = clip.start;
+  document.getElementById('clip-end').value = clip.end;
+  document.querySelector(`input[name="clip-mode"][value="${clip.mode || 'pip'}"]`).checked = true;
+  document.getElementById('clip-position').value = clip.position || 'bottom_right';
+  document.getElementById('clip-scale').value = clip.scale || 0.3;
+  document.getElementById('clip-scale-val').textContent = Math.round((clip.scale || 0.3) * 100) + '%';
+  document.getElementById('clip-volume').value = clip.volume || 0;
+  document.getElementById('clip-volume-val').textContent = Math.round((clip.volume || 0) * 100) + '%';
+  document.getElementById('clip-transition').value = clip.transition || 'none';
+  onClipModeChange();
+}
+
+// 模式切换时显示/隐藏画中画设置
+function onClipModeChange() {
+  const mode = document.querySelector('input[name="clip-mode"]:checked').value;
+  const pipSettings = document.getElementById('clip-pip-settings');
+  const scaleGroup = document.getElementById('clip-scale-group');
+  if (mode === 'pip') {
+    pipSettings.style.display = '';
+    scaleGroup.style.display = '';
+  } else {
+    pipSettings.style.display = 'none';
+    scaleGroup.style.display = 'none';
+  }
+}
+
+// 关闭弹窗
+function closeClipModal() {
+  document.getElementById('tl-clip-modal').style.display = 'none';
+  tlState.pendingClip = null;
+  tlState.editingClipIdx = -1;
+}
+
+// 确认添加/保存片段
+function confirmAddClip() {
+  if (!tlState.pendingClip) return;
+  const start = parseFloat(document.getElementById('clip-start').value);
+  const end = parseFloat(document.getElementById('clip-end').value);
+  if (isNaN(start) || isNaN(end) || end <= start) {
+    toast('时间设置无效，结束时间必须大于开始时间', 'error');
+    return;
+  }
+  const mode = document.querySelector('input[name="clip-mode"]:checked').value;
+  const clip = {
+    ...tlState.pendingClip,
+    start,
+    end,
+    mode,
+    position: document.getElementById('clip-position').value,
+    scale: parseFloat(document.getElementById('clip-scale').value),
+    volume: parseFloat(document.getElementById('clip-volume').value),
+    transition: document.getElementById('clip-transition').value,
+  };
+  if (tlState.editingClipIdx >= 0) {
+    // 编辑模式：替换已有片段
+    tlState.clips[tlState.editingClipIdx] = clip;
+    toast(`已更新片段 (${start}s-${end}s)`, 'success');
+  } else {
+    // 新增模式
+    tlState.clips.push(clip);
+    toast(`已添加 ${mode === 'pip' ? '画中画' : '整段切换'} 片段 (${start}s-${end}s)`, 'success');
+  }
+  closeClipModal();
+  renderTimeline();
+  renderClipList();
+}
+
+// 渲染已添加片段列表
+function renderClipList() {
+  const list = document.getElementById('tl-clip-list');
+  if (!tlState.clips.length) {
+    list.innerHTML = '<div style="text-align:center;color:#666;font-size:12px;padding:12px">暂无 B-roll 片段，点击字幕间的 + 或 B-roll 轨道添加</div>';
+    return;
+  }
+  list.innerHTML = tlState.clips.map((clip, idx) => {
+    const modeLabel = clip.mode === 'pip' ? '画中画' : '整段切换';
+    const posLabel = clip.mode === 'pip' ? ` · ${clip.position} · ${Math.round(clip.scale*100)}%` : '';
+    const transLabel = clip.transition === 'fade' ? ' · 淡入淡出' : '';
+    return `
+      <div class="tl-clip-item">
+        <span class="clip-badge ${clip.mode}">${modeLabel}</span>
+        <span>${clip.filename}</span>
+        <span style="color:#666">${clip.start}s - ${clip.end}s${posLabel}${transLabel}</span>
+        <span class="clip-edit" onclick="openClipModalForEdit(${idx})" title="编辑">✏️</span>
+        <span class="clip-delete" onclick="deleteClip(${idx})" title="删除">🗑️</span>
+      </div>
+    `;
+  }).join('');
+}
+
+// 删除片段
+function deleteClip(idx) {
+  tlState.clips.splice(idx, 1);
+  renderTimeline();
+  renderClipList();
+}
+
+// 清空所有片段
+function clearAllBrollClips() {
+  if (!tlState.clips.length) return;
+  if (!confirm('确定清空所有 B-roll 片段？')) return;
+  tlState.clips = [];
+  renderTimeline();
+  renderClipList();
+}
+
+// 应用 B-roll 合成
+async function applyBrollToVideo() {
+  if (!tlState.videoPath) {
+    toast('请先选择任务', 'error');
+    return;
+  }
+  if (!tlState.clips.length) {
+    toast('请先添加 B-roll 片段', 'error');
+    return;
+  }
+  const btn = document.getElementById('tl-apply-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 合成中...';
+
+  try {
+    const formData = new FormData();
+    formData.append('video_path', tlState.videoPath);
+    formData.append('clips_json', JSON.stringify(tlState.clips));
+    const resp = await fetch('/api/broll/apply', { method: 'POST', body: formData });
+    const result = await resp.json();
+    if (result.success) {
+      toast(`B-roll 合成成功！输出: ${result.output_path.split('/').pop()}`, 'success');
+      // 更新预览为合成后的视频
+      document.getElementById('tl-video-preview').src = `/api/files?path=${encodeURIComponent(result.output_path)}`;
+    } else {
+      toast(`合成失败: ${result.error}`, 'error');
+    }
+  } catch (e) {
+    toast(`合成失败: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '应用 B-roll 合成';
+  }
+}
+
+// 在播放头位置插入 B-roll
+function insertBrollAtPlayhead() {
+  if (!tlState.videoPath) {
+    toast('请先选择任务', 'error');
+    return;
+  }
+  if (!tlState.selectedAsset) {
+    toast('请先在左侧选择一个 B-roll 素材', 'error');
+    return;
+  }
+  const videoEl = document.getElementById('tl-video-preview');
+  const clickTime = videoEl.currentTime || 0;
+  const duration = tlState.videoDuration || (tlState.subtitleSegments.length ?
+    tlState.subtitleSegments[tlState.subtitleSegments.length - 1].end : 30);
+  openClipModal(clickTime, duration);
+}
+
+// ===== 快捷剪辑（裁剪/音量/淡入淡出） =====
+
+// 打开快捷剪辑弹窗
+function openQuickEditModal(action) {
+  if (!tlState.videoPath) {
+    toast('请先选择任务', 'error');
+    return;
+  }
+  tlState.quickEditAction = action;
+  const titles = { trim: '✂️ 裁剪视频', volume: '🔊 调整音量', fade: '🌗 淡入淡出' };
+  document.getElementById('qe-title').textContent = titles[action] || '快捷剪辑';
+  const duration = tlState.videoDuration || 0;
+  const body = document.getElementById('qe-body');
+
+  if (action === 'trim') {
+    body.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">开始时间（秒）<span style="color:#999"> · 视频总长 ${duration.toFixed(1)}s</span></label>
+        <input type="number" class="form-input" id="qe-trim-start" min="0" max="${duration.toFixed(1)}" step="0.1" value="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label">结束时间（秒）</label>
+        <input type="number" class="form-input" id="qe-trim-end" min="0" max="${duration.toFixed(1)}" step="0.1" value="${duration.toFixed(1)}">
+      </div>
+      <div style="font-size:12px;color:#999">保留 [开始, 结束] 区间，裁掉头尾</div>
+    `;
+  } else if (action === 'volume') {
+    body.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">音量倍数 <span id="qe-vol-val" style="color:#666">1.0x（原音量）</span></label>
+        <input type="range" id="qe-vol" min="0" max="2" step="0.1" value="1.0" oninput="document.getElementById('qe-vol-val').textContent=this.value+'x'">
+      </div>
+      <div style="font-size:12px;color:#999">0=静音，1.0=原音量，2.0=两倍音量</div>
+    `;
+  } else if (action === 'fade') {
+    body.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">片头淡入时长（秒） <span id="qe-fi-val" style="color:#666">0.5s</span></label>
+        <input type="range" id="qe-fi" min="0" max="3" step="0.1" value="0.5" oninput="document.getElementById('qe-fi-val').textContent=this.value+'s'">
+      </div>
+      <div class="form-group">
+        <label class="form-label">片尾淡出时长（秒） <span id="qe-fo-val" style="color:#666">0.5s</span></label>
+        <input type="range" id="qe-fo" min="0" max="3" step="0.1" value="0.5" oninput="document.getElementById('qe-fo-val').textContent=this.value+'s'">
+      </div>
+      <div style="font-size:12px;color:#999">画面与声音同步淡入淡出</div>
+    `;
+  }
+  document.getElementById('tl-quickedit-modal').style.display = '';
+}
+
+// 关闭快捷剪辑弹窗
+function closeQuickEditModal() {
+  document.getElementById('tl-quickedit-modal').style.display = 'none';
+  tlState.quickEditAction = '';
+}
+
+// 确认快捷剪辑
+async function confirmQuickEdit() {
+  const action = tlState.quickEditAction;
+  if (!action || !tlState.videoPath) return;
+  let params = {};
+  if (action === 'trim') {
+    params.start = parseFloat(document.getElementById('qe-trim-start').value) || 0;
+    params.end = parseFloat(document.getElementById('qe-trim-end').value) || 0;
+    if (params.end <= params.start) {
+      toast('结束时间必须大于开始时间', 'error');
+      return;
+    }
+  } else if (action === 'volume') {
+    params.volume = parseFloat(document.getElementById('qe-vol').value);
+  } else if (action === 'fade') {
+    params.fade_in = parseFloat(document.getElementById('qe-fi').value);
+    params.fade_out = parseFloat(document.getElementById('qe-fo').value);
+  }
+
+  const btn = document.getElementById('qe-confirm-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 处理中...';
+  try {
+    const formData = new FormData();
+    formData.append('video_path', tlState.videoPath);
+    formData.append('action', action);
+    formData.append('params_json', JSON.stringify(params));
+    const resp = await fetch('/api/video/quick-edit', { method: 'POST', body: formData });
+    const result = await resp.json();
+    if (result.success) {
+      toast(`剪辑成功: ${result.output_path.split('/').pop()}`, 'success');
+      // 更新预览为处理后的视频
+      tlState.videoPath = result.output_path;
+      document.getElementById('tl-video-preview').src = `/api/files?path=${encodeURIComponent(result.output_path)}`;
+      closeQuickEditModal();
+    } else {
+      toast(`剪辑失败: ${result.error}`, 'error');
+    }
+  } catch (e) {
+    toast(`剪辑失败: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '应用';
+  }
+}

@@ -65,6 +65,9 @@ config/voices/*/sample.*
 config/avatars/*/reference.*
 config/avatars/*/meta.json
 
+# B-roll 素材库（用户上传的画中画素材）
+config/broll_assets/
+
 # 临时文件
 *.tmp
 *.bak

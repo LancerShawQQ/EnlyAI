@@ -44,6 +44,7 @@ class GenerateRequest(BaseModel):
     script_mode: str = "polish"
     platform: str = "douyin"
     auto_publish: bool = False
+    broll_clips: Optional[list] = None  # B-roll 画中画/插播片段
 
 
 class ModuleRunRequest(BaseModel):
@@ -54,6 +55,7 @@ class ModuleRunRequest(BaseModel):
     voice_id: str = "default"
     script_mode: str = "polish"
     platform: str = "douyin"
+    broll_clips: Optional[list] = None
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -155,6 +157,7 @@ def create_app() -> FastAPI:
                 script_mode=req.script_mode,
                 platform=req.platform,
                 auto_publish=req.auto_publish,
+                broll_clips=req.broll_clips,
             )
         )
         return result
@@ -174,6 +177,7 @@ def create_app() -> FastAPI:
                 voice_id=req.voice_id,
                 script_mode=req.script_mode,
                 platform=req.platform,
+                broll_clips=req.broll_clips,
             )
         )
         return result
@@ -219,6 +223,152 @@ def create_app() -> FastAPI:
             if p.exists():
                 return FileResponse(str(p))
         raise HTTPException(404, "无参考图")
+
+    # ============ B-roll 画中画素材管理 ============
+
+    @app.post("/api/broll/upload")
+    async def upload_broll(file: UploadFile = File(...)):
+        """上传 B-roll 素材（视频/图片），返回可引用的路径"""
+        broll_dir = Path("./config/broll_assets")
+        broll_dir.mkdir(parents=True, exist_ok=True)
+        suffix = Path(file.filename or "asset").suffix or ".mp4"
+        # 生成唯一文件名
+        import time as _t
+        filename = f"broll_{int(_t.time())}_{file.filename}"
+        # 清理文件名中的危险字符
+        filename = "".join(c for c in filename if c.isalnum() or c in "._-")
+        save_path = broll_dir / filename
+        with open(save_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        return {
+            "success": True,
+            "path": str(save_path),
+            "filename": filename,
+            "size": save_path.stat().st_size,
+        }
+
+    @app.get("/api/broll/assets")
+    async def list_broll_assets():
+        """列出所有已上传的 B-roll 素材"""
+        broll_dir = Path("./config/broll_assets")
+        if not broll_dir.exists():
+            return []
+        assets = []
+        for f in sorted(broll_dir.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+            if f.is_file():
+                ext = f.suffix.lower()
+                kind = "video" if ext in (".mp4", ".mov", ".avi", ".mkv", ".webm") else "image"
+                assets.append({
+                    "path": str(f),
+                    "filename": f.name,
+                    "kind": kind,
+                    "size": f.stat().st_size,
+                })
+        return assets
+
+    @app.get("/api/broll/assets/{filename}")
+    async def get_broll_asset(filename: str):
+        """获取 B-roll 素材文件（用于预览）"""
+        broll_dir = Path("./config/broll_assets")
+        # 防止路径穿越
+        safe_name = Path(filename).name
+        p = broll_dir / safe_name
+        if not p.exists() or not p.is_file():
+            raise HTTPException(404, "素材不存在")
+        return FileResponse(str(p))
+
+    @app.post("/api/broll/apply")
+    async def apply_broll(
+        video_path: str = Form(...),
+        clips_json: str = Form(...),
+    ):
+        """对已有视频应用 B-roll（独立调用，不经过完整流水线）
+
+        Args:
+            video_path: 输入视频路径
+            clips_json: B-roll 片段列表 JSON 字符串
+        """
+        import json
+        from ..modules.broll_engine import BRollEngine
+        loop = asyncio.get_event_loop()
+
+        def _apply():
+            video = Path(video_path)
+            if not video.exists():
+                return {"success": False, "error": "视频不存在"}
+            try:
+                clips = json.loads(clips_json)
+            except Exception as e:
+                return {"success": False, "error": f"clips_json 解析失败: {e}"}
+            engine = BRollEngine()
+            engine.setup()
+            output = video.parent / "broll_applied.mp4"
+            result = engine.apply_broll_to_existing_video(video, clips, output)
+            return {
+                "success": True,
+                "output_path": str(result),
+                "size": result.stat().st_size,
+            }
+
+        return await loop.run_in_executor(None, _apply)
+
+    @app.post("/api/video/quick-edit")
+    async def quick_edit_video(
+        video_path: str = Form(...),
+        action: str = Form(...),
+        params_json: str = Form(""),
+    ):
+        """快捷剪辑：裁剪/音量/淡入淡出
+
+        Args:
+            video_path: 输入视频路径
+            action: 操作类型 trim / volume / fade
+            params_json: 操作参数 JSON
+                - trim: {start, end}
+                - volume: {volume}
+                - fade: {fade_in, fade_out}
+        """
+        import json
+        from ..core.ffmpeg_utils import FFmpegRunner
+        loop = asyncio.get_event_loop()
+
+        def _edit():
+            video = Path(video_path)
+            if not video.exists():
+                return {"success": False, "error": "视频不存在"}
+            try:
+                params = json.loads(params_json) if params_json else {}
+            except Exception as e:
+                return {"success": False, "error": f"params_json 解析失败: {e}"}
+            ff = FFmpegRunner()
+            if not ff.available():
+                return {"success": False, "error": "FFmpeg 不可用"}
+            stem = video.stem
+            suffix = video.suffix
+            if action == "trim":
+                start = float(params.get("start", 0))
+                end = params.get("end")
+                end = float(end) if end is not None else None
+                out = video.parent / f"{stem}_trimmed{suffix}"
+                ff.trim_video(video, out, start=start, end=end)
+            elif action == "volume":
+                vol = float(params.get("volume", 1.0))
+                out = video.parent / f"{stem}_vol{suffix}"
+                ff.adjust_volume(video, out, volume=vol)
+            elif action == "fade":
+                fi = float(params.get("fade_in", 0))
+                fo = float(params.get("fade_out", 0))
+                out = video.parent / f"{stem}_fade{suffix}"
+                ff.add_fade(video, out, fade_in=fi, fade_out=fo)
+            else:
+                return {"success": False, "error": f"未知操作: {action}"}
+            return {
+                "success": True,
+                "output_path": str(out),
+                "size": out.stat().st_size if out.exists() else 0,
+            }
+
+        return await loop.run_in_executor(None, _edit)
 
     @app.post("/api/avatars/register")
     async def register_avatar(

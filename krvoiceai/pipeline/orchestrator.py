@@ -82,6 +82,7 @@ class PipelineOrchestrator:
         voice_id: str = "default",
         script_mode: str = "polish",
         metadata: Optional[dict] = None,
+        broll_clips: Optional[list] = None,
     ) -> str:
         """提交任务，返回 job_id"""
         job_id = self._gen_job_id()
@@ -95,6 +96,7 @@ class PipelineOrchestrator:
             "script_mode": script_mode,
             "work_dir": str(work_dir),
             "metadata": metadata or {},
+            "broll_clips": broll_clips or [],
         }
         self.store.create_job(job_id, input_data)
         self.logger.info(f"任务已提交 job_id={job_id}")
@@ -256,6 +258,9 @@ class PipelineOrchestrator:
             metadata=input_data.get("metadata", {}),
         )
         ctx.metadata["script_mode"] = input_data.get("script_mode", "polish")
+        # B-roll 片段从输入数据传入
+        if input_data.get("broll_clips"):
+            ctx.broll_clips = input_data["broll_clips"]
         ctx.ensure_work_dir()
 
         # 尝试从持久化的 context.json 恢复中间产物（断点续跑）
@@ -277,6 +282,8 @@ class PipelineOrchestrator:
             "cover_path": str(ctx.cover_path) if ctx.cover_path else None,
             "title": ctx.title,
             "final_video": str(ctx.final_video) if ctx.final_video else None,
+            "broll_clips": ctx.broll_clips,
+            "broll_video_path": str(ctx.broll_video_path) if ctx.broll_video_path else None,
             "metadata": ctx.metadata,
         }
         ctx_file.write_text(
@@ -315,6 +322,12 @@ class PipelineOrchestrator:
                 ctx.title = data["title"]
             if data.get("final_video"):
                 ctx.final_video = Path(data["final_video"])
+            if data.get("broll_clips"):
+                ctx.broll_clips = data["broll_clips"]
+            if data.get("broll_video_path"):
+                p = Path(data["broll_video_path"])
+                if p.exists():
+                    ctx.broll_video_path = p
             # 合并 metadata（保留 tts_timestamps 等）
             saved_meta = data.get("metadata", {})
             for k, v in saved_meta.items():

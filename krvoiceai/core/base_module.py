@@ -52,6 +52,11 @@ class JobContext:
     cover_path: Optional[Path] = None     # 封面
     title: Optional[str] = None           # 标题
 
+    # B-roll 画中画片段（用户在时间轴编辑器中插入的视频/图片片段）
+    # 每个片段: {path, start, end, mode(pip/cut), position, scale, volume, transition}
+    broll_clips: list = field(default_factory=list)
+    broll_video_path: Optional[Path] = None  # 叠加 B-roll 后的视频
+
     # 最终产物
     final_video: Optional[Path] = None
 
