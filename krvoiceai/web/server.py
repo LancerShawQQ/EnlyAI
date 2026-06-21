@@ -84,9 +84,10 @@ class TestAvatarRequest(BaseModel):
 class ScriptProcessRequest(BaseModel):
     """文案 AI 处理请求"""
     script: str = ""
-    action: str = "polish"  # polish/rewrite/expand/shorten/style_xxx
+    action: str = "polish"  # polish/rewrite/expand/shorten/style/extract/generate
     style: Optional[str] = None  # 幽默/严肃/活泼/专业/口语化
     topic: Optional[str] = None  # generate 模式下的主题
+    reference_url: Optional[str] = None  # extract 模式下的参考视频链接
 
 
 class BatchGenerateItem(BaseModel):
@@ -696,7 +697,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/script/process")
     async def process_script(req: ScriptProcessRequest):
-        """AI 文案处理：润色/仿写/扩写/缩写/风格转换/生成"""
+        """AI 文案处理：润色/仿写/扩写/缩写/风格转换/生成/提取"""
         krvoice = _get_app()
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
@@ -704,6 +705,7 @@ def create_app() -> FastAPI:
             lambda: krvoice.process_script(
                 script=req.script, action=req.action,
                 style=req.style, topic=req.topic,
+                reference_url=req.reference_url,
             )
         )
         return result

@@ -398,18 +398,39 @@ class KrVoiceAI:
         action: str = "polish",
         style: Optional[str] = None,
         topic: Optional[str] = None,
+        reference_url: Optional[str] = None,
     ) -> dict:
         """AI 文案处理（独立于流水线，供文案工作台调用）
 
         Args:
             script: 原始文案（generate 模式下可为空）
-            action: polish/rewrite/expand/shorten/style/generate
+            action: polish/rewrite/expand/shorten/style/generate/extract
             style: 风格转换时的目标风格（幽默/严肃/活泼/专业/口语化/煽情）
             topic: generate 模式下的主题
+            reference_url: extract 模式下的参考视频链接
 
         Returns:
             {"success": bool, "script": str, "action": str, "error": str}
         """
+        # 文案提取：从参考视频链接提取文案
+        if action == "extract":
+            if not reference_url:
+                return {"success": False, "error": "请输入参考视频链接"}
+            try:
+                extractor = self.modules.get("script_extract")
+                if not extractor:
+                    return {"success": False, "error": "文案提取模块未初始化"}
+                text = extractor.extract(reference_url)
+                return {
+                    "success": True,
+                    "script": text,
+                    "action": "extract",
+                    "char_count": len(text),
+                    "mock": extractor.asr_provider == "mock" or not extractor._ytdlp_available,
+                }
+            except Exception as e:
+                return {"success": False, "error": str(e), "action": "extract"}
+
         # 构造 prompt
         sys_prompt = (
             "你是一位资深的短视频口播文案创作者，擅长创作高完播率、高互动的口播内容。"

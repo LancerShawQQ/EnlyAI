@@ -1093,6 +1093,8 @@ async function wizardAiGenerate() {
     if (result.success) {
       document.getElementById('wiz-script').value = result.script;
       updateScriptStats(result.script);
+      // AI 生成成功后切换到"手动输入"标签页，让用户看到生成的文案
+      switchWizardScriptTab('manual');
       toast(`生成成功${result.mock ? '（Mock 模式）' : ''}`, 'success');
     } else {
       toast(`生成失败: ${result.error}`, 'error');
@@ -1119,7 +1121,10 @@ async function wizardExtractScript() {
     if (result.success) {
       document.getElementById('wiz-script').value = result.script;
       updateScriptStats(result.script);
-      toast('文案提取成功', 'success');
+      // 提取成功后自动切换到"手动输入"标签页，让用户看到提取的文案
+      switchWizardScriptTab('manual');
+      const mockHint = result.mock ? '（Mock 模式：未配置 ASR，返回示例文案。配置 MiMo ASR 可提取真实文案）' : '';
+      toast(`文案提取成功${mockHint}`, 'success');
     } else {
       toast(`提取失败: ${result.error}`, 'error');
     }
@@ -1129,6 +1134,16 @@ async function wizardExtractScript() {
     btn.disabled = false;
     btn.innerHTML = '🔗 提取文案';
   }
+}
+
+// 切换 wizard 步骤3 的子标签页（manual/ai/extract）
+function switchWizardScriptTab(tabName) {
+  document.querySelectorAll('[data-wiztab]').forEach(t => {
+    t.classList.toggle('active', t.dataset.wiztab === tabName);
+  });
+  document.querySelectorAll('.sub-page').forEach(p => p.classList.remove('active'));
+  const target = document.getElementById(`wiz-script-${tabName}`);
+  if (target) target.classList.add('active');
 }
 
 async function wizardScriptProcess() {
@@ -1147,6 +1162,8 @@ async function wizardScriptProcess() {
     if (result.success) {
       document.getElementById('wiz-script').value = result.script;
       updateScriptStats(result.script);
+      // AI 处理成功后切换到"手动输入"标签页，让用户看到处理结果
+      switchWizardScriptTab('manual');
       toast(`处理成功${result.mock ? '（Mock 模式）' : ''}`, 'success');
     } else {
       toast(`处理失败: ${result.error}`, 'error');
@@ -1301,10 +1318,19 @@ async function wizardGenerate() {
 
     toast(result.success ? '视频生成成功！' : '生成未完全成功', result.success ? 'success' : 'error');
   } catch (e) {
-    toast(`生成失败: ${e.message}`, 'error');
+    // 友好化错误提示
+    let errMsg = e.message || '未知错误';
+    if (errMsg.includes('Gateway') || errMsg.includes('502') || errMsg.includes('503') || errMsg.includes('504')) {
+      errMsg = 'AI 服务暂时不可用（网关错误），请稍后重试。可能是 LLM/TTS API 限流或服务端临时故障。';
+    } else if (errMsg.includes('timeout') || errMsg.includes('Timeout')) {
+      errMsg = '请求超时，请检查网络或稍后重试。';
+    } else if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError')) {
+      errMsg = '网络连接失败，请检查服务器是否运行。';
+    }
+    toast(`生成失败: ${errMsg}`, 'error');
     console.error(e);
     // 模态框显示错误
-    finishProgressModalError(e.message);
+    finishProgressModalError(errMsg);
   } finally {
     btn.disabled = false;
     btn.innerHTML = '🚀 开始生成视频';

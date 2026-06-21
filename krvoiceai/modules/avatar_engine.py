@@ -58,7 +58,15 @@ class AvatarEngine(BaseModule):
                 )
                 self.provider = "mock"
             else:
-                self.logger.info(f"数字人模块初始化 provider=wav2lip, checkpoint={checkpoint.name}")
+                # 检查 Wav2Lip 依赖是否可用（torch/librosa/scipy/cv2）
+                deps_ok = self._check_wav2lip_deps()
+                if not deps_ok:
+                    self.logger.warning(
+                        "Wav2Lip 依赖缺失（torch/librosa/scipy/cv2），降级到 mock 模式"
+                    )
+                    self.provider = "mock"
+                else:
+                    self.logger.info(f"数字人模块初始化 provider=wav2lip, checkpoint={checkpoint.name}")
         elif self.provider in ("musetalk", "latentsync", "echomimic"):
             available = self.gpu.health_check_avatar()
             if not available:
@@ -71,6 +79,19 @@ class AvatarEngine(BaseModule):
         else:
             self.logger.info(f"数字人模块初始化 provider={self.provider}")
         super().setup()
+
+    @staticmethod
+    def _check_wav2lip_deps() -> bool:
+        """检查 Wav2Lip 运行所需的 Python 依赖是否可用"""
+        missing = []
+        for mod in ("torch", "librosa", "scipy", "cv2", "numpy"):
+            try:
+                __import__(mod)
+            except ImportError:
+                missing.append(mod)
+        if missing:
+            return False
+        return True
 
     def run(self, ctx: JobContext) -> ModuleResult:
         """根据 ctx.audio_path 生成口播视频"""

@@ -107,14 +107,51 @@ class ScriptExtractor(BaseModule):
 
     def extract(self, video_url: str, lang: str = "zh") -> str:
         """直接调用接口：从视频 URL 提取文案"""
+        # 从分享文本中提取真实 URL（用户可能粘贴整段抖音分享文案）
+        video_url = self._extract_url_from_text(video_url)
+        if not video_url:
+            raise ValueError("无法从输入中识别有效的视频链接，请粘贴包含抖音/快手/B站/YouTube 链接的内容")
+
         use_real = self._ytdlp_available and self.asr_provider in ("funasr", "mimo")
         if use_real:
             import tempfile
             with tempfile.TemporaryDirectory() as tmp:
-                text = self._extract_real(video_url, Path(tmp))
+                try:
+                    text = self._extract_real(video_url, Path(tmp))
+                except Exception as e:
+                    self.logger.warning(f"真实提取失败，降级到 mock 模式: {e}")
+                    text = self._extract_mock(video_url)
         else:
             text = self._extract_mock(video_url)
         return self._clean_text(text)
+
+    @staticmethod
+    def _extract_url_from_text(text: str) -> str:
+        """从用户输入的文本中提取视频 URL
+
+        用户可能粘贴整段抖音分享文案，如：
+        "2.87 复制打开抖音，看看【侃侃体育的作品】... https://v.douyin.com/5lPIfwzFtH0/ 03/29 ULw:/"
+        需要从中提取出 https://v.douyin.com/5lPIfwzFtH0/
+        """
+        if not text:
+            return ""
+        text = text.strip()
+        # 如果本身就是 URL，直接返回
+        if re.match(r"^https?://", text):
+            return text
+        # 从文本中匹配 URL（支持抖音/快手/B站/YouTube短链）
+        url_pattern = r"https?://[^\s<>\u4e00-\u9fa5]+"
+        matches = re.findall(url_pattern, text)
+        if matches:
+            # 清理末尾可能的标点
+            url = matches[0].rstrip(",.;!?，。；！？、）)】]")
+            return url
+        # 尝试匹配不带 https 的短链（如 v.douyin.com/xxx）
+        short_pattern = r"(?:v\.douyin\.com|v\.kuaishou\.com|b23\.tv|youtu\.be)/[^\s<>\u4e00-\u9fa5]+"
+        matches = re.findall(short_pattern, text)
+        if matches:
+            return "https://" + matches[0].rstrip(",.;!?，。；！？、）)】]")
+        return ""
 
     def _extract_real(self, url: str, work_dir: Path) -> str:
         """真实提取：yt-dlp 下载 + ASR 转写（支持 MiMo / FunASR）"""
