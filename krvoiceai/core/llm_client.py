@@ -19,11 +19,12 @@ from .logger import get_logger
 class LLMClient:
     """OpenAI 兼容 LLM 客户端"""
 
-    # 429 限流重试配置
-    MAX_RETRIES = 5
-    RETRY_BASE_DELAY = 2.0  # 基础延迟秒数，指数退避
-    RATE_LIMIT_MAX_RETRIES = 8  # 429 限流专用最大重试次数
-    RATE_LIMIT_BASE_DELAY = 5.0  # 429 限流退避基数（更长）
+    # 429 限流重试配置（保守：频繁429说明额度耗尽，长时间阻塞会拖垮整个服务）
+    MAX_RETRIES = 3
+    RETRY_BASE_DELAY = 1.5  # 基础延迟秒数，指数退避
+    RATE_LIMIT_MAX_RETRIES = 3  # 429 限流专用最大重试次数（1+2+4=7s，快速失败）
+    RATE_LIMIT_BASE_DELAY = 1.0  # 429 限流退避基数
+    RATE_LIMIT_MAX_DELAY = 5.0  # 429 单次等待上限
 
     def __init__(self, provider: str | None = None):
         cfg = get_config()
@@ -79,8 +80,8 @@ class LLMClient:
                     rate_limit_attempts += 1
                     if rate_limit_attempts <= self.RATE_LIMIT_MAX_RETRIES:
                         delay = self.RATE_LIMIT_BASE_DELAY * (2 ** (rate_limit_attempts - 1))
-                        # 限制最大延迟 60s
-                        delay = min(delay, 60.0)
+                        # 限制最大延迟（避免长时间阻塞服务）
+                        delay = min(delay, self.RATE_LIMIT_MAX_DELAY)
                         self.logger.warning(
                             f"LLM 限流 429，第 {rate_limit_attempts}/{self.RATE_LIMIT_MAX_RETRIES} 次重试，"
                             f"等待 {delay:.1f}s"

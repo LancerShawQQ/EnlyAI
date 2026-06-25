@@ -328,37 +328,45 @@ def _build_ui() -> "gr.Blocks":
             check_btn = gr.Button("🔍 检测原创度", variant="primary")
             check_result = gr.HTML("<div style='color:#94a3b8;'>点击上方按钮开始检测</div>")
 
-            def _check_originality(text):
-                """原创检测"""
+            def _check_originality(text, progress=gr.Progress(track_tqdm=False)):
+                """原创检测（轻量级，直接调 checker，不重复跑 script_write）"""
                 if not text or not text.strip():
                     return "<div style='color:#ef4444;'>⚠️ 请先输入文案</div>"
+                progress(0.3, desc="正在检测原创度...")
                 try:
                     app = _get_app()
-                    res = app.run_single_module("originality_check", script=text)
+                    res = app.check_originality(text)
+                    progress(0.95, desc="检测完成")
                     if not res.get("success"):
                         err = res.get("error", "检测失败")
-                        result = res.get("result", {})
-                        # 解析失败原因
+                        result = res.get("data", {}) or {}
                         detail_html = ""
-                        if isinstance(result, dict):
-                            if result.get("banned_words"):
-                                words = result["banned_words"]
-                                detail_html += f"<div>🚫 命中违禁词：<b style='color:#ef4444;'>{', '.join(words)}</b></div>"
-                            if result.get("duplicate"):
-                                dup = result["duplicate"]
-                                detail_html += f"<div>🔁 与历史文案相似度过高：{dup.get('similarity', 0)*100:.0f}%（job={dup.get('job_id','')[:8]}）</div>"
-                            if result.get("llm_risk"):
-                                risk = result["llm_risk"]
-                                detail_html += f"<div>⚠️ LLM 风控：{risk.get('level','')} - {risk.get('reason','')}</div>"
-                        return f"<div style='color:#ef4444;'>❌ 未通过：{err}</div>{detail_html}<div style='color:#64748b;margin-top:8px;'>💡 可在第②步改写后重新检测</div>"
+                        if result.get("banned_words"):
+                            words = result["banned_words"]
+                            detail_html += f"<div>🚫 命中违禁词：<b style='color:#ef4444;'>{', '.join(words)}</b></div>"
+                        if result.get("duplicate"):
+                            dup = result["duplicate"]
+                            detail_html += f"<div>🔁 与历史文案相似度过高：{dup.get('similarity', 0)*100:.0f}%</div>"
+                        if result.get("llm_risk"):
+                            risk = result["llm_risk"]
+                            detail_html += f"<div>⚠️ LLM 风控：{risk.get('level','')} - {risk.get('reason','')}</div>"
+                        return (f"<div style='color:#ef4444;font-weight:bold;'>❌ 未通过：{err}</div>"
+                                f"{detail_html}"
+                                f"<div style='color:#64748b;margin-top:8px;'>💡 可在第②步改写后重新检测</div>")
                     else:
-                        result = res.get("result", {})
+                        result = res.get("data", {}) or {}
                         simhash = result.get("simhash", "")
+                        status = result.get("status", "passed")
                         auto_fixed = result.get("banned_auto_fixed", [])
                         extra = ""
                         if auto_fixed:
                             extra = f"<div style='color:#f59e0b;'>🔧 已自动修正违禁词：{', '.join(auto_fixed)}</div>"
-                        return f"<div style='color:#10b981;font-weight:bold;'>✅ 通过原创检测</div><div style='color:#64748b;font-size:13px;'>simhash: {simhash}</div>{extra}"
+                        note = ""
+                        if result.get("skipped_dupcheck"):
+                            note = "<div style='color:#94a3b8;font-size:12px;'>(已跳过查重，仅违禁词扫描)</div>"
+                        return (f"<div style='color:#10b981;font-weight:bold;'>✅ 通过原创检测</div>"
+                                f"<div style='color:#64748b;font-size:13px;'>状态: {status} | simhash: {simhash}</div>"
+                                f"{extra}{note}")
                 except Exception as e:
                     return f"<div style='color:#ef4444;'>❌ 检测出错：{e}</div>"
 
@@ -732,8 +740,8 @@ def _build_ui() -> "gr.Blocks":
     return demo
 
 
-def launch(host: str = "0.0.0.0", port: int = 7860, share: bool = False) -> None:
-    """启动 Gradio 服务"""
+def launch(host: str = "127.0.0.1", port: int = 7860, share: bool = False) -> None:
+    """启动 Gradio 服务（默认 127.0.0.1 本机访问，避免防火墙弹窗）"""
     if gr is None:
         raise RuntimeError("gradio 未安装，请运行: pip install gradio")
     demo = _build_ui()

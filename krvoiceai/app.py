@@ -292,6 +292,37 @@ class KrVoiceAI:
             "final_video": str(ctx.final_video) if ctx.final_video else None,
         }
 
+    def check_originality(self, text: str) -> dict:
+        """轻量级原创检测（直接调 checker.run，不经过 run_single_module，不重复跑 script_write）
+
+        避免 run_single_module 先执行 script_write（额外一次 LLM 调用，易触发限流）。
+
+        Args:
+            text: 待检测文案
+
+        Returns:
+            {"success": bool, "data": dict, "error": str|None}
+            data 含：char_count, simhash, status；失败时含 duplicate/banned_words/llm_risk
+        """
+        if not text or not text.strip():
+            return {"success": False, "data": {}, "error": "无文案可检测"}
+        try:
+            checker = self.modules.get("originality_check")
+            if checker is None:
+                return {"success": False, "data": {}, "error": "原创检测模块未初始化"}
+            # 构造最小 JobContext，仅传 script_text
+            from .core.base_module import JobContext
+            ctx = JobContext(input_script=text, script_text=text)
+            ctx.metadata["script_mode"] = "polish"
+            result = checker.execute(ctx)
+            return {
+                "success": result.success,
+                "data": result.data,
+                "error": result.error,
+            }
+        except Exception as e:
+            return {"success": False, "data": {}, "error": str(e)}
+
     def preview_tts(self, text: str, voice_id: str = "default") -> dict:
         """试听/预览合成（provider 无关，不经过流水线，供 UI 试听按钮调用）
 

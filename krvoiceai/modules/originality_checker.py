@@ -222,7 +222,11 @@ class OriginalityChecker(BaseModule):
 
         best: Optional[dict] = None
         for row in rows:
-            other = int(row["simhash"])
+            # simhash 存为 TEXT 字符串，读取时转回 int
+            try:
+                other = int(row["simhash"])
+            except (ValueError, TypeError):
+                continue
             sim = simhash_similarity(fingerprint, other)
             if sim >= self.simhash_threshold:
                 if best is None or sim > best["similarity"]:
@@ -256,7 +260,8 @@ class OriginalityChecker(BaseModule):
                 "INSERT OR REPLACE INTO history "
                 "(job_id, simhash, normalized_hash, preview, char_count, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                (job_id, fingerprint, fingerprint,
+                # simhash 是无符号64位，可能超出 SQLite 有符号 INTEGER 范围，存为 TEXT
+                (job_id, str(fingerprint), str(fingerprint),
                  text[:80], len(text), time.time()),
             )
             conn.commit()
