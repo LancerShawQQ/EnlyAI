@@ -297,8 +297,10 @@ class ScriptExtractor(BaseModule):
             f"faster-whisper 本地转写: {audio_path.name} model={model_size}"
         )
         model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        # initial_prompt 引导 whisper 输出简体中文 + 标点（默认 small 模型倾向繁体）
         segments, _ = model.transcribe(
             str(audio_path), language="zh", vad_filter=True,
+            initial_prompt="以下是普通话的句子，使用简体中文和正确的标点符号。",
         )
         text = "".join(seg.text for seg in segments).strip()
         self.logger.info(f"转写完成: {len(text)} 字, 预览: {text[:80]}")
@@ -614,9 +616,21 @@ class ScriptExtractor(BaseModule):
                 self.logger.info(f"Playwright 渲染: {share_url}")
                 try:
                     page.goto(share_url, wait_until="domcontentloaded", timeout=30000)
-                    page.wait_for_timeout(5000)
+                    page.wait_for_timeout(3000)
                 except Exception as e:
                     self.logger.debug(f"Playwright 页面加载超时: {str(e)[:80]}")
+
+                # 滚动 + play() 触发视频懒加载（抖音视频默认不预加载流）
+                try:
+                    page.evaluate('window.scrollTo(0, 300)')
+                    page.wait_for_timeout(1000)
+                    page.evaluate(
+                        'var v=document.querySelector("video");'
+                        'if(v){v.muted=true; v.play().catch(function(){});}'
+                    )
+                    page.wait_for_timeout(4000)
+                except Exception as e:
+                    self.logger.debug(f"触发视频加载失败: {str(e)[:80]}")
 
                 # 提取文案：title 和 meta description
                 title = page.title() or ""
@@ -632,29 +646,43 @@ class ScriptExtractor(BaseModule):
                     desc = re.sub(r"\s*-\s*.*?于\d+.*?发布在抖音.*$", "", meta_desc).strip()
                     desc = re.sub(r"#[\w]+$", "", desc).strip()
 
-                # 提取视频 URL：优先从网络请求捕获（douyinvod.com），其次从 video.currentSrc
+                # 提取视频 URL：优先从网络请求捕获（douyinvod.com），其次从 video.currentSrc，最后从 RENDER_DATA
                 video_dl_url = ""
                 if captured_video_urls:
                     video_dl_url = captured_video_urls[0]
                     self.logger.info(f"Playwright 捕获视频流: {len(captured_video_urls)} 个")
                 else:
                     cur = page.evaluate('document.querySelector("video")?.currentSrc || ""')
-                    if cur and "douyinvod.com" in cur:
+                    if cur and ("douyinvod.com" in cur or "video/tos" in cur):
                         video_dl_url = cur
+                        self.logger.info("从 video.currentSrc 提取视频 URL")
 
-                # 尝试从 RENDER_DATA 提取 desc（如果 title/meta 不够）
-                if (not desc or len(desc) < 20) and video_dl_url:
-                    render_data = page.evaluate(
-                        'document.getElementById("RENDER_DATA")?.textContent || ""'
-                    )
-                    if render_data:
-                        from urllib.parse import unquote
-                        decoded = unquote(render_data)
+                # 从 RENDER_DATA 提取 desc 和 video URL（兜底，抖音页面数据源）
+                render_data = page.evaluate(
+                    'document.getElementById("RENDER_DATA")?.textContent || ""'
+                )
+                if render_data:
+                    from urllib.parse import unquote
+                    decoded = unquote(render_data)
+                    # 提取 desc
+                    if not desc or len(desc) < 20:
                         dm = re.search(r'"desc":"((?:[^"\\]|\\.)*)"', decoded)
                         if dm:
-                            rd_desc = dm.group(1).encode().decode("unicode_escape", errors="ignore")
+                            try:
+                                rd_desc = dm.group(1).encode().decode("unicode_escape", errors="ignore")
+                            except Exception:
+                                rd_desc = dm.group(1)
                             if rd_desc and len(rd_desc) > len(desc):
                                 desc = rd_desc
+                    # 兜底提取视频 URL（网络捕获失败时）
+                    if not video_dl_url:
+                        vm = re.search(
+                            r'(https?://[^"\s\\]+\.douyinvod\.com/[^"\s\\]+)',
+                            decoded,
+                        )
+                        if vm:
+                            video_dl_url = vm.group(1)
+                            self.logger.info("从 RENDER_DATA 提取视频 URL")
 
                 browser.close()
 
