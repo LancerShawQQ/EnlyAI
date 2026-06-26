@@ -695,10 +695,10 @@ async function loadWizardData() {
         wizardState.wizScriptTab = tab.dataset.wiztab;
         document.querySelectorAll('[data-wiztab]').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
-        document.getElementById('wiz-script-manual').classList.remove('active');
-        document.getElementById('wiz-script-ai').classList.remove('active');
-        document.getElementById('wiz-script-extract').classList.remove('active');
-        document.getElementById('wiz-script-' + tab.dataset.wiztab).classList.add('active');
+        document.getElementById('wiz-script-manual')?.classList.remove('active');
+        document.getElementById('wiz-script-ai')?.classList.remove('active');
+        document.getElementById('wiz-script-extract')?.classList.remove('active');
+        document.getElementById('wiz-script-' + tab.dataset.wiztab)?.classList.add('active');
       });
     });
 
