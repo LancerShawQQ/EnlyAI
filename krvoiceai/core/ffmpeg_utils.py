@@ -757,6 +757,9 @@ class FFmpegRunner:
         output.parent.mkdir(parents=True, exist_ok=True)
         tw, th = target_resolution
 
+        self.logger.info(
+            f"横屏→竖屏: {video.name} -> {tw}x{th} (背景={background})"
+        )
         if background == "blur":
             # 模糊背景：原视频放大铺满竖屏并模糊 → 上面叠加居中的原比例视频
             # 同时保留音频（若无音频流则用静音轨，避免后续 concat 报错）
@@ -766,21 +769,20 @@ class FFmpegRunner:
                 f"[0:v]scale={tw}:{th}:force_original_aspect_ratio=decrease[fg];"
                 f"[bg][fg]overlay=(W-w)/2:(H-h)/2[v]"
             )
+            # 带音频映射（0:a? 表示可选，无音频流时不报错）
             args = [
                 "-i", str(video),
                 "-filter_complex", vf,
-                "-map", "[v]",
+                "-map", "[v]", "-map", "0:a?",
                 "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
                 "-r", str(fps),
                 "-c:a", "aac", "-b:a", "192k",
                 "-movflags", "+faststart",
                 str(output),
             ]
-            # 音频：优先用原视频音频，没有则加静音轨
-            # 先尝试带音频转换，失败则用静音轨重试
+            # 先尝试带音频转换，失败或无音频则用静音轨重试
             try:
-                args_with_audio = args[:3] + ["-map", "0:a?"] + args[3:]
-                self.run(args_with_audio)
+                self.run(args)
                 # 检查输出是否有音频流
                 import subprocess as _sp
                 r = _sp.run(
@@ -790,7 +792,6 @@ class FFmpegRunner:
                 )
                 if "audio" in r.stdout:
                     return output
-                # 无音频流，落入下面加静音轨
             except Exception:
                 pass
             # 加静音音频轨（确保输出一定有音频流，供后续 concat）
@@ -815,16 +816,13 @@ class FFmpegRunner:
             args = [
                 "-i", str(video),
                 "-vf", vf,
+                "-map", "0:v", "-map", "0:a?",
                 "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
                 "-c:a", "aac", "-b:a", "192k",
                 "-movflags", "+faststart",
                 str(output),
             ]
-
-        self.logger.info(
-            f"横屏→竖屏: {video.name} -> {tw}x{th} (背景={background})"
-        )
-        self.run(args)
+            self.run(args)
         return output
 
     def add_micro_motion(
