@@ -1009,6 +1009,12 @@ function bindScriptToolbar() {
     updateScriptStats('');
     toast('已清空文案', 'info');
   });
+  const analyzeBtn = document.getElementById('wiz-analyze-btn');
+  if (analyzeBtn) analyzeBtn.addEventListener('click', analyzeViralScript);
+  const viralCloseBtn = document.getElementById('wiz-viral-close');
+  if (viralCloseBtn) viralCloseBtn.addEventListener('click', () => {
+    document.getElementById('wiz-viral-analysis').style.display = 'none';
+  });
 }
 
 // 文案快速 AI 处理（工具栏）
@@ -1351,6 +1357,143 @@ function switchWizardScriptTab(tabName) {
   document.querySelectorAll('.sub-page').forEach(p => p.classList.remove('active'));
   const target = document.getElementById(`wiz-script-${tabName}`);
   if (target) target.classList.add('active');
+}
+
+// 爆款结构分析
+async function analyzeViralScript() {
+  const script = document.getElementById('wiz-script').value.trim();
+  if (!script) { toast('请先输入文案', 'error'); return; }
+  const btn = document.getElementById('wiz-analyze-btn');
+  const panel = document.getElementById('wiz-viral-analysis');
+  const body = document.getElementById('wiz-viral-body');
+  btn.disabled = true;
+  setBtnIcon(btn, 'loader', '分析中...');
+  body.innerHTML = '<div class="viral-loading"><span class="spinner"></span> 正在分析爆款结构...</div>';
+  panel.style.display = 'block';
+  try {
+    const result = await api('/api/script/process', {
+      method: 'POST',
+      body: { script, action: 'analyze' },
+    });
+    if (result.success && result.report) {
+      renderViralReport(result.report, result.mock);
+    } else {
+      body.innerHTML = `<div class="viral-error"><i data-lucide="alert-circle"></i> ${escapeHtml(result.error || '分析失败')}</div>`;
+      lucide.createIcons();
+    }
+  } catch (e) {
+    body.innerHTML = `<div class="viral-error"><i data-lucide="alert-circle"></i> ${escapeHtml(e.message)}</div>`;
+    lucide.createIcons();
+  } finally {
+    btn.disabled = false;
+    setBtnIcon(btn, 'search-analytics', '爆款分析');
+  }
+}
+
+// 渲染爆款分析报告
+function renderViralReport(report, isMock) {
+  const body = document.getElementById('wiz-viral-body');
+  const score = report.viral_score || 0;
+  const scoreColor = score >= 75 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
+  const scoreLabel = score >= 75 ? '爆款潜力高' : score >= 50 ? '有潜力，需优化' : '爆款潜力低';
+
+  let html = '';
+  if (isMock) html += '<div class="viral-mock-hint">（Mock 模式：分析结果为模板，配置 LLM 后获取真实分析）</div>';
+
+  // 爆款分数
+  html += `<div class="viral-score-section">
+    <div class="viral-score-ring" style="--score-color:${scoreColor}">
+      <span class="viral-score-num">${score}</span>
+      <span class="viral-score-label">${scoreLabel}</span>
+    </div>
+    <div class="viral-score-meta">
+      <div class="viral-meta-row"><span class="viral-meta-label">钩子类型</span><span class="viral-meta-value">${escapeHtml(report.hook_type || '—')}</span></div>
+      <div class="viral-meta-row"><span class="viral-meta-label">情绪曲线</span><span class="viral-meta-value">${escapeHtml(report.emotion_curve || '—')}</span></div>
+    </div>
+  </div>`;
+
+  // 钩子分析
+  if (report.hook_analysis) {
+    html += `<div class="viral-section"><div class="viral-section-title"><i data-lucide="anchor"></i> 钩子分析</div><p class="viral-section-text">${escapeHtml(report.hook_analysis)}</p></div>`;
+  }
+
+  // 结构拆解
+  if (report.structure && report.structure.length > 0) {
+    html += '<div class="viral-section"><div class="viral-section-title"><i data-lucide="layers"></i> 结构拆解</div><div class="viral-structure-list">';
+    report.structure.forEach(s => {
+      html += `<div class="viral-structure-item">
+        <span class="viral-structure-tag">${escapeHtml(s.part || '')}</span>
+        <span class="viral-structure-content">${escapeHtml(s.content || '')}</span>
+        <span class="viral-structure-effect">${escapeHtml(s.effect || '')}</span>
+      </div>`;
+    });
+    html += '</div></div>';
+  }
+
+  // 亮点 & 不足
+  const highlights = report.highlights || [];
+  const weaknesses = report.weaknesses || [];
+  if (highlights.length || weaknesses.length) {
+    html += '<div class="viral-section"><div class="viral-section-title"><i data-lucide="scale"></i> 亮点与不足</div><div class="viral-sw-grid">';
+    if (highlights.length) {
+      html += '<div class="viral-sw-col viral-highlights"><div class="viral-sw-head">亮点</div>';
+      highlights.forEach(h => html += `<div class="viral-sw-item"><i data-lucide="check-circle"></i> ${escapeHtml(h)}</div>`);
+      html += '</div>';
+    }
+    if (weaknesses.length) {
+      html += '<div class="viral-sw-col viral-weaknesses"><div class="viral-sw-head">不足</div>';
+      weaknesses.forEach(w => html += `<div class="viral-sw-item"><i data-lucide="x-circle"></i> ${escapeHtml(w)}</div>`);
+      html += '</div>';
+    }
+    html += '</div></div>';
+  }
+
+  // 改进建议
+  if (report.improvement) {
+    html += `<div class="viral-section"><div class="viral-section-title"><i data-lucide="lightbulb"></i> 改进建议</div><p class="viral-section-text">${escapeHtml(report.improvement)}</p></div>`;
+  }
+
+  // 仿写方向 + 一键仿写按钮
+  if (report.rewrite_direction) {
+    html += `<div class="viral-rewrite-section">
+      <div class="viral-section-title"><i data-lucide="refresh-cw"></i> 仿写方向</div>
+      <p class="viral-section-text">${escapeHtml(report.rewrite_direction)}</p>
+      <button class="btn btn-primary btn-sm" id="wiz-viral-rewrite" type="button"><i data-lucide="wand-2"></i> 基于分析一键仿写</button>
+    </div>`;
+  }
+
+  body.innerHTML = html;
+  lucide.createIcons();
+
+  // 绑定一键仿写
+  const rewriteBtn = document.getElementById('wiz-viral-rewrite');
+  if (rewriteBtn) {
+    rewriteBtn.addEventListener('click', async () => {
+      rewriteBtn.disabled = true;
+      rewriteBtn.innerHTML = '<span class="spinner"></span> 仿写中...';
+      const script = document.getElementById('wiz-script').value.trim();
+      try {
+        const result = await api('/api/script/process', {
+          method: 'POST',
+          body: { script, action: 'rewrite' },
+        });
+        if (result.success) {
+          document.getElementById('wiz-script').value = result.script;
+          updateScriptStats(result.script);
+          document.getElementById('wiz-viral-analysis').style.display = 'none';
+          toast('仿写完成，已替换文案', 'success');
+        } else {
+          toast(`仿写失败: ${result.error}`, 'error');
+        }
+      } catch (e) {
+        toast(`仿写失败: ${e.message}`, 'error');
+      } finally {
+        rewriteBtn.disabled = false;
+        rewriteBtn.innerHTML = '<i data-lucide="wand-2"></i> 基于分析一键仿写';
+        lucide.createIcons();
+      }
+    });
+  }
 }
 
 async function wizardScriptProcess() {

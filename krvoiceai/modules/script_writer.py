@@ -57,6 +57,31 @@ GENERATE_PROMPT = """请根据以下主题/要点，创作一段口播文案：
 
 请直接输出文案内容，不要任何解释说明。"""
 
+# 爆款结构分析提示词
+ANALYZE_PROMPT = """你是一位短视频爆款文案分析师，擅长拆解高完播率、高互动口播视频的结构密码。
+
+请对以下口播文案进行深度爆款结构分析，按 JSON 格式输出分析报告：
+
+待分析文案：
+{input}
+
+请严格按以下 JSON 结构输出（不要输出 JSON 以外的内容，不要用 markdown 代码块包裹）：
+{{
+  "hook_type": "开场钩子类型（疑问/反差/数字/痛点/悬念/故事/争议 之一）",
+  "hook_analysis": "前3秒钩子为什么能/不能抓住注意力的分析（30-50字）",
+  "emotion_curve": "情绪曲线描述（如：紧张→共鸣→希望→行动，20-30字）",
+  "structure": [
+    {{"part": "开场", "content": "原文对应片段", "effect": "作用分析（20字内）"}},
+    {{"part": "主体", "content": "原文对应片段", "effect": "作用分析（20字内）"}},
+    {{"part": "结尾", "content": "原文对应片段", "effect": "作用分析（20字内）"}}
+  ],
+  "highlights": ["亮点1", "亮点2", "亮点3"],
+  "weaknesses": ["不足1", "不足2"],
+  "viral_score": 75,
+  "improvement": "改进建议（40-60字，针对不足给出具体优化方向）",
+  "rewrite_direction": "仿写方向建议（20-30字，指明保持什么、替换什么）"
+}}"""
+
 
 class ScriptWriter(BaseModule):
     """文案生成/润色/仿写模块"""
@@ -133,6 +158,56 @@ class ScriptWriter(BaseModule):
         result = self._postprocess(result)
         self.logger.info(f"文案生成完成 output_len={len(result)}")
         return result
+
+    def analyze(self, text: str) -> dict:
+        """爆款结构分析：拆解文案的钩子/情绪/结构/亮点，返回结构化报告
+
+        Args:
+            text: 待分析的口播文案
+
+        Returns:
+            分析报告 dict，含 hook_type/emotion_curve/structure/highlights/weaknesses/
+            viral_score/improvement/rewrite_direction
+        """
+        import json
+
+        user_prompt = ANALYZE_PROMPT.format(input=text)
+        messages = [
+            {"role": "system", "content": "你是短视频爆款文案分析专家。只输出JSON，不加任何解释。"},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        self.logger.info(f"爆款分析开始 input_len={len(text)} mock={self.llm.is_mock}")
+        raw = self.llm.chat(messages, temperature=0.3)
+
+        # 清理可能的 markdown 代码块包裹
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+        if raw.endswith("```"):
+            raw = raw.rsplit("```", 1)[0]
+        raw = raw.strip()
+
+        try:
+            report = json.loads(raw)
+        except json.JSONDecodeError:
+            # JSON 解析失败时返回降级报告
+            self.logger.warning(f"爆款分析 JSON 解析失败，返回降级报告")
+            report = {
+                "hook_type": "未知",
+                "hook_analysis": "分析结果解析失败，请重试",
+                "emotion_curve": "未知",
+                "structure": [],
+                "highlights": [],
+                "weaknesses": [],
+                "viral_score": 0,
+                "improvement": "分析失败，请检查 LLM 返回格式",
+                "rewrite_direction": "建议手动润色",
+                "raw_response": raw[:500],
+            }
+
+        self.logger.info(f"爆款分析完成 score={report.get('viral_score')}")
+        return report
 
     def _postprocess(self, text: str) -> str:
         """后处理：去除多余空行、首尾空白"""

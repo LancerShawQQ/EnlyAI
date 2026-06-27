@@ -417,6 +417,7 @@
                   </div>
                   <button class="btn btn-sm btn-secondary" id="wiz-expand-btn" type="button">AI扩写</button>
                   <button class="btn btn-sm btn-secondary" id="wiz-shorten-btn" type="button">AI缩写</button>
+                  <button class="btn btn-sm btn-secondary" id="wiz-analyze-btn" type="button"><i data-lucide="search-analytics" style="width:14px;height:14px"></i> 爆款分析</button>
                   <button class="btn btn-sm btn-secondary" id="wiz-clear-btn" type="button">清空</button>
                 </div>
               </div>
@@ -429,6 +430,14 @@
                 <span class="script-stats-duration">预估时长 0 秒</span>
               </div>
               <div class="script-warning" id="wiz-script-warning" style="display:none"></div>
+              <!-- 爆款分析报告区域 -->
+              <div class="viral-analysis" id="wiz-viral-analysis" style="display:none">
+                <div class="viral-analysis-header">
+                  <span class="viral-analysis-title"><i data-lucide="search-analytics"></i> 爆款结构分析报告</span>
+                  <button class="btn btn-sm btn-ghost" id="wiz-viral-close" type="button"><i data-lucide="x"></i></button>
+                </div>
+                <div class="viral-analysis-body" id="wiz-viral-body"></div>
+              </div>
             </div>
             <div class="sub-page" id="wiz-script-ai">
               <div class="form-group">

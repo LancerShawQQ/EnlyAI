@@ -549,6 +549,24 @@ class KrVoiceAI:
             except Exception as e:
                 return {"success": False, "error": str(e), "action": "extract"}
 
+        # 爆款结构分析：拆解文案的钩子/情绪/结构/亮点
+        if action == "analyze":
+            if not script:
+                return {"success": False, "error": "请输入待分析的文案"}
+            try:
+                writer = self.modules.get("script_write")
+                if not writer:
+                    return {"success": False, "error": "文案模块未初始化"}
+                report = writer.analyze(script)
+                return {
+                    "success": True,
+                    "action": "analyze",
+                    "report": report,
+                    "mock": self.llm.is_mock,
+                }
+            except Exception as e:
+                return {"success": False, "error": str(e), "action": "analyze"}
+
         # 构造 prompt
         sys_prompt = (
             "你是一位资深的短视频口播文案创作者，擅长创作高完播率、高互动的口播内容。"

@@ -2292,6 +2292,292 @@ input[type="color"]::-webkit-color-swatch {
   font-size: 12px;
 }
 
+/* ---------- 爆款结构分析报告 ---------- */
+.viral-analysis {
+  margin-top: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.viral-analysis-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(168,85,247,0.08));
+  border-bottom: 1px solid var(--border-default);
+}
+
+.viral-analysis-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.viral-analysis-title i {
+  width: 16px;
+  height: 16px;
+  color: var(--accent-primary);
+}
+
+.viral-analysis-body {
+  padding: 16px;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.viral-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.viral-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  color: var(--color-error);
+  font-size: 13px;
+}
+
+.viral-mock-hint {
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: rgba(245, 158, 11, 0.1);
+  border-radius: var(--radius-sm);
+  color: var(--color-warning);
+  font-size: 12px;
+}
+
+/* 爆款分数区 */
+.viral-score-section {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 16px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+}
+
+.viral-score-ring {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 4px solid var(--score-color, var(--accent-primary));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.viral-score-num {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--score-color, var(--accent-primary));
+  line-height: 1;
+}
+
+.viral-score-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  text-align: center;
+}
+
+.viral-score-meta {
+  flex: 1;
+}
+
+.viral-meta-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.viral-meta-label {
+  color: var(--text-secondary);
+  min-width: 60px;
+  flex-shrink: 0;
+}
+
+.viral-meta-value {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* 分析段落 */
+.viral-section {
+  margin-bottom: 16px;
+}
+
+.viral-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.viral-section-title i {
+  width: 14px;
+  height: 14px;
+  color: var(--accent-primary);
+}
+
+.viral-section-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* 结构拆解列表 */
+.viral-structure-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.viral-structure-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.viral-structure-tag {
+  padding: 2px 8px;
+  background: var(--accent-primary);
+  color: white;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.viral-structure-content {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.viral-structure-effect {
+  color: var(--text-secondary);
+  font-style: italic;
+  flex-shrink: 0;
+  max-width: 200px;
+}
+
+/* 亮点与不足 */
+.viral-sw-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.viral-sw-col {
+  padding: 12px;
+  border-radius: var(--radius-sm);
+}
+
+.viral-highlights {
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.viral-weaknesses {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.viral-sw-head {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.viral-highlights .viral-sw-head {
+  color: #10b981;
+}
+
+.viral-weaknesses .viral-sw-head {
+  color: #ef4444;
+}
+
+.viral-sw-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+.viral-sw-item i {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.viral-highlights .viral-sw-item i {
+  color: #10b981;
+}
+
+.viral-weaknesses .viral-sw-item i {
+  color: #ef4444;
+}
+
+/* 仿写区域 */
+.viral-rewrite-section {
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(99,102,241,0.06), rgba(168,85,247,0.06));
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-strong);
+}
+
+.viral-rewrite-section .btn {
+  margin-top: 12px;
+}
+
+@media (max-width: 640px) {
+  .viral-score-section {
+    flex-direction: column;
+    text-align: center;
+  }
+  .viral-sw-grid {
+    grid-template-columns: 1fr;
+  }
+  .viral-structure-item {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .viral-structure-effect {
+    max-width: 100%;
+  }
+}
+
 /* ---------- 字幕样式可视化预览卡（增强） ---------- */
 .subtitle-style-grid {
   display: grid;
