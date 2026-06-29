@@ -2272,6 +2272,52 @@
           </div>
         </div>
 
+        <!-- Cookie 管理（对标蝉妈妈/新榜矩阵分发账号管理） -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon"><i data-lucide="key"></i></span> 平台 Cookie 管理</div>
+            <span class="hint">上传各平台登录 Cookie，用于自动发布</span>
+          </div>
+          <div id="cookie-manager-list" style="display:flex;flex-direction:column;gap:12px">
+            <!-- Cookie 管理卡片由 JS 渲染 -->
+          </div>
+          <div style="margin-top:12px;padding:10px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;font-size:12px;color:#8b6914">
+            <strong>获取 Cookie 方法：</strong>浏览器登录对应平台 → F12 开发者工具 → Application/存储 → Cookies → 复制全部 Cookie（JSON 格式）粘贴到对应平台输入框
+          </div>
+        </div>
+
+        <!-- 一键分发（对标蝉妈妈/新榜矩阵分发） -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon"><i data-lucide="send"></i></span> 一键分发</div>
+            <span class="hint">将已生成的视频一键分发到多个平台</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">选择任务</label>
+            <select class="form-select" id="publish-job-select">
+              <option value="">-- 选择已完成的任务 --</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">分发平台（多选）</label>
+            <div id="publish-platforms-grid" class="matrix-checkbox-grid"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">视频标题 <span class="hint">（留空则用文件名）</span></label>
+            <input class="form-input" id="publish-title" placeholder="输入发布标题">
+          </div>
+          <div class="form-group">
+            <label class="form-label">视频描述</label>
+            <textarea class="form-textarea" id="publish-description" style="min-height:60px" placeholder="视频描述（可选）"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">标签 <span class="hint">（逗号分隔）</span></label>
+            <input class="form-input" id="publish-tags" placeholder="口播,AI,数字人">
+          </div>
+          <button class="btn btn-primary btn-lg btn-block" id="publish-run-btn"><i data-lucide="send"></i> 一键分发</button>
+          <div id="publish-result" style="margin-top:12px"></div>
+        </div>
+
         <div class="card" style="margin-top:20px">
           <div class="form-row">
             <button class="btn btn-primary btn-lg" id="publish-save-btn"><i data-lucide="save"></i> 保存发布设置</button>

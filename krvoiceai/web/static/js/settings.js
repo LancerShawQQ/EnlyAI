@@ -832,10 +832,174 @@ async function loadPublishSettings() {
       </div>
     `;
   }).join('');
+
+  // 初始化 Cookie 管理 + 一键分发
+  loadCookieManager();
+  loadPublishJobSelect();
+  loadPublishPlatformsGrid();
+  const publishRunBtn = document.getElementById('publish-run-btn');
+  if (publishRunBtn) publishRunBtn.addEventListener('click', runPublishVideo);
 }
 
 function togglePlatform(key, el) {
   el.classList.toggle('active');
+}
+
+// ========== Cookie 管理 + 一键分发（对标蝉妈妈/新榜矩阵分发） ==========
+
+async function loadCookieManager() {
+  const listEl = document.getElementById('cookie-manager-list');
+  if (!listEl) return;
+  try {
+    const result = await api('/api/publish/cookies');
+    const cookies = result.cookies || {};
+    listEl.innerHTML = Object.entries(PLATFORM_INFO).map(([key, info]) => {
+      const c = cookies[key] || {};
+      const configured = c.configured;
+      const enabled = c.enabled;
+      return `
+        <div class="cookie-mgr-card" data-platform="${key}" style="padding:12px;border:1px solid var(--border-default);border-radius:var(--radius-md);background:var(--bg-elevated)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="display:flex;gap:8px;align-items:center">
+              <span style="font-size:20px">${info.icon}</span>
+              <span style="font-weight:600">${info.name}</span>
+              <span class="badge ${configured ? 'badge-success' : 'badge-muted'}">${configured ? '已配置' : '未配置'}</span>
+              ${enabled ? '<span class="badge badge-info">已启用</span>' : ''}
+            </div>
+            ${configured ? `<button class="btn btn-sm btn-secondary" onclick="deleteCookie('${key}')">删除</button>` : ''}
+          </div>
+          <textarea class="form-textarea" id="cookie-input-${key}" style="min-height:50px;font-size:11px" placeholder='粘贴 ${info.name} 的 Cookie（JSON 格式或 raw 字符串）'></textarea>
+          <button class="btn btn-sm btn-primary" style="margin-top:6px" onclick="saveCookie('${key}')">保存 Cookie</button>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    listEl.innerHTML = `<div class="hint">加载 Cookie 状态失败: ${e.message}</div>`;
+  }
+}
+
+async function saveCookie(platform) {
+  const input = document.getElementById(`cookie-input-${platform}`);
+  if (!input || !input.value.trim()) {
+    toast('请输入 Cookie', 'error');
+    return;
+  }
+  const val = input.value.trim();
+  let body;
+  // 尝试解析为 JSON，失败则当作 raw 字符串
+  try {
+    const parsed = JSON.parse(val);
+    body = { cookie: parsed };
+  } catch {
+    body = { cookie_text: val };
+  }
+  try {
+    await api(`/api/publish/cookies/${platform}`, { method: 'POST', body });
+    toast(`${PLATFORM_INFO[platform].name} Cookie 已保存`, 'success');
+    input.value = '';
+    loadCookieManager();
+  } catch (e) {
+    toast(`保存失败: ${e.message}`, 'error');
+  }
+}
+
+async function deleteCookie(platform) {
+  if (!confirm(`确定删除 ${PLATFORM_INFO[platform].name} 的 Cookie？`)) return;
+  try {
+    await api(`/api/publish/cookies/${platform}`, { method: 'DELETE' });
+    toast('Cookie 已删除', 'success');
+    loadCookieManager();
+  } catch (e) {
+    toast(`删除失败: ${e.message}`, 'error');
+  }
+}
+
+async function loadPublishJobSelect() {
+  const sel = document.getElementById('publish-job-select');
+  if (!sel) return;
+  try {
+    const jobs = await api('/api/jobs?limit=20');
+    const jobList = jobs.jobs || jobs || [];
+    const completed = jobList.filter(j => j.video_path && j.status === 'success');
+    sel.innerHTML = '<option value="">-- 选择已完成的任务 --</option>' +
+      completed.map(j => `<option value="${j.job_id}">${j.job_id} · ${j.title || j.video_path.split(/[\\/]/).pop() || ''}</option>`).join('');
+  } catch (e) {
+    sel.innerHTML = `<option value="">加载失败: ${e.message}</option>`;
+  }
+}
+
+function loadPublishPlatformsGrid() {
+  const grid = document.getElementById('publish-platforms-grid');
+  if (!grid) return;
+  grid.innerHTML = Object.entries(PLATFORM_INFO).map(([key, info]) => `
+    <label class="matrix-checkbox-item">
+      <input type="checkbox" value="${key}">
+      <span>${info.icon} ${info.name}</span>
+    </label>
+  `).join('');
+}
+
+async function runPublishVideo() {
+  const jobId = document.getElementById('publish-job-select').value;
+  const platforms = Array.from(document.querySelectorAll('#publish-platforms-grid input:checked')).map(c => c.value);
+  const title = document.getElementById('publish-title').value.trim();
+  const description = document.getElementById('publish-description').value.trim();
+  const tagsText = document.getElementById('publish-tags').value.trim();
+  const resultEl = document.getElementById('publish-result');
+  const btn = document.getElementById('publish-run-btn');
+
+  if (!jobId) { toast('请选择任务', 'error'); return; }
+  if (!platforms.length) { toast('请选择分发平台', 'error'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 分发中...';
+  resultEl.innerHTML = '<div style="color:#666;font-size:13px;padding:8px">正在分发到 ' + platforms.length + ' 个平台...</div>';
+
+  try {
+    const tags = tagsText ? tagsText.split(/[,，]/).map(t => t.trim()).filter(t => t) : [];
+    const result = await api('/api/publish', {
+      method: 'POST',
+      body: { job_id: jobId, platforms, title, description, tags },
+    });
+    if (result.success) {
+      const results = result.results || [];
+      const successCount = result.success_count || 0;
+      const totalCount = result.total_count || results.length;
+      resultEl.innerHTML = `
+        <div style="padding:10px;background:#e8f5e9;border:1px solid #81c784;border-radius:6px;margin-bottom:8px">
+          <strong>分发完成：${successCount}/${totalCount} 平台成功</strong>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${results.map(r => {
+            const info = PLATFORM_INFO[r.platform] || { name: r.platform, icon: '' };
+            const ok = r.status === 'success';
+            const color = ok ? '#2e7d32' : (r.status === 'skipped' ? '#f57c00' : '#c62828');
+            const bg = ok ? '#e8f5e9' : (r.status === 'skipped' ? '#fff3e0' : '#ffebee');
+            return `
+              <div style="padding:8px;background:${bg};border-radius:4px;font-size:12px">
+                <div style="display:flex;justify-content:space-between">
+                  <span>${info.icon} ${info.name}</span>
+                  <span style="color:${color};font-weight:600">${r.status}</span>
+                </div>
+                ${r.url ? `<div style="color:#666;margin-top:4px"><a href="${r.url}" target="_blank">${r.url}</a></div>` : ''}
+                ${r.error ? `<div style="color:#c62828;margin-top:4px">${escapeHtml(r.error)}</div>` : ''}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+      toast(`分发完成：${successCount}/${totalCount} 成功`, successCount === totalCount ? 'success' : 'info');
+    } else {
+      resultEl.innerHTML = `<div style="padding:10px;background:#ffebee;border:1px solid #ef9a9a;border-radius:6px;color:#c62828">分发失败：${escapeHtml(result.error || '未知错误')}</div>`;
+      toast('分发失败', 'error');
+    }
+  } catch (e) {
+    resultEl.innerHTML = `<div style="padding:10px;background:#ffebee;border:1px solid #ef9a9a;border-radius:6px;color:#c62828">请求失败：${escapeHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="send"></i> 一键分发';
+    if (window.lucide) lucide.createIcons();
+  }
 }
 
 async function savePublishSettings() {

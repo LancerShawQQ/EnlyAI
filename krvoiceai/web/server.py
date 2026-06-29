@@ -1150,6 +1150,143 @@ def create_app() -> FastAPI:
             },
         }
 
+    # ============ 多平台一键分发 API（对标蝉妈妈/新榜矩阵分发） ============
+
+    @app.post("/api/publish")
+    async def publish_video(req: dict):
+        """一键分发视频到多平台
+
+        Body: {"job_id": "xxx", "platforms": ["bilibili","douyin"], "title":"", "description":"", "tags":[]}
+        从 job 上下文读取视频路径，调用 Publisher 发布到指定平台
+        """
+        from ..modules.publisher import Publisher
+        loop = asyncio.get_event_loop()
+
+        job_id = req.get("job_id", "")
+        platforms = req.get("platforms") or []
+        title = req.get("title", "")
+        description = req.get("description", "")
+        tags = req.get("tags") or []
+
+        if not job_id:
+            raise HTTPException(400, "缺少 job_id")
+        if not platforms:
+            raise HTTPException(400, "至少选择一个平台")
+
+        def _publish():
+            job = krvoice.get_job(job_id)
+            if not job:
+                return {"success": False, "error": "任务不存在"}
+
+            # 读 context.json（final_video / cover_path 都从这里取）
+            job_dir = Path("workspace_data") / "jobs" / job_id
+            ctx_file = job_dir / "context.json"
+            ctx: dict = {}
+            if ctx_file.exists():
+                try:
+                    import json as _json
+                    ctx = _json.loads(ctx_file.read_text(encoding="utf-8"))
+                except Exception:
+                    ctx = {}
+
+            # 视频路径解析优先级：
+            # 1) output.final_video（DB）
+            # 2) context.final_video
+            # 3) job 目录下 final_video.mp4 兜底
+            output = job.get("output") or {}
+            video_path = (
+                output.get("final_video")
+                or ctx.get("final_video")
+                or ctx.get("final_video_path")
+                or ctx.get("video_path")
+            )
+            if not video_path:
+                # 兜底：job 目录下查找 final_video.mp4
+                fallback = job_dir / "final_video.mp4"
+                if fallback.exists():
+                    video_path = str(fallback)
+            if not video_path:
+                return {"success": False, "error": "任务无视频产物"}
+            video_p = Path(video_path)
+            if not video_p.exists():
+                return {"success": False, "error": f"视频文件不存在: {video_path}"}
+
+            # 从 context 读 cover_path
+            cover_path = None
+            cp = ctx.get("cover_path")
+            if cp and Path(cp).exists():
+                cover_path = cp
+
+            publisher = Publisher()
+            manifest_path = Path("workspace_data") / "jobs" / job_id / "publish_manifest.json"
+            result = publisher.publish_video(
+                video_path=video_p,
+                platforms=platforms,
+                title=title or video_p.stem,
+                cover_path=cover_path,
+                description=description,
+                tags=tags,
+                manifest_path=manifest_path,
+            )
+            return result
+
+        krvoice = _get_app()
+        result = await loop.run_in_executor(None, _publish)
+        # 兼容错误返回
+        if "error" in result and "success" not in result:
+            return {"success": False, **result}
+        return {"success": True, **result}
+
+    @app.get("/api/publish/manifest/{job_id}")
+    async def get_publish_manifest(job_id: str):
+        """查看任务发布清单"""
+        manifest_path = Path("workspace_data") / "jobs" / job_id / "publish_manifest.json"
+        if not manifest_path.exists():
+            raise HTTPException(404, "无发布清单")
+        import json as _json
+        try:
+            data = _json.loads(manifest_path.read_text(encoding="utf-8"))
+            return {"success": True, "manifest": data, "path": str(manifest_path)}
+        except Exception as e:
+            raise HTTPException(500, f"读取清单失败: {e}")
+
+    @app.get("/api/publish/cookies")
+    async def get_cookies_status():
+        """查看各平台 Cookie 配置状态"""
+        from ..modules.publisher import Publisher
+        publisher = Publisher()
+        return {"success": True, "cookies": publisher.get_cookie_status()}
+
+    @app.post("/api/publish/cookies/{platform}")
+    async def save_cookie(platform: str, req: dict):
+        """保存平台 Cookie
+
+        Body: {"cookie": {...}} 或 {"cookie_text": "raw cookie string"}
+        """
+        from ..modules.publisher import Publisher
+        publisher = Publisher()
+        cookie_data = req.get("cookie")
+        if not cookie_data and req.get("cookie_text"):
+            # 解析 raw cookie 字符串为简单 dict
+            cookie_data = {"raw": req.get("cookie_text")}
+        if not cookie_data:
+            raise HTTPException(400, "缺少 cookie 数据")
+        result = publisher.save_cookie(platform, cookie_data)
+        if not result.get("success"):
+            raise HTTPException(400, result.get("error", "保存失败"))
+        return result
+
+    @app.delete("/api/publish/cookies/{platform}")
+    async def delete_cookie(platform: str):
+        """删除平台 Cookie"""
+        from ..modules.publisher import Publisher
+        publisher = Publisher()
+        cookie_file = publisher.cookies_dir / f"{platform}.json"
+        if cookie_file.exists():
+            cookie_file.unlink()
+            return {"success": True, "deleted": True}
+        return {"success": True, "deleted": False, "message": "Cookie 不存在"}
+
     return app
 
 

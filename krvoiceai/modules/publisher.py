@@ -275,3 +275,99 @@ class Publisher(BaseModule):
             json.dumps(data, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+    def publish_video(
+        self,
+        video_path: Path,
+        platforms: list[str],
+        title: str = "",
+        cover_path: Path | None = None,
+        description: str = "",
+        tags: list[str] | None = None,
+        manifest_path: Path | None = None,
+    ) -> dict:
+        """独立发布接口（供 API 直接调用，不经过流水线）
+
+        Args:
+            video_path: 视频文件路径
+            platforms: 目标平台列表 ["bilibili", "douyin", ...]
+            title: 视频标题
+            cover_path: 封面路径（可选）
+            description: 视频描述
+            tags: 标签列表
+            manifest_path: 发布清单保存路径（可选）
+
+        Returns:
+            {"results": [...], "success_count": N, "total_count": M, "manifest": path}
+        """
+        video_path = Path(video_path)
+        if not video_path.exists():
+            return {"error": "视频文件不存在", "video_path": str(video_path)}
+
+        tags = tags or []
+        # 构造发布目标（独立 API 调用：用户已明确指定 platforms，不再检查 enabled）
+        targets = []
+        for platform in platforms:
+            targets.append(PublishTarget(
+                platform=platform,
+                title=title or video_path.stem,
+                video_path=video_path,
+                cover_path=Path(cover_path) if cover_path else None,
+                description=description,
+                tags=tags,
+            ))
+
+        if not targets:
+            return {"error": "无启用的目标平台", "platforms_requested": platforms}
+
+        # 写初始清单
+        if manifest_path is None:
+            manifest_path = video_path.parent / "publish_manifest.json"
+        manifest_path = Path(manifest_path)
+        self._write_manifest(targets, manifest_path)
+
+        # 执行发布
+        results = self._publish_all(targets)
+        # 更新清单状态
+        self._write_manifest(targets, manifest_path)
+
+        success_count = sum(1 for t in targets if t.status == "success")
+        return {
+            "results": [
+                {
+                    "platform": t.platform,
+                    "status": t.status,
+                    "url": t.url,
+                    "error": t.error,
+                }
+                for t in targets
+            ],
+            "success_count": success_count,
+            "total_count": len(targets),
+            "manifest": str(manifest_path),
+        }
+
+    def get_cookie_status(self) -> dict:
+        """检查各平台 Cookie 配置状态"""
+        status = {}
+        for platform in ("bilibili", "douyin", "kuaishou", "wechat_video"):
+            cookie_file = self.cookies_dir / f"{platform}.json"
+            status[platform] = {
+                "configured": cookie_file.exists(),
+                "path": str(cookie_file),
+                "enabled": (self.platforms_cfg.get(platform, {}) or {}).get("enabled", False),
+            }
+        return status
+
+    def save_cookie(self, platform: str, cookie_data: dict) -> dict:
+        """保存平台 Cookie"""
+        if platform not in ("bilibili", "douyin", "kuaishou", "wechat_video"):
+            return {"success": False, "error": f"不支持的平台: {platform}"}
+        self.cookies_dir.mkdir(parents=True, exist_ok=True)
+        cookie_file = self.cookies_dir / f"{platform}.json"
+        cookie_file.write_text(
+            json.dumps(cookie_data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        self.logger.info(f"已保存 {platform} Cookie: {cookie_file}")
+        return {"success": True, "path": str(cookie_file), "platform": platform}
