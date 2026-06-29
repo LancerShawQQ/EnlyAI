@@ -1379,6 +1379,72 @@ function selectScriptTemplate(card, tpl) {
   }
 }
 
+// ============ 封面样式选择与预览 ============
+
+let _coverSelectedStyle = 'deep_blue';
+let _coverPreviewTimer = null;
+
+// 加载封面样式预设列表
+async function loadCoverStyles() {
+  const grid = document.getElementById('cover-style-grid');
+  if (!grid) return;
+  try {
+    const result = await api('/api/cover/styles', { method: 'GET' });
+    if (!result.success || !Array.isArray(result.styles)) return;
+    grid.innerHTML = '';
+    result.styles.forEach(s => {
+      const card = document.createElement('div');
+      card.className = 'cover-style-card' + (s.id === _coverSelectedStyle ? ' active' : '');
+      card.dataset.styleid = s.id;
+      card.innerHTML = `
+        <i data-lucide="${s.icon || 'palette'}"></i>
+        <span class="cs-name">${s.name}</span>
+        <span class="cs-desc">${s.desc || ''}</span>
+      `;
+      card.addEventListener('click', () => selectCoverStyle(card, s));
+      grid.appendChild(card);
+    });
+    if (window.lucide) lucide.createIcons();
+  } catch (e) {
+    // 静默失败
+  }
+}
+
+function selectCoverStyle(card, style) {
+  document.querySelectorAll('#cover-style-grid .cover-style-card').forEach(c => c.classList.remove('active'));
+  card.classList.add('active');
+  _coverSelectedStyle = style.id;
+  // 触发预览（防抖）
+  clearTimeout(_coverPreviewTimer);
+  _coverPreviewTimer = setTimeout(generateCoverPreview, 500);
+}
+
+// 生成封面预览
+async function generateCoverPreview() {
+  const titleInput = document.getElementById('cover-preview-title');
+  const wrapper = document.getElementById('cover-preview-wrapper');
+  const img = document.getElementById('cover-preview-img');
+  const btn = document.getElementById('cover-regenerate-btn');
+  if (!titleInput || !wrapper || !img) return;
+  const title = titleInput.value.trim();
+  if (!title) { wrapper.style.display = 'none'; return; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 生成中...'; }
+  try {
+    const result = await api('/api/cover/preview', {
+      method: 'POST',
+      body: { title, style_id: _coverSelectedStyle },
+    });
+    if (result.success && result.cover_path) {
+      img.src = `/api/files?path=${encodeURIComponent(result.cover_path)}&_t=${Date.now()}`;
+      wrapper.style.display = 'block';
+    }
+  } catch (e) {
+    // 静默失败
+  } finally {
+    if (btn) { btn.disabled = false; if (window.lucide) lucide.createIcons(); btn.innerHTML = '<i data-lucide="refresh-cw"></i> 重新生成'; if (window.lucide) lucide.createIcons(); }
+  }
+}
+
 // 文案提取：分享文本实时解析预览（防抖 300ms）
 let _shareTextParseTimer = null;
 function bindShareTextPreview() {

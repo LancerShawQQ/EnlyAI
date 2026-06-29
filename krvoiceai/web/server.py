@@ -492,6 +492,50 @@ def create_app() -> FastAPI:
         """获取创作预设（字幕样式/动画/情感/姿态/滤镜/转场）"""
         return get_settings_manager().get_creative_presets()
 
+    @app.get("/api/cover/styles")
+    async def get_cover_styles():
+        """获取封面样式预设列表（对标剪映封面模板库）"""
+        from ..modules.cover_generator import COVER_STYLE_PRESETS
+        # 返回精简版（不含内部颜色元组，前端不需要）
+        styles = [
+            {
+                "id": s["id"],
+                "name": s["name"],
+                "icon": s["icon"],
+                "desc": s["desc"],
+            }
+            for s in COVER_STYLE_PRESETS
+        ]
+        return {"success": True, "styles": styles}
+
+    @app.post("/api/cover/preview")
+    async def cover_preview(req: dict):
+        """生成封面预览图（不走流水线，供 UI 实时预览/重新生成）
+
+        Body: {"title": "封面标题", "style_id": "deep_blue"}
+        """
+        from ..modules.cover_generator import CoverGenerator
+        from pathlib import Path
+        import time as _time
+
+        title = (req.get("title") or "口播视频").strip()
+        style_id = req.get("style_id", "deep_blue")
+        if len(title) > 30:
+            title = title[:30]
+
+        loop = asyncio.get_event_loop()
+
+        def _gen():
+            output = Path("output") / f"cover_preview_{int(_time.time())}.jpg"
+            output.parent.mkdir(parents=True, exist_ok=True)
+            engine = CoverGenerator()
+            engine.setup()
+            engine.preview(title, output, style_id=style_id)
+            return output
+
+        output_path = await loop.run_in_executor(None, _gen)
+        return {"success": True, "cover_path": str(output_path)}
+
     @app.get("/api/templates")
     async def get_templates():
         """获取创作模板列表"""

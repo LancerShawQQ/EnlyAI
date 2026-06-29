@@ -27,6 +27,85 @@ from ..core.base_module import BaseModule, JobContext, ModuleResult
 from ..core.ffmpeg_utils import FFmpegRunner
 
 
+# 封面样式预设库（对标剪映封面模板/万兴播爆AI封面）
+COVER_STYLE_PRESETS = [
+    {
+        "id": "deep_blue",
+        "name": "深蓝渐变",
+        "icon": "palette",
+        "desc": "深蓝到紫渐变背景+白字",
+        "bg_type": "gradient",
+        "bg_colors": [(20, 30, 60), (70, 50, 140)],
+        "text_color": (255, 255, 255),
+        "highlight_color": (255, 230, 0),
+        "bar_color": (0, 0, 0, 160),
+    },
+    {
+        "id": "dark_neon",
+        "name": "暗夜霓虹",
+        "icon": "zap",
+        "desc": "深黑背景+紫绿霓虹光效",
+        "bg_type": "gradient",
+        "bg_colors": [(10, 10, 20), (40, 15, 60)],
+        "text_color": (230, 220, 255),
+        "highlight_color": (0, 255, 200),
+        "bar_color": (20, 5, 40, 180),
+    },
+    {
+        "id": "clean_white",
+        "name": "纯白极简",
+        "icon": "square",
+        "desc": "白底黑字，简约风",
+        "bg_type": "solid",
+        "bg_colors": [(250, 250, 250)],
+        "text_color": (30, 30, 30),
+        "highlight_color": (220, 50, 50),
+        "bar_color": (240, 240, 240, 200),
+    },
+    {
+        "id": "hot_red",
+        "name": "红黑爆款",
+        "icon": "flame",
+        "desc": "红色渐变+黄字黑边，抖音爆款风",
+        "bg_type": "gradient",
+        "bg_colors": [(120, 10, 10), (200, 30, 20)],
+        "text_color": (255, 255, 255),
+        "highlight_color": (255, 230, 0),
+        "bar_color": (40, 0, 0, 180),
+    },
+    {
+        "id": "tech_grid",
+        "name": "科技网格",
+        "icon": "grid",
+        "desc": "深色背景+科技网格线",
+        "bg_type": "pattern_grid",
+        "bg_colors": [(15, 20, 35), (30, 40, 70)],
+        "text_color": (180, 220, 255),
+        "highlight_color": (0, 200, 255),
+        "bar_color": (0, 10, 25, 180),
+    },
+    {
+        "id": "sunset_warm",
+        "name": "暖光夕阳",
+        "icon": "sun",
+        "desc": "橙粉渐变，温暖治愈风",
+        "bg_type": "gradient",
+        "bg_colors": [(255, 140, 100), (255, 180, 150)],
+        "text_color": (255, 255, 255),
+        "highlight_color": (255, 255, 100),
+        "bar_color": (120, 40, 20, 160),
+    },
+]
+
+
+def get_cover_style(style_id: str) -> dict:
+    """根据 style_id 获取封面样式预设，未匹配时返回默认（深蓝渐变）"""
+    for s in COVER_STYLE_PRESETS:
+        if s["id"] == style_id:
+            return s
+    return COVER_STYLE_PRESETS[0]
+
+
 class CoverGenerator(BaseModule):
     """封面生成模块"""
 
@@ -36,6 +115,7 @@ class CoverGenerator(BaseModule):
     def __init__(self, config=None, ffmpeg: FFmpegRunner | None = None):
         super().__init__(config)
         self.mode = self.config.get("cover.mode", "frame_overlay")
+        self.style_id = self.config.get("cover.style_id", "deep_blue")
         self.layout = self.config.get("cover.layout", "bottom")
         self.templates_dir = Path(self.config.get("cover.templates_dir", "./config/cover_templates"))
         self.font_path = self.config.get("cover.font_path", "")
@@ -57,7 +137,7 @@ class CoverGenerator(BaseModule):
             if self.mode == "frame_overlay" and ctx.raw_video_path and ctx.raw_video_path.exists():
                 cover = self._generate_from_frame(ctx.raw_video_path, title, output_path)
             else:
-                cover = self._generate_template(title, output_path)
+                cover = self._generate_template(title, output_path, style_id=self.style_id)
 
             ctx.cover_path = cover
             return ModuleResult(
@@ -66,23 +146,43 @@ class CoverGenerator(BaseModule):
                     "cover_path": str(cover),
                     "title": title,
                     "mode": self.mode,
+                    "style_id": self.style_id,
                 },
             )
         except Exception as e:
             return ModuleResult(success=False, error=str(e))
 
     def generate(self, video_path: Path | None, title: str,
-                 output: Path) -> Path:
-        """直接调用接口"""
+                 output: Path, style_id: str | None = None) -> Path:
+        """直接调用接口
+
+        Args:
+            style_id: 封面样式预设 ID，None 时用 self.style_id
+        """
+        sid = style_id or self.style_id
         if video_path and Path(video_path).exists() and self.mode == "frame_overlay":
-            return self._generate_from_frame(Path(video_path), title, output)
-        return self._generate_template(title, output)
+            return self._generate_from_frame(Path(video_path), title, output, style_id=sid)
+        return self._generate_template(title, output, style_id=sid)
+
+    def preview(self, title: str, output: Path,
+                style_id: str | None = None) -> Path:
+        """生成封面预览（供 UI 预览/重新生成使用，不走流水线）
+
+        Args:
+            title: 封面标题
+            output: 输出路径
+            style_id: 封面样式预设 ID，None 时用 deep_blue
+        """
+        sid = style_id or "deep_blue"
+        return self._generate_template(title, output, style_id=sid)
 
     def _generate_from_frame(
-        self, video: Path, title: str, output: Path
+        self, video: Path, title: str, output: Path,
+        style_id: str | None = None,
     ) -> Path:
         """从视频抽帧 + 标题叠加（智能选帧 + 色彩适配）"""
-        self.logger.info(f"从视频抽帧生成封面: {video.name}")
+        style = get_cover_style(style_id or self.style_id) if style_id else None
+        self.logger.info(f"从视频抽帧生成封面: {video.name} style={style['id'] if style else 'default'}")
 
         info = self.ffmpeg.probe_video_info(video)
         duration = info.duration if info else 5.0
@@ -128,7 +228,7 @@ class CoverGenerator(BaseModule):
 
         if not best_frame:
             # 全部失败，降级到模板
-            return self._generate_template(title, output)
+            return self._generate_template(title, output, style_id=style_id)
 
         # 加载帧并叠加标题
         img = Image.open(str(best_frame)).convert("RGB")
@@ -137,7 +237,8 @@ class CoverGenerator(BaseModule):
         # 提取主色调用于底条配色
         dominant_color = self._extract_dominant_color(img)
 
-        img = self._overlay_title(img, title, dominant_color=dominant_color)
+        # 使用样式预设的颜色叠加标题（style 优先，否则用主色调适配）
+        img = self._overlay_title(img, title, dominant_color=dominant_color, style=style)
         img.save(str(output), "JPEG", quality=92)
 
         # 清理临时帧
@@ -162,25 +263,68 @@ class CoverGenerator(BaseModule):
         except Exception:
             return (30, 30, 30)
 
-    def _generate_template(self, title: str, output: Path) -> Path:
-        """纯模板生成封面（渐变背景）"""
-        self.logger.info("生成模板封面")
+    def _generate_template(self, title: str, output: Path,
+                           style_id: str | None = None) -> Path:
+        """纯模板生成封面（支持多样式预设）
+
+        Args:
+            title: 封面标题文字
+            output: 输出路径
+            style_id: 封面样式预设 ID（deep_blue/dark_neon/clean_white/hot_red/tech_grid/sunset_warm）
+        """
+        style = get_cover_style(style_id or "deep_blue")
+        self.logger.info(f"生成模板封面 style={style['id']}({style['name']})")
         w, h = self.resolution
-        # 渐变背景
-        img = Image.new("RGB", (w, h), color=(30, 40, 60))
-        draw = ImageDraw.Draw(img)
 
-        # 绘制渐变（深蓝到紫）
-        for y in range(h):
-            ratio = y / h
-            r = int(20 + ratio * 50)
-            g = int(30 + ratio * 20)
-            b = int(60 + ratio * 80)
-            draw.line([(0, y), (w, y)], fill=(r, g, b))
+        # 根据样式预设渲染背景
+        img = self._render_background(style, w, h)
 
-        img = self._overlay_title(img, title, dark_bg=True)
+        # 叠加标题文字（使用样式预设的颜色）
+        img = self._overlay_title(img, title, style=style)
         img.save(str(output), "JPEG", quality=92)
         return output
+
+    def _render_background(self, style: dict, w: int, h: int) -> Image.Image:
+        """根据样式预设渲染背景"""
+        bg_type = style.get("bg_type", "gradient")
+        colors = style.get("bg_colors", [(20, 30, 60), (70, 50, 140)])
+
+        if bg_type == "solid":
+            # 纯色背景
+            return Image.new("RGB", (w, h), color=colors[0])
+
+        if bg_type == "pattern_grid":
+            # 科技网格：深色渐变 + 网格线
+            img = Image.new("RGB", (w, h), color=colors[0])
+            draw = ImageDraw.Draw(img)
+            # 渐变
+            c1, c2 = colors[0], colors[1]
+            for y in range(h):
+                ratio = y / h
+                r = int(c1[0] + (c2[0] - c1[0]) * ratio)
+                g = int(c1[1] + (c2[1] - c1[1]) * ratio)
+                b = int(c1[2] + (c2[2] - c1[2]) * ratio)
+                draw.line([(0, y), (w, y)], fill=(r, g, b))
+            # 网格线
+            grid_color = (40, 60, 100)
+            spacing = 60
+            for x in range(0, w, spacing):
+                draw.line([(x, 0), (x, h)], fill=grid_color, width=1)
+            for y in range(0, h, spacing):
+                draw.line([(0, y), (w, y)], fill=grid_color, width=1)
+            return img
+
+        # gradient（默认）：从上到下渐变
+        img = Image.new("RGB", (w, h), color=colors[0])
+        draw = ImageDraw.Draw(img)
+        c1, c2 = colors[0], colors[1]
+        for y in range(h):
+            ratio = y / h
+            r = int(c1[0] + (c2[0] - c1[0]) * ratio)
+            g = int(c1[1] + (c2[1] - c1[1]) * ratio)
+            b = int(c1[2] + (c2[2] - c1[2]) * ratio)
+            draw.line([(0, y), (w, y)], fill=(r, g, b))
+        return img
 
     def _resize_cover(self, img: Image.Image) -> Image.Image:
         """调整到目标尺寸（cover 模式：填满）"""
@@ -203,17 +347,26 @@ class CoverGenerator(BaseModule):
         self, img: Image.Image, title: str,
         dark_bg: bool = False,
         dominant_color: tuple[int, int, int] = (30, 30, 30),
+        style: dict | None = None,
     ) -> Image.Image:
-        """在图片上叠加标题文字（支持多布局 + 色彩适配）
+        """在图片上叠加标题文字（支持多布局 + 色彩适配 + 样式预设）
 
         布局：
         - bottom: 标题在下方 1/3（默认，适合口播）
         - center: 标题居中（适合强调）
         - top:    标题在上方 1/3（适合新闻类）
         - full:   标题占满中间（适合大字报）
+
+        Args:
+            style: 封面样式预设，传入时使用预设的 text_color/highlight_color/bar_color
         """
         draw = ImageDraw.Draw(img)
         w, h = self.resolution
+
+        # 从样式预设读取颜色（优先级最高）
+        text_color = style["text_color"] if style else (255, 255, 255)
+        highlight_color = style["highlight_color"] if style else (255, 230, 0)
+        bar_color = style["bar_color"] if style else None
 
         # 加载字体（根据布局调整字号，对标抖音爆款大字封面）
         if self.layout == "full":
@@ -246,17 +399,18 @@ class CoverGenerator(BaseModule):
         else:  # bottom（默认，口播标准）
             y_start = h - total_h - 280
 
-        # 底条颜色：根据主色调生成互补色/同色系
-        if dark_bg:
-            bar_color = (0, 0, 0, 160)
-        else:
-            # 基于主色调生成半透明深色底条
-            r, g, b = dominant_color
-            # 降低亮度作为底条
-            bar_r = max(0, r - 40)
-            bar_g = max(0, g - 40)
-            bar_b = max(0, b - 40)
-            bar_color = (bar_r, bar_g, bar_b, 160)
+        # 底条颜色：样式预设优先，否则根据主色调生成互补色/同色系
+        if bar_color is None:
+            if dark_bg:
+                bar_color = (0, 0, 0, 160)
+            else:
+                # 基于主色调生成半透明深色底条
+                r, g, b = dominant_color
+                # 降低亮度作为底条
+                bar_r = max(0, r - 40)
+                bar_g = max(0, g - 40)
+                bar_b = max(0, b - 40)
+                bar_color = (bar_r, bar_g, bar_b, 160)
 
         # 底条：底部渐变遮罩（从透明到深色，让标题区与画面自然融合）
         overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
@@ -287,8 +441,8 @@ class CoverGenerator(BaseModule):
             # 描边（黑色，8方向更粗，outline=4）
             for dx, dy in [(-3,0),(3,0),(0,-3),(0,3),(-3,-3),(3,3),(-3,3),(3,-3),(-2,-2),(2,2)]:
                 draw.text((x + dx, y + dy), line, fill=(0, 0, 0), font=font)
-            # 主文字：关键词（数字/感叹号附近的词）用黄色高亮，其余白色
-            self._draw_title_with_highlight(draw, x, y, line, font)
+            # 主文字：关键词（数字/感叹号附近的词）高亮，其余用预设主色
+            self._draw_title_with_highlight(draw, x, y, line, font, text_color, highlight_color)
             y += line_heights[i] + 24
 
         # 品牌水印（默认关闭，商业视频不需要；可通过 show_brand 开启）
@@ -310,22 +464,22 @@ class CoverGenerator(BaseModule):
     def _draw_title_with_highlight(
         self, draw: ImageDraw.ImageDraw, x: int, y: int,
         line: str, font,
+        text_color: tuple = (255, 255, 255),
+        highlight_color: tuple = (255, 230, 0),
     ) -> None:
-        """绘制带关键词高亮的标题（数字/感叹词用黄色，其余白色）
+        """绘制带关键词高亮的标题（数字/感叹词用高亮色，其余用主色）
 
-        对标抖音爆款封面：关键数字、感叹句用醒目黄色抓眼球。
+        对标抖音爆款封面：关键数字、感叹句用醒目颜色抓眼球。
         """
         import re
-        YELLOW = (255, 230, 0)   # 抖音爆款黄
-        WHITE = (255, 255, 255)
 
-        # 按数字/百分比/感叹号片段切分，含数字的标黄
+        # 按数字/百分比/感叹号片段切分，含数字的用高亮色
         parts = re.split(r'(\d+(?:\.\d+)?[%％]?|!+|！+)', line)
         cx = x
         for part in parts:
             if not part:
                 continue
-            color = YELLOW if re.match(r'^\d|!|！', part) else WHITE
+            color = highlight_color if re.match(r'^\d|!|！', part) else text_color
             try:
                 draw.text((cx, y), part, fill=color, font=font)
                 bbox = draw.textbbox((0, 0), part, font=font)

@@ -1945,10 +1945,26 @@
               <div class="card-title"><span class="card-title-icon"><i data-lucide="image"></i></span> 封面设置</div>
             </div>
             <div class="form-group">
+              <label class="form-label">封面样式</label>
+              <div class="cover-style-grid" id="cover-style-grid">
+                <!-- 样式卡片由 JS 动态注入 -->
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">封面标题预览</label>
+              <input class="form-input" id="cover-preview-title" placeholder="输入标题预览封面效果" value="">
+            </div>
+            <div class="form-group" id="cover-preview-wrapper" style="display:none">
+              <label class="form-label">封面预览</label>
+              <div class="cover-preview-box">
+                <img id="cover-preview-img" alt="封面预览" style="max-width:100%;border-radius:8px">
+              </div>
+              <button class="btn btn-secondary btn-sm" id="cover-regenerate-btn" type="button" style="margin-top:8px"><i data-lucide="refresh-cw"></i> 重新生成</button>
+            </div>
+            <div class="form-group">
               <label class="form-label">封面生成模式</label>
               <select class="form-select" id="cover-mode">
                 <option value="frame_overlay">帧叠加（视频帧+标题文字）</option>
-                <option value="sdxl">SDXL 文生图</option>
                 <option value="template">模板拼接</option>
               </select>
             </div>

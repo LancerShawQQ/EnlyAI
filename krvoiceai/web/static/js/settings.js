@@ -527,6 +527,18 @@ async function loadVideoSettings() {
   document.getElementById('cover-mode').value = cover.mode || 'frame_overlay';
   document.getElementById('cover-max-chars').value = cover.title_max_chars || 20;
   document.getElementById('cover-font-path').value = cover.font_path || './config/fonts/SourceHanSansCN-Bold.otf';
+  // 封面样式选择与预览
+  _coverSelectedStyle = cover.style_id || 'deep_blue';
+  if (typeof loadCoverStyles === 'function') loadCoverStyles();
+  const coverTitleInput = document.getElementById('cover-preview-title');
+  if (coverTitleInput) {
+    coverTitleInput.addEventListener('input', () => {
+      clearTimeout(_coverPreviewTimer);
+      _coverPreviewTimer = setTimeout(generateCoverPreview, 600);
+    });
+  }
+  const coverRegenBtn = document.getElementById('cover-regenerate-btn');
+  if (coverRegenBtn) coverRegenBtn.addEventListener('click', generateCoverPreview);
 }
 
 function onVideoRatioChange(val) {
@@ -577,6 +589,7 @@ async function saveVideoSettings() {
   // Cover 段
   const coverData = {
     mode: document.getElementById('cover-mode').value,
+    style_id: _coverSelectedStyle || 'deep_blue',
     title_max_chars: parseInt(document.getElementById('cover-max-chars').value),
     font_path: document.getElementById('cover-font-path').value,
   };
