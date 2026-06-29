@@ -1254,7 +1254,23 @@
                 <div class="tl-toolbar-group">
                   <span class="tl-toolbar-label">B-roll</span>
                   <button class="btn btn-sm btn-secondary" onclick="insertBrollAtPlayhead()"><i data-lucide="plus"></i> 在播放头插入</button>
+                  <button class="btn btn-sm btn-primary" id="tl-suggest-btn" onclick="suggestBrollClips()"><i data-lucide="sparkles"></i> 智能插入</button>
                 </div>
+              </div>
+
+              <!-- B-roll 智能推荐结果区 -->
+              <div id="tl-suggest-panel" style="display:none;margin-top:12px;padding:12px;background:linear-gradient(135deg,#f0f7ff,#e6f0ff);border:1px solid #b3d4ff;border-radius:8px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                  <div style="font-weight:600;color:#1a4d8f;font-size:13px">
+                    <i data-lucide="sparkles" style="width:16px;height:16px;vertical-align:-3px"></i>
+                    AI 智能推荐 B-roll 插入点
+                  </div>
+                  <div style="display:flex;gap:6px">
+                    <button class="btn btn-sm btn-secondary" onclick="clearBrollSuggestions()">清空</button>
+                    <button class="btn btn-sm btn-primary" onclick="acceptAllBrollSuggestions()">全部接受</button>
+                  </div>
+                </div>
+                <div id="tl-suggest-list" style="display:flex;flex-direction:column;gap:6px"></div>
               </div>
 
               <!-- 时间轴 -->

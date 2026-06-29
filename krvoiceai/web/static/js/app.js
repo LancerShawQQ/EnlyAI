@@ -3732,6 +3732,120 @@ function clearAllBrollClips() {
   renderClipList();
 }
 
+// ============ B-roll 智能插入（对标剪映智能匹配素材） ============
+
+let _brollSuggestions = []; // AI 推荐结果缓存
+
+async function suggestBrollClips() {
+  const jobId = document.getElementById('tl-job-select')?.value;
+  if (!jobId) { toast('请先选择任务', 'error'); return; }
+  const btn = document.getElementById('tl-suggest-btn');
+  const panel = document.getElementById('tl-suggest-panel');
+  const list = document.getElementById('tl-suggest-list');
+  if (!btn || !panel || !list) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> AI 分析中...';
+  panel.style.display = 'block';
+  list.innerHTML = '<div style="color:#666;font-size:13px;padding:8px">AI 正在分析文案与字幕，匹配 B-roll 素材...</div>';
+  try {
+    const result = await api('/api/broll/suggest', {
+      method: 'POST',
+      body: { job_id: jobId, max_clips: 5 },
+    });
+    if (!result.success) {
+      list.innerHTML = `<div style="color:#c0392b;font-size:13px;padding:8px">推荐失败：${result.error || '未知错误'}</div>`;
+      return;
+    }
+    _brollSuggestions = result.suggestions || [];
+    renderBrollSuggestions(result.meta);
+  } catch (e) {
+    list.innerHTML = `<div style="color:#c0392b;font-size:13px;padding:8px">请求失败：${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="sparkles"></i> 智能插入';
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+function renderBrollSuggestions(meta) {
+  const list = document.getElementById('tl-suggest-list');
+  if (!_brollSuggestions.length) {
+    list.innerHTML = '<div style="color:#666;font-size:13px;padding:8px">AI 未找到合适的 B-roll 插入点，请尝试上传更多相关素材</div>';
+    return;
+  }
+  const metaText = meta ? `（文案 ${meta.script_length} 字 · 字幕 ${meta.subtitle_count} 段 · 素材 ${meta.asset_count} 个 · 时长 ${meta.video_duration.toFixed(1)}s）` : '';
+  list.innerHTML = _brollSuggestions.map((s, i) => {
+    const modeLabel = s.mode === 'cut' ? '整段切换' : '画中画';
+    const modeColor = s.mode === 'cut' ? '#e74c3c' : '#3498db';
+    return `
+      <div class="broll-suggest-card" data-idx="${i}" style="background:#fff;border:1px solid #d0e0f0;border-radius:6px;padding:10px;display:flex;gap:10px;align-items:flex-start">
+        <div style="flex:1">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
+            <span style="font-weight:600;font-size:13px;color:#1a4d8f">${s.filename}</span>
+            <span style="font-size:11px;padding:1px 6px;border-radius:3px;background:${modeColor};color:#fff">${modeLabel}</span>
+            <span style="font-size:11px;color:#666">${s.start}s - ${s.end}s（${(s.end-s.start).toFixed(1)}s）</span>
+          </div>
+          <div style="font-size:12px;color:#555;line-height:1.5">${s.reason || 'AI 推荐插入点'}</div>
+        </div>
+        <button class="btn btn-sm btn-primary" onclick="acceptBrollSuggestion(${i})">接受</button>
+      </div>
+    `;
+  }).join('') + `<div style="font-size:11px;color:#888;margin-top:4px">${metaText}</div>`;
+}
+
+function acceptBrollSuggestion(idx) {
+  const s = _brollSuggestions[idx];
+  if (!s) return;
+  // 转换为 clips 格式并追加到 tlState.clips
+  const clip = {
+    path: s.path,
+    filename: s.filename,
+    start: s.start,
+    end: s.end,
+    mode: s.mode,
+    position: s.position || 'top_right',
+    scale: s.scale || 0.35,
+    volume: s.volume ?? 0,
+    transition: s.transition || 'fade',
+  };
+  tlState.clips.push(clip);
+  // 从推荐列表移除
+  _brollSuggestions.splice(idx, 1);
+  renderBrollSuggestions();
+  renderTimeline();
+  renderClipList();
+  toast('已接受推荐并添加到片段列表', 'success');
+}
+
+function acceptAllBrollSuggestions() {
+  if (!_brollSuggestions.length) return;
+  let count = 0;
+  _brollSuggestions.forEach(s => {
+    tlState.clips.push({
+      path: s.path,
+      filename: s.filename,
+      start: s.start,
+      end: s.end,
+      mode: s.mode,
+      position: s.position || 'top_right',
+      scale: s.scale || 0.35,
+      volume: s.volume ?? 0,
+      transition: s.transition || 'fade',
+    });
+    count++;
+  });
+  _brollSuggestions = [];
+  renderBrollSuggestions();
+  renderTimeline();
+  renderClipList();
+  toast(`已接受全部 ${count} 个推荐`, 'success');
+}
+
+function clearBrollSuggestions() {
+  _brollSuggestions = [];
+  document.getElementById('tl-suggest-panel').style.display = 'none';
+}
+
 // 应用 B-roll 合成
 async function applyBrollToVideo() {
   if (!tlState.videoPath) {

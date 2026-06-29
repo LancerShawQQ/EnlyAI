@@ -349,6 +349,96 @@ def create_app() -> FastAPI:
 
         return await loop.run_in_executor(None, _apply)
 
+    @app.post("/api/broll/suggest")
+    async def suggest_broll_clips(req: dict):
+        """B-roll 智能推荐（对标剪映智能匹配素材）
+
+        Body: {"job_id": "xxx", "max_clips": 5}
+        从 job 上下文读取文案+字幕时间戳，结合素材库生成 B-roll 推荐片段
+        """
+        import json as _json
+        from ..modules.broll_engine import BRollEngine
+        loop = asyncio.get_event_loop()
+
+        job_id = req.get("job_id", "")
+        max_clips = int(req.get("max_clips", 5))
+        if not job_id:
+            raise HTTPException(400, "缺少 job_id")
+
+        def _suggest():
+            # 1. 读 job context
+            ctx_file = Path("workspace_data") / "jobs" / job_id / "context.json"
+            if not ctx_file.exists():
+                return {"success": False, "error": "任务上下文不存在"}
+            try:
+                ctx = _json.loads(ctx_file.read_text(encoding="utf-8"))
+            except Exception as e:
+                return {"success": False, "error": f"读取上下文失败: {e}"}
+
+            # 2. 提取 script / subtitle_segments / video_duration
+            input_data = ctx.get("input_data", {}) or {}
+            metadata = ctx.get("metadata", {}) or {}
+            script = (
+                input_data.get("script")
+                or metadata.get("script_text")
+                or metadata.get("script")
+                or metadata.get("extracted_script")
+                or ""
+            )
+            subtitle_segments = (
+                metadata.get("subtitle_segments")
+                or input_data.get("subtitle_segments")
+                or []
+            )
+            video_duration = float(metadata.get("video_duration") or 0)
+            if not video_duration and subtitle_segments:
+                video_duration = float(subtitle_segments[-1].get("end", 0))
+
+            # 3. 读素材库
+            broll_dir = Path("./config/broll_assets")
+            assets = []
+            if broll_dir.exists():
+                for f in sorted(broll_dir.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+                    if f.is_file():
+                        ext = f.suffix.lower()
+                        if ext in (".mp4", ".mov", ".avi", ".mkv", ".webm",
+                                   ".jpg", ".jpeg", ".png", ".webp", ".bmp"):
+                            kind = "video" if ext in (".mp4", ".mov", ".avi", ".mkv", ".webm") else "image"
+                            assets.append({
+                                "path": str(f),
+                                "filename": f.name,
+                                "kind": kind,
+                                "size": f.stat().st_size,
+                            })
+
+            if not assets:
+                return {"success": False, "error": "素材库为空，请先上传 B-roll 素材"}
+            if not script and not subtitle_segments:
+                return {"success": False, "error": "任务无文案和字幕，无法智能推荐"}
+
+            # 4. 调用智能推荐
+            engine = BRollEngine()
+            engine.setup()
+            suggestions = engine.suggest_broll_clips(
+                script=script,
+                subtitle_segments=subtitle_segments,
+                assets=assets,
+                video_duration=video_duration,
+                max_clips=max_clips,
+            )
+            return {
+                "success": True,
+                "suggestions": suggestions,
+                "meta": {
+                    "script_length": len(script),
+                    "subtitle_count": len(subtitle_segments),
+                    "asset_count": len(assets),
+                    "video_duration": video_duration,
+                },
+            }
+
+        return await loop.run_in_executor(None, _suggest)
+
     @app.post("/api/video/quick-edit")
     async def quick_edit_video(
         video_path: str = Form(...),
@@ -526,15 +616,18 @@ def create_app() -> FastAPI:
         loop = asyncio.get_event_loop()
 
         def _gen():
-            output = Path("output") / f"cover_preview_{int(_time.time())}.jpg"
-            output.parent.mkdir(parents=True, exist_ok=True)
+            # 输出到 workspace_data 目录，使前端可通过 /api/files 访问（/api/files 安全检查仅允许 workspace_data/tmp）
+            output_dir = Path("workspace_data") / "cover_previews"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output = output_dir / f"cover_preview_{int(_time.time())}.jpg"
             engine = CoverGenerator()
             engine.setup()
             engine.preview(title, output, style_id=style_id)
             return output
 
         output_path = await loop.run_in_executor(None, _gen)
-        return {"success": True, "cover_path": str(output_path)}
+        # 返回 posix 风格路径，避免 Windows 反斜杠在前端 URL 编码时出问题
+        return {"success": True, "cover_path": output_path.as_posix()}
 
     @app.get("/api/templates")
     async def get_templates():
