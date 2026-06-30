@@ -105,12 +105,19 @@ class VideoComposer(BaseModule):
         self.outro_text = outro_cfg.get("text", "关注点赞支持一下")
         self.outro_duration = outro_cfg.get("duration", 2.0)
 
+        # 硬件加速：自动检测 NVENC，选用最优编码器（不降质量）
+        from ..core.hardware_probe import get_video_encoder, detect_nvenc
+        self._nvenc_available = detect_nvenc()
+        self._vcodec, self._vpreset, self._vextra = get_video_encoder()
+
     def setup(self) -> None:
         if not self.ffmpeg.available():
             raise RuntimeError("FFmpeg 不可用，视频合成模块无法工作")
+        enc_type = "NVENC 硬件编码" if self._nvenc_available else "CPU 软编码"
         self.logger.info(
             f"视频合成模块初始化 "
-            f"resolution={self.output_resolution} fps={self.output_fps}"
+            f"resolution={self.output_resolution} fps={self.output_fps} "
+            f"编码器={self._vcodec}({enc_type})"
         )
         super().setup()
 
@@ -300,8 +307,8 @@ class VideoComposer(BaseModule):
                 args += ["-vf", vf_filters]
 
         args += [
-            "-c:v", "libx264",
-            "-preset", "medium",
+            "-c:v", self._vcodec,
+            "-preset", self._vpreset,
             "-b:v", self.video_bitrate,
             "-pix_fmt", "yuv420p",
             "-r", str(self.output_fps),
@@ -537,8 +544,8 @@ class VideoComposer(BaseModule):
             "-i", "anullsrc=channel_layout=mono:sample_rate=44100",
             "-t", "1.5",
             "-vf", f"scale={w}:{h},fps={self.output_fps},format=yuv420p",
-            "-c:v", "libx264",
-            "-preset", "medium",
+            "-c:v", self._vcodec,
+            "-preset", self._vpreset,
             "-pix_fmt", "yuv420p",
             "-c:a", "aac",
             "-b:a", "192k",
@@ -559,8 +566,8 @@ class VideoComposer(BaseModule):
                    f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,fps={self.output_fps},format=yuv420p",
             "-map", "0:v:0",
             "-map", "1:a:0",  # 静音音频轨（与视频时长对齐）
-            "-c:v", "libx264",
-            "-preset", "medium",
+            "-c:v", self._vcodec,
+            "-preset", self._vpreset,
             "-pix_fmt", "yuv420p",
             "-c:a", "aac",
             "-b:a", self.audio_bitrate,
@@ -578,8 +585,8 @@ class VideoComposer(BaseModule):
             "-filter_complex",
             f"[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]",
             "-map", "[outv]", "-map", "[outa]",
-            "-c:v", "libx264",
-            "-preset", "medium",
+            "-c:v", self._vcodec,
+            "-preset", self._vpreset,
             "-pix_fmt", "yuv420p",
             "-r", str(self.output_fps),
             "-c:a", "aac",
@@ -628,7 +635,7 @@ class VideoComposer(BaseModule):
                    f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,fps={self.output_fps},format=yuv420p",
             "-map", "0:v:0",
             "-map", "1:a:0",
-            "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+            "-c:v", self._vcodec, "-preset", self._vpreset, "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", self.audio_bitrate,
             "-r", str(self.output_fps),
             "-shortest",
@@ -657,7 +664,7 @@ class VideoComposer(BaseModule):
             "-filter_complex",
             f"{concat_parts}concat=n={len(segments)}:v=1:a=1[outv][outa]",
             "-map", "[outv]", "-map", "[outa]",
-            "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+            "-c:v", self._vcodec, "-preset", self._vpreset, "-pix_fmt", "yuv420p",
             "-r", str(self.output_fps),
             "-c:a", "aac", "-b:a", self.audio_bitrate,
             str(combined),
@@ -718,7 +725,7 @@ class VideoComposer(BaseModule):
             "-i", "anullsrc=channel_layout=mono:sample_rate=44100",
             "-vf", vf,
             "-t", f"{duration}",
-            "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+            "-c:v", self._vcodec, "-preset", self._vpreset, "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",
             "-shortest",
             str(clip_path),
@@ -740,7 +747,7 @@ class VideoComposer(BaseModule):
                     f":x=(w-text_w)/2:y=(h-text_h)/2{font_opt},"
                     f"fade=t=in:st=0:d=0.5,fade=t=out:st={max(0,duration-0.5)}:d=0.5",
                     "-t", f"{duration}",
-                    "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+                    "-c:v", self._vcodec, "-preset", self._vpreset, "-pix_fmt", "yuv420p",
                     "-c:a", "aac", "-b:a", "192k",
                     "-shortest",
                     str(clip_path),

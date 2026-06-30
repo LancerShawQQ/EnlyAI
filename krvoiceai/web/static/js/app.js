@@ -220,19 +220,41 @@ const PAGES = [
 function navigate(page) {
   PAGES.forEach(p => {
     const pageEl = document.getElementById(`page-${p}`);
-    const navEl = document.getElementById(`nav-${p}`);
     if (pageEl) pageEl.classList.remove('active');
-    if (navEl) navEl.classList.remove('active');
   });
+  // 清除所有侧边栏导航项的 active（含分组导航 nav-resources / nav-settings）
+  document.querySelectorAll('.sidebar-nav .nav-item').forEach(n => n.classList.remove('active'));
+
   const targetPage = document.getElementById(`page-${page}`);
   const targetNav = document.getElementById(`nav-${page}`);
   if (targetPage) targetPage.classList.add('active');
   if (targetNav) targetNav.classList.add('active');
 
-  // 更新底部导航栏激活状态（移动端）
+  // 资源中心 / 设置中心 分组导航高亮
+  const NAV_GROUP = {
+    avatars: 'nav-resources', voices: 'nav-resources', templates: 'nav-resources',
+    'settings-models': 'nav-settings', 'settings-video': 'nav-settings',
+    'settings-scene': 'nav-settings', 'settings-publish': 'nav-settings',
+  };
+  const groupNavId = NAV_GROUP[page];
+  if (groupNavId) {
+    const gNav = document.getElementById(groupNavId);
+    if (gNav) gNav.classList.add('active');
+  }
+
+  // 更新底部导航栏激活状态（移动端，按分组映射）
+  const BOTTOM_GROUP = {
+    avatars: 'avatars', voices: 'avatars', templates: 'avatars',
+    'settings-models': 'settings-models', 'settings-video': 'settings-models',
+    'settings-scene': 'settings-models', 'settings-publish': 'settings-models',
+  };
+  const activeBottom = BOTTOM_GROUP[page] || page;
   document.querySelectorAll('.bottom-nav-item').forEach(item => {
-    item.classList.toggle('active', item.dataset.page === page);
+    item.classList.toggle('active', item.dataset.page === activeBottom);
   });
+
+  // 同步资源中心 / 设置中心内部 Tab 高亮
+  syncResourceSettingsTabs(page);
 
   // 移动端：导航后自动关闭侧边栏抽屉
   closeSidebarDrawer();
@@ -261,6 +283,31 @@ function navigate(page) {
 
   // 切换页面后重新渲染 Lucide 图标（覆盖动态生成的内容）
   if (window.lucide) lucide.createIcons();
+}
+
+// 资源中心 / 设置中心 内部 Tab 高亮同步（页面切换时调用）
+function syncResourceSettingsTabs(page) {
+  const resourceMap = { avatars: 'avatars', voices: 'voices', templates: 'templates' };
+  const rTarget = resourceMap[page];
+  document.querySelectorAll('.resource-tab').forEach(t => {
+    const on = t.dataset.target === rTarget;
+    t.classList.toggle('active', on);
+    t.style.color = on ? 'var(--primary)' : 'var(--text-muted)';
+    t.style.borderBottom = on ? '2px solid var(--primary)' : 'none';
+    t.style.fontWeight = on ? '600' : 'normal';
+  });
+  const settingsMap = {
+    'settings-models': 'settings-models', 'settings-video': 'settings-video',
+    'settings-scene': 'settings-scene', 'settings-publish': 'settings-publish',
+  };
+  const sTarget = settingsMap[page];
+  document.querySelectorAll('.settings-tab').forEach(t => {
+    const on = t.dataset.target === sTarget;
+    t.classList.toggle('active', on);
+    t.style.color = on ? 'var(--primary)' : 'var(--text-muted)';
+    t.style.borderBottom = on ? '2px solid var(--primary)' : 'none';
+    t.style.fontWeight = on ? '600' : 'normal';
+  });
 }
 
 // ========== 移动端侧边栏抽屉 ==========
@@ -3361,6 +3408,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (nav) nav.addEventListener('click', () => navigate(p));
   });
 
+  // 资源中心 / 设置中心 分组导航绑定
+  document.getElementById('nav-resources')?.addEventListener('click', () => navigate('avatars'));
+  document.getElementById('nav-settings')?.addEventListener('click', () => navigate('settings-models'));
+
+  // 资源中心 / 设置中心 内部 Tab 点击切换（事件委托）
+  document.addEventListener('click', (e) => {
+    const rt = e.target.closest('.resource-tab');
+    if (rt) { navigate(rt.dataset.target); return; }
+    const st = e.target.closest('.settings-tab');
+    if (st) navigate(st.dataset.target);
+  });
+
   // 移动端：汉堡菜单切换侧边栏抽屉
   document.getElementById('menu-toggle')?.addEventListener('click', () => {
     const sidebar = document.querySelector('.sidebar');
@@ -3433,8 +3492,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // 初始渲染进度
   renderPipeline({});
 
-  // 加载首页数据（默认首页仪表盘）
-  navigate('dashboard');
+  // 默认落地页：创作向导
+  navigate('wizard');
   loadHealth();
 });
 

@@ -99,74 +99,22 @@
         </div>
       </div>
 
-      <nav class="sidebar-nav">
-        <div class="nav-section">
-          <div class="nav-label">开始</div>
-          <button class="nav-item active" id="nav-dashboard">
-            <span class="nav-icon"><i data-lucide="home"></i></span><span>首页</span>
-          </button>
-        </div>
-
-        <div class="nav-section">
-          <div class="nav-label">创作</div>
-          <button class="nav-item" id="nav-wizard">
-            <span class="nav-icon"><i data-lucide="wand-2"></i></span><span>创作向导</span>
-          </button>
-          <button class="nav-item" id="nav-generate">
-            <span class="nav-icon"><i data-lucide="rocket"></i></span><span>一键生成</span>
-          </button>
-          <button class="nav-item" id="nav-script">
-            <span class="nav-icon"><i data-lucide="pen-line"></i></span><span>文案工作台</span>
-          </button>
-          <button class="nav-item" id="nav-step-by-step">
-            <span class="nav-icon"><i data-lucide="wrench"></i></span><span>分步创作</span>
-          </button>
-          <button class="nav-item" id="nav-batch">
-            <span class="nav-icon"><i data-lucide="package"></i></span><span>批量处理</span>
-          </button>
-          <button class="nav-item" id="nav-timeline">
-            <span class="nav-icon"><i data-lucide="film"></i></span><span>时间轴剪辑</span>
-          </button>
-        </div>
-
-        <div class="nav-section">
-          <div class="nav-label">资源</div>
-          <button class="nav-item" id="nav-avatars">
-            <span class="nav-icon"><i data-lucide="user-round"></i></span><span>形象管理</span>
-          </button>
-          <button class="nav-item" id="nav-voices">
-            <span class="nav-icon"><i data-lucide="mic"></i></span><span>音色管理</span>
-          </button>
-          <button class="nav-item" id="nav-templates">
-            <span class="nav-icon"><i data-lucide="palette"></i></span><span>模板中心</span>
-          </button>
-          <button class="nav-item" id="nav-jobs">
-            <span class="nav-icon"><i data-lucide="clipboard-list"></i></span><span>任务管理</span>
-          </button>
-        </div>
-
-        <div class="nav-section">
-          <div class="nav-label">设置</div>
-          <button class="nav-item" id="nav-settings-models">
-            <span class="nav-icon"><i data-lucide="brain-circuit"></i></span><span>模型配置</span>
-          </button>
-          <button class="nav-item" id="nav-settings-video">
-            <span class="nav-icon"><i data-lucide="video"></i></span><span>视频设置</span>
-          </button>
-          <button class="nav-item" id="nav-settings-scene">
-            <span class="nav-icon"><i data-lucide="sparkles"></i></span><span>场景与效果</span>
-          </button>
-          <button class="nav-item" id="nav-settings-publish">
-            <span class="nav-icon"><i data-lucide="share-2"></i></span><span>发布设置</span>
-          </button>
-        </div>
-
-        <div class="nav-section">
-          <div class="nav-label">系统</div>
-          <button class="nav-item" id="nav-health">
-            <span class="nav-icon"><i data-lucide="activity"></i></span><span>系统状态</span>
-          </button>
-        </div>
+            <nav class="sidebar-nav">
+        <button class="nav-item active" id="nav-wizard">
+          <span class="nav-icon"><i data-lucide="wand-2"></i></span><span>创作向导</span>
+        </button>
+        <button class="nav-item" id="nav-resources">
+          <span class="nav-icon"><i data-lucide="folder-open"></i></span><span>资源中心</span>
+        </button>
+        <button class="nav-item" id="nav-jobs">
+          <span class="nav-icon"><i data-lucide="clipboard-list"></i></span><span>我的任务</span>
+        </button>
+        <button class="nav-item" id="nav-settings">
+          <span class="nav-icon"><i data-lucide="settings"></i></span><span>设置中心</span>
+        </button>
+        <button class="nav-item" id="nav-health">
+          <span class="nav-icon"><i data-lucide="activity"></i></span><span>系统状态</span>
+        </button>
       </nav>
 
       <div class="sidebar-footer">
@@ -181,7 +129,7 @@
     <main class="main-content">
 
       <!-- ===== 页面: 首页仪表盘（默认激活） ===== -->
-      <div class="page active" id="page-dashboard">
+      <div class="page" id="page-dashboard">
         <!-- 1.1 Hero 欢迎区 -->
         <div class="dashboard-hero">
           <div class="hero-content">
@@ -267,7 +215,7 @@
       </div>
 
       <!-- ===== 页面 0: 创作向导 ===== -->
-      <div class="page" id="page-wizard">
+      <div class="page active" id="page-wizard">
         <div class="page-header">
           <h1 class="page-title">创作向导</h1>
           <p class="page-subtitle">流水线式引导创作，6 步完成商业级数字人口播视频</p>
@@ -1421,6 +1369,11 @@
 
       <!-- ===== 页面 5: 形象管理 ===== -->
       <div class="page" id="page-avatars">
+        <div class="resource-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);">
+          <button class="resource-tab active" data-target="avatars" style="padding:8px 16px;border:none;background:none;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;font-weight:600;">形象管理</button>
+          <button class="resource-tab" data-target="voices" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">音色管理</button>
+          <button class="resource-tab" data-target="templates" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">模板中心</button>
+        </div>
         <div class="page-header">
           <h1 class="page-title">形象管理</h1>
           <p class="page-subtitle">上传真人照片或视频（嘴巴不动），生成唇形同步数字人</p>
@@ -1475,6 +1428,11 @@
 
       <!-- ===== 页面 6: 音色管理 ===== -->
       <div class="page" id="page-voices">
+        <div class="resource-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);">
+          <button class="resource-tab active" data-target="avatars" style="padding:8px 16px;border:none;background:none;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;font-weight:600;">形象管理</button>
+          <button class="resource-tab" data-target="voices" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">音色管理</button>
+          <button class="resource-tab" data-target="templates" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">模板中心</button>
+        </div>
         <div class="page-header">
           <h1 class="page-title">音色管理</h1>
           <p class="page-subtitle">上传 5-10 秒干净人声样本，克隆音色</p>
@@ -1512,6 +1470,11 @@
 
       <!-- ===== 页面 6.5: 模板中心 ===== -->
       <div class="page" id="page-templates">
+        <div class="resource-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);">
+          <button class="resource-tab active" data-target="avatars" style="padding:8px 16px;border:none;background:none;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;font-weight:600;">形象管理</button>
+          <button class="resource-tab" data-target="voices" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">音色管理</button>
+          <button class="resource-tab" data-target="templates" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">模板中心</button>
+        </div>
         <div class="page-header">
           <h1 class="page-title">模板中心</h1>
           <p class="page-subtitle">场景化一键创作：选场景 → 填内容 → 生成视频。对标腾讯智影/万兴播爆的"点点点"创作模式</p>
@@ -1617,6 +1580,12 @@
 
       <!-- ===== 页面 8: 模型配置 ===== -->
       <div class="page" id="page-settings-models">
+        <div class="settings-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+          <button class="settings-tab active" data-target="settings-models" style="padding:8px 16px;border:none;background:none;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;font-weight:600;">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">场景与效果</button>
+          <button class="settings-tab" data-target="settings-publish" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">发布设置</button>
+        </div>
         <div class="page-header">
           <h1 class="page-title">模型配置</h1>
           <p class="page-subtitle">配置 LLM、TTS、ASR、数字人等核心模型。修改后自动保存并热更新。</p>
@@ -1860,6 +1829,12 @@
 
       <!-- ===== 页面 9: 视频设置 ===== -->
       <div class="page" id="page-settings-video">
+        <div class="settings-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+          <button class="settings-tab active" data-target="settings-models" style="padding:8px 16px;border:none;background:none;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;font-weight:600;">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">场景与效果</button>
+          <button class="settings-tab" data-target="settings-publish" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">发布设置</button>
+        </div>
         <div class="page-header">
           <h1 class="page-title">视频设置</h1>
           <p class="page-subtitle">字幕样式、BGM、画面比例、水印等视频输出参数</p>
@@ -2042,6 +2017,12 @@
 
       <!-- ===== 页面 9.5: 场景与效果设置 ===== -->
       <div class="page" id="page-settings-scene">
+        <div class="settings-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+          <button class="settings-tab active" data-target="settings-models" style="padding:8px 16px;border:none;background:none;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;font-weight:600;">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">场景与效果</button>
+          <button class="settings-tab" data-target="settings-publish" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">发布设置</button>
+        </div>
         <div class="page-header">
           <h1 class="page-title">场景与效果</h1>
           <p class="page-subtitle">数字人场景、音频效果、视频转场/滤镜/水印/片头片尾等高级效果配置</p>
@@ -2238,6 +2219,12 @@
 
       <!-- ===== 页面 10: 发布设置 ===== -->
       <div class="page" id="page-settings-publish">
+        <div class="settings-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+          <button class="settings-tab active" data-target="settings-models" style="padding:8px 16px;border:none;background:none;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;font-weight:600;">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">场景与效果</button>
+          <button class="settings-tab" data-target="settings-publish" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">发布设置</button>
+        </div>
         <div class="page-header">
           <h1 class="page-title">发布设置</h1>
           <p class="page-subtitle">多平台账号管理、发布模式、频率控制</p>
@@ -2358,18 +2345,14 @@
     </main>
 
     <!-- ========== 移动端底部导航栏（拇指区） ========== -->
-    <nav class="bottom-nav">
-      <button class="bottom-nav-item active" data-page="dashboard">
-        <span class="bottom-nav-icon"><i data-lucide="home"></i></span>
-        <span class="bottom-nav-label">首页</span>
-      </button>
-      <button class="bottom-nav-item" data-page="wizard">
+        <nav class="bottom-nav">
+      <button class="bottom-nav-item active" data-page="wizard">
         <span class="bottom-nav-icon"><i data-lucide="wand-2"></i></span>
         <span class="bottom-nav-label">创作</span>
       </button>
-      <button class="bottom-nav-item" data-page="templates">
-        <span class="bottom-nav-icon"><i data-lucide="palette"></i></span>
-        <span class="bottom-nav-label">模板</span>
+      <button class="bottom-nav-item" data-page="avatars">
+        <span class="bottom-nav-icon"><i data-lucide="folder-open"></i></span>
+        <span class="bottom-nav-label">资源</span>
       </button>
       <button class="bottom-nav-item" data-page="jobs">
         <span class="bottom-nav-icon"><i data-lucide="clipboard-list"></i></span>
@@ -2378,6 +2361,10 @@
       <button class="bottom-nav-item" data-page="settings-models">
         <span class="bottom-nav-icon"><i data-lucide="settings"></i></span>
         <span class="bottom-nav-label">设置</span>
+      </button>
+      <button class="bottom-nav-item" data-page="health">
+        <span class="bottom-nav-icon"><i data-lucide="activity"></i></span>
+        <span class="bottom-nav-label">系统</span>
       </button>
     </nav>
 
