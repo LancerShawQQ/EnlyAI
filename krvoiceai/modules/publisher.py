@@ -568,9 +568,22 @@ class Publisher(BaseModule):
         qr_login = login_v2.QrCodeLogin(platform=login_v2.QrCodeLoginChannel.WEB)
         self._bilibili_qr_login = qr_login
 
-        # 生成二维码
+        # 生成二维码（注意：FastAPI 已在事件循环中，不能用 asyncio.run）
         import asyncio
-        asyncio.run(qr_login.generate_qrcode())
+        try:
+            # 正常环境（CLI/脚本）
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # FastAPI 异步上下文：用 ensure_future + 等待
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, qr_login.generate_qrcode())
+                    future.result()
+            else:
+                loop.run_until_complete(qr_login.generate_qrcode())
+        except RuntimeError:
+            # 无事件循环，直接 asyncio.run
+            asyncio.run(qr_login.generate_qrcode())
 
         # 获取二维码图片（base64）和终端字符画
         qrcode_image_b64 = ""
@@ -610,8 +623,18 @@ class Publisher(BaseModule):
         from bilibili_api import login_v2
 
         try:
-            # 检查扫码状态
-            state = asyncio.run(self._bilibili_qr_login.check_state())
+            # 检查扫码状态（注意：FastAPI 已在事件循环中，不能用 asyncio.run）
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        future = pool.submit(asyncio.run, self._bilibili_qr_login.check_state())
+                        state = future.result()
+                else:
+                    state = loop.run_until_complete(self._bilibili_qr_login.check_state())
+            except RuntimeError:
+                state = asyncio.run(self._bilibili_qr_login.check_state())
             # state 可能是 QrCodeLoginEvents.WAITING / DONE / EXPIRED
             if self._bilibili_qr_login.has_done():
                 # 获取 Credential

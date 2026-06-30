@@ -37,58 +37,84 @@
 
 ## 🚀 快速开始
 
-### 1. 环境准备
+### 方式一：一键启动（推荐新手）
+
+```bash
+# 1. 下载代码
+git clone https://github.com/LancerShawQQ/KrVoiceAI.git
+cd KrVoiceAI
+
+# 2. 双击 启动.bat（或命令行运行）
+启动.bat
+```
+
+脚本会**自动完成**：
+- 检测/创建 Python 虚拟环境
+- 安装所有 Python 依赖（含 Web 服务、本地增强模块）
+- 安装 Playwright 浏览器内核（发布到抖音/快手需要）
+- 检测 FFmpeg（缺失时给出下载提示）
+- 启动 Web UI 并自动打开浏览器
+
+**前置条件**（仅需手动安装一次）：
+1. **Python 3.10+**：https://www.python.org/downloads/ （安装时勾选 "Add Python to PATH"）
+2. **FFmpeg**：https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+   - 解压后将 `bin` 目录加入系统 PATH
+3. **Git**（用于克隆代码）：https://git-scm.com/
+
+**首次运行可选**（按需启用对应功能）：
+- **本地声音克隆**：运行 `scripts\setup_moss_tts.bat`（下载 MOSS-TTS-Nano 模型约500MB）
+- **真实唇形同步**：运行 `scripts\setup_wav2lip_env.bat`（下载 Wav2Lip 模型约200MB）
+- **LLM 文案**：在 Web UI「设置」页面填入 DeepSeek API Key
+
+> 未安装上述可选组件时，系统自动降级到 edge-tts（微软免费在线TTS）+ mock 数字人，仍可生成完整视频。
+
+### 方式二：手动安装（开发者）
 
 ```bash
 # 主环境（Python 3.12）
 cd KrVoiceAI
-pip install -e .
-pip install onnxruntime sentencepiece soundfile gradio loguru edge-tts
+pip install -e ".[local]"
+pip install fastapi uvicorn bilibili-api-python
+python -m playwright install chromium
 
 # Wav2Lip 环境（Python 3.8，独立 venv）
-# 参考 wav2lip_env 目录，需 torch 1.13.1+cpu, librosa, opencv, gfpgan
+# 运行 scripts\setup_wav2lip_env.bat 自动安装
 ```
 
-### 2. 克隆 MOSS-TTS-Nano 模型
+### 启动服务
+
+**Web UI（推荐，现代化界面）**
 
 ```bash
-# 仓库与 ONNX 模型（约 500MB）
-cd ..
-git clone https://github.com/OpenMOSS/MOSS-TTS-Nano.git
-# 设置 HF 镜像（国内）
-set HF_ENDPOINT=https://hf-mirror.com
-# 下载模型到 MOSS-TTS-Nano/models/（MOSS-TTS-Nano-100M-ONNX + MOSS-Audio-Tokenizer-Nano-ONNX）
-```
-
-### 3. 配置
-
-编辑 `.env`：
-
-```bash
-KRVOICEAI_LLM_PROVIDER=agnes
-KRVOICEAI_LLM_API_KEY=你的key
-KRVOICEAI_TTS_PROVIDER=moss_nano    # 本地声音克隆
-```
-
-或编辑 `config/default.yaml`，所有配置均可在 GUI「设置」标签页热修改。
-
-### 4. 启动 GUI
-
-**推荐：Web UI（现代化界面，对标旗博士）**
-
-```bash
-python -m krvoiceai.ui.cli web --port 8000
+python -m krvoiceai.web.server --port 8000
 ```
 
 访问 http://localhost:8000
 
-**备用：Gradio UI（精简，功能受限）**
+**Gradio UI（备用，精简界面）**
 
 ```bash
 python -m krvoiceai.ui.cli serve --port 7860
 ```
 
-访问 http://localhost:7860
+### 配置
+
+所有配置在 Web UI「设置」标签页热修改，或编辑 `config/user_config.yaml`：
+
+```yaml
+# LLM 文案（填入 DeepSeek API Key 即可）
+llm:
+  provider: agnes
+  api_key: 你的key
+
+# TTS（默认 moss_nano 本地克隆，未安装时自动降级 edge-tts）
+tts:
+  provider: moss_nano
+
+# 数字人（默认 wav2lip，未安装时用 mock）
+avatar:
+  provider: wav2lip
+```
 
 ## 📋 GUI 标签页说明
 
