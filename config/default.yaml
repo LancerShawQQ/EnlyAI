@@ -254,8 +254,8 @@ audio:
     enabled: true
     # BGM 曲目（从 bgm_library 选择）
     track: "soft_piano"
-    # BGM 音量（0-100，建议 10-15，口播人声为主）
-    volume: 12
+    # BGM 音量（0-100，建议 20-30，口播人声为主，BGM 作为背景陪衬）
+    volume: 25
     # 淡入时长（秒）
     fade_in: 1.0
     # 淡出时长（秒）

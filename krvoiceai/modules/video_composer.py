@@ -48,7 +48,12 @@ class VideoComposer(BaseModule):
         self.video_bitrate = self.config.get("composer.video_bitrate", "8M")
         self.audio_bitrate = self.config.get("composer.audio_bitrate", "192k")
         self.bgm_dir = Path(self.config.get("composer.bgm_dir", "./config/bgm"))
-        self.bgm_volume = self.config.get("composer.bgm_volume", 0.15)
+        # BGM 音量：优先读 audio.bgm.volume（0-100），换算为 0-1；兜底 composer.bgm_volume
+        _bgm_vol_pct = self.config.get("audio.bgm.volume", None)
+        if _bgm_vol_pct is not None:
+            self.bgm_volume = float(_bgm_vol_pct) / 100.0
+        else:
+            self.bgm_volume = self.config.get("composer.bgm_volume", 0.15)
 
         # 字幕样式（新 subtitle 段，对标剪映）
         sub_cfg = self.config.get("subtitle", {})
@@ -376,6 +381,7 @@ class VideoComposer(BaseModule):
                     line_spacing=self.subtitle_line_spacing,
                     play_res_x=self.output_resolution[0],
                     play_res_y=self.output_resolution[1],
+                    max_chars_per_line=0,  # 0=自动按分辨率和字号计算，长句自动折行
                 )
                 word_count = sum(len(s.get("words", [])) for s in segments)
                 self.logger.info(
@@ -404,6 +410,7 @@ class VideoComposer(BaseModule):
                 line_spacing=self.subtitle_line_spacing,
                 play_res_x=self.output_resolution[0],
                 play_res_y=self.output_resolution[1],
+                max_chars_per_line=0,  # 0=自动按分辨率和字号计算，长句自动折行
             )
             self.logger.info(
                 f"字幕 SRT→ASS 转换 preset={self.subtitle_preset} "

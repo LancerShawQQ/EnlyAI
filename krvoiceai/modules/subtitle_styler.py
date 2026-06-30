@@ -210,6 +210,7 @@ def segments_to_ass(
     line_spacing: float = 1.2,
     play_res_x: int = 1080,
     play_res_y: int = 1920,
+    max_chars_per_line: int = 0,
 ) -> str:
     """将分句时间戳列表转为 ASS 字幕字符串
 
@@ -228,6 +229,8 @@ def segments_to_ass(
         letter_spacing: 字间距
         line_spacing: 行高倍数
         play_res_x/y: ASS PlayResX/Y（视频分辨率）
+        max_chars_per_line: 每行最大字符数（0=自动按分辨率计算）。
+            超过自动折行（插入 \\N），避免长句超出屏幕被裁剪。
 
     Returns:
         ASS 格式字幕字符串
@@ -270,21 +273,62 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     events: list[str] = []
     anim_tag = ANIMATION_PRESETS.get(animation, "")
 
+    # 自动计算每行最大字符数（基于分辨率和字号）
+    # 竖屏 1080 宽，左右各留 80px 边距，可用宽度 920px
+    # 中文字符宽度 ≈ 字号，每行字符数 ≈ (可用宽度 - 边距) / 字号
+    if max_chars_per_line <= 0:
+        usable_w = play_res_x - 160  # 左右各 80px 边距
+        max_chars_per_line = max(8, int(usable_w / font_size))
+
+    def _wrap_text(text: str) -> str:
+        """长文本自动折行（按标点和字数），插入 \\N"""
+        import re
+        text = text.strip()
+        if len(text) <= max_chars_per_line:
+            return text
+
+        # 按标点分段（句号/逗号/问号/感叹号/分号），保留标点
+        parts = re.split(r'(?<=[，。？！；,?!;])', text)
+        lines = []
+        cur = ""
+        for p in parts:
+            if not p:
+                continue
+            if len(cur) + len(p) <= max_chars_per_line:
+                cur += p
+            else:
+                if cur:
+                    lines.append(cur)
+                # 单段超长，按字数硬切
+                while len(p) > max_chars_per_line:
+                    lines.append(p[:max_chars_per_line])
+                    p = p[max_chars_per_line:]
+                cur = p
+        if cur:
+            lines.append(cur)
+        return "\\N".join(lines)
+
     for seg in segments:
         start = _ass_time(seg["start"])
         end = _ass_time(seg["end"])
-        text = seg["text"].strip().replace("\n", "\\N")
-
+        # 先把原始换行转成 \\N，再自动折行
+        raw_text = seg["text"].strip().replace("\n", "\\N")
         if karaoke:
             # 逐字高亮：优先用词级时间戳，否则按字数均分
+            # 注意：karaoke 模式下逐字 \\kf 标签已含完整文本，不折行
             text = _build_karaoke_text(
                 seg["text"], seg["start"], seg["end"],
                 words=seg.get("words"),
             )
-        elif anim_tag:
-            # 应用动画标签（替换占位符）
-            tag = anim_tag.replace("x,x", f"{play_res_x//2},{play_res_x//2}")
-            text = "{" + tag + "}" + text
+        else:
+            # 应用自动折行（长句按标点和字数拆成多行，插入 \\N）
+            wrapped = _wrap_text(seg["text"].strip())
+            if anim_tag:
+                # 应用动画标签（替换占位符）
+                tag = anim_tag.replace("x,x", f"{play_res_x//2},{play_res_x//2}")
+                text = "{" + tag + "}" + wrapped
+            else:
+                text = wrapped
 
         events.append(
             f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}"
