@@ -221,9 +221,37 @@ class VideoComposer(BaseModule):
                 main_video, intro_clip, outro_clip, output.parent
             )
 
-        # 构建滤镜链
+        # 音视频同步：如果视频开头插入了封面（_prepend_cover 固定 1.5s）或片头，
+        # TTS 人声必须加等量静音延迟，否则声音会比嘴型提前播放（封面段视频静音，但音频已开始）
+        # 字幕也必须同步偏移，否则字幕会比人声提前显示
+        cover_delay_ms = 0
+        if cover and Path(cover).exists():
+            cover_delay_ms = 1500  # _prepend_cover 固定 1.5 秒封面
+        if self.intro_enabled and self.intro_text:
+            cover_delay_ms += int(self.intro_duration * 1000)  # 加片头时长
+
+        # 字幕时间戳偏移：和人声延迟保持一致
+        shifted_segments = subtitle_segments
+        if cover_delay_ms > 0 and subtitle_segments:
+            import copy
+            delay_sec = cover_delay_ms / 1000.0
+            shifted_segments = []
+            for seg in subtitle_segments:
+                s = copy.deepcopy(seg)
+                s["start"] = seg["start"] + delay_sec
+                s["end"] = seg["end"] + delay_sec
+                # 词级时间戳也要偏移（karaoke 逐字高亮需要）
+                if "words" in s:
+                    for w in s["words"]:
+                        if "start" in w:
+                            w["start"] += delay_sec
+                        if "end" in w:
+                            w["end"] += delay_sec
+                shifted_segments.append(s)
+
+        # 构建滤镜链（字幕用偏移后的时间戳，与延迟后的人声同步）
         vf_filters = self._build_video_filters(
-            subtitle, output.parent, subtitle_segments=subtitle_segments,
+            subtitle, output.parent, subtitle_segments=shifted_segments,
         )
 
         # 构建输入与音频处理
@@ -236,14 +264,6 @@ class VideoComposer(BaseModule):
         if voice_audio and Path(voice_audio).exists():
             inputs += ["-i", str(voice_audio)]
             voice_input_idx = len(inputs) // 2 - 1  # 刚加的输入索引
-
-        # 音视频同步：如果视频开头插入了封面（_prepend_cover 固定 1.5s）或片头，
-        # TTS 人声必须加等量静音延迟，否则声音会比嘴型提前播放（封面段视频静音，但音频已开始）
-        cover_delay_ms = 0
-        if cover and Path(cover).exists():
-            cover_delay_ms = 1500  # _prepend_cover 固定 1.5 秒封面
-        if self.intro_enabled and self.intro_text:
-            cover_delay_ms += int(self.intro_duration * 1000)  # 加片头时长
 
         # 构建人声滤镜链（含延迟补偿）
         def _voice_chain(out_label: str) -> str:
