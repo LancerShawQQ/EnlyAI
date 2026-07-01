@@ -415,7 +415,7 @@ body::after {
 
 .card:hover {
   border-color: rgba(0, 0, 0, 0.12);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
   transform: translateY(-2px);
 }
 
@@ -3385,7 +3385,7 @@ input[type="color"]::-webkit-color-swatch {
   font-size: 10px;
   overflow: hidden;
   cursor: move;
-  border: 2px solid rgba(0, 0, 0, 0.3);
+  border: 2px solid rgba(0, 0, 0, 0.15);
 }
 
 .tl-broll-segment.pip {
@@ -4011,7 +4011,7 @@ input[type="color"]::-webkit-color-swatch {
   align-items: stretch;
   justify-content: space-around;
   z-index: 100;
-  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.12);
 }
 
 .bottom-nav-item {
