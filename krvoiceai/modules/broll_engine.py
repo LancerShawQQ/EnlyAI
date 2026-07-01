@@ -59,12 +59,23 @@ class BRollEngine(BaseModule):
             return ModuleResult(success=False, error="无口播视频，无法叠加 B-roll")
 
         # 校验所有 B-roll 文件存在
+        from ..core.config import PROJECT_ROOT
         valid_clips = []
         for clip in ctx.broll_clips:
-            clip_path = Path(clip.get("path", ""))
+            # 兼容前端 asset_path 和后端 path 两种字段名
+            clip_path_str = clip.get("path") or clip.get("asset_path") or ""
+            if not clip_path_str:
+                self.logger.warning(f"B-roll 片段缺少 path/asset_path 字段，跳过: {clip}")
+                continue
+            clip_path = Path(clip_path_str)
+            # 相对路径基于项目根目录解析（前端传的是 config/broll_assets/xxx 相对路径）
+            if not clip_path.is_absolute():
+                clip_path = (PROJECT_ROOT / clip_path_str).resolve()
             if not clip_path.exists():
                 self.logger.warning(f"B-roll 片段文件不存在，跳过: {clip_path}")
                 continue
+            # 统一字段名，供后续 FFmpeg 处理使用
+            clip["path"] = str(clip_path)
             valid_clips.append(clip)
 
         if not valid_clips:
@@ -161,7 +172,20 @@ class BRollEngine(BaseModule):
         output_path = Path(output_path) if output_path else video_path.parent / "broll_output.mp4"
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        valid_clips = [c for c in broll_clips if Path(c.get("path", "")).exists()]
+        # 校验 B-roll 片段：兼容 asset_path/path 字段名 + 解析相对路径
+        from ..core.config import PROJECT_ROOT
+        valid_clips = []
+        for clip in broll_clips:
+            clip_path_str = clip.get("path") or clip.get("asset_path") or ""
+            if not clip_path_str:
+                continue
+            clip_path = Path(clip_path_str)
+            if not clip_path.is_absolute():
+                clip_path = (PROJECT_ROOT / clip_path_str).resolve()
+            if not clip_path.exists():
+                continue
+            clip["path"] = str(clip_path)
+            valid_clips.append(clip)
         if not valid_clips:
             import shutil
             shutil.copy2(video_path, output_path)

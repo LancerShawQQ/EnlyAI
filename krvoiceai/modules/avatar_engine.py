@@ -246,25 +246,13 @@ class AvatarEngine(BaseModule):
         audio_abs = Path(audio_path).resolve()
         output_abs = Path(output_path).resolve()
 
-        # 按音频时长自动选择 resize_factor（CPU 模式智能降速，避免长文案超时）
-        # 配置值作为"质量上限"：若配置 resize_factor=1 但音频超长，自动降速
-        cfg_resize = int(self.wav2lip_config.get("resize_factor", 1))
+        # 质量优先：使用配置的 resize_factor（默认 1=最高质量）
+        # 唇形同步是核心卖点，绝不为提速牺牲精度
+        auto_resize = int(self.wav2lip_config.get("resize_factor", 1))
         audio_dur = ctx.audio_duration or 0
-        if audio_dur > 120 and cfg_resize < 4:
-            # 超长文案(>2min)：强制 resize_factor=4（约16倍加速），避免超时
-            auto_resize = 4
-            self.logger.warning(
-                f"音频 {audio_dur:.0f}s 超长，自动切换 resize_factor={cfg_resize}→{auto_resize}（快速模式）"
-                f"以保证 60 分钟内完成；如需最高质量请缩短文案或使用 GPU"
-            )
-        elif audio_dur > 60 and cfg_resize < 2:
-            # 长文案(1-2min)：升到 resize_factor=2（约4倍加速）
-            auto_resize = 2
-            self.logger.info(
-                f"音频 {audio_dur:.0f}s 较长，自动切换 resize_factor={cfg_resize}→{auto_resize}（平衡模式）"
-            )
-        else:
-            auto_resize = cfg_resize
+        self.logger.info(
+            f"Wav2Lip 推理参数: resize_factor={auto_resize}（质量优先），音频 {audio_dur:.1f}s"
+        )
 
         # wav2lip_env 的 site-packages 在 PYTHONPATH，需保证用独立解释器
         cmd = [

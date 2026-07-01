@@ -118,14 +118,12 @@ class ScriptExtractor(BaseModule):
             )
 
         try:
-            # yt-dlp 可用且 ASR provider 支持（mimo/funasr）时走真实提取
-            use_real = self._ytdlp_available and self.asr_provider in ("funasr", "mimo")
-            if use_real:
-                text = self._extract_real(url, ctx.work_dir)
-            else:
-                text = self._extract_mock(url)
+            # 复用 extract() 的完整降级链：
+            #   Playwright 网页抓取 → yt-dlp+ASR → web_desc → 分享文本 → mock
+            # 避免 _extract_real 失败时直接返回失败（抖音反爬导致 yt-dlp 经常失败）
+            text = self.extract(url)
+            degraded = getattr(self, "_last_extract_degraded", False)
 
-            text = self._clean_text(text)
             ctx.metadata["extracted_script"] = text
             # 提取的文案作为 input_script，供后续 script_write 仿写
             if not ctx.input_script:
@@ -137,7 +135,8 @@ class ScriptExtractor(BaseModule):
                     "script_text": text,
                     "source_url": url,
                     "char_count": len(text),
-                    "mock": not use_real,
+                    "mock": degraded,
+                    "degraded": degraded,
                 },
             )
         except Exception as e:

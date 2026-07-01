@@ -2110,7 +2110,8 @@ function finishProgressModal(result, hasFailed) {
       <div class="progress-modal-result-title">${escapeHtml(title)}</div>
       <video src="/api/files?path=${encodeURIComponent(videoPath)}" controls autoplay></video>
       <div class="progress-modal-result-actions">
-        <a class="btn btn-primary" href="/api/files?path=${encodeURIComponent(videoPath)}" target="_blank" download><i data-lucide="download"></i> 下载视频</a>
+        <div class="video-path-display" style="flex:1;text-align:left;padding:8px 12px;background:var(--bg-elevated);border-radius:8px;font-size:12px;color:var(--text-secondary);font-family:var(--font-mono);word-break:break-all"><i data-lucide="folder" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i>${escapeHtml(videoPath)}</div>
+        <button class="btn btn-secondary" type="button" onclick="copyToClipboard('${videoPath.replace(/'/g, "\\'")}')"><i data-lucide="copy"></i> 复制路径</button>
         <button class="btn btn-secondary" type="button" onclick="closeProgressModal()"><i data-lucide="refresh-cw"></i> 再做一个</button>
       </div>
     `;
@@ -4585,4 +4586,21 @@ function clearWizardBrollClips() {
 function getWizardBrollClips() {
   if (!document.getElementById('wiz-broll-enabled')?.checked) return [];
   return wizBrollState.clips;
+}
+
+
+// 复制文本到剪贴板
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    toast('已复制到剪贴板', 'success');
+  }).catch(() => {
+    // 降级方案
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    toast('已复制到剪贴板', 'success');
+  });
 }
