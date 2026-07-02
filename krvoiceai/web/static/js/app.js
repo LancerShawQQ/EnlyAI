@@ -604,6 +604,7 @@ const EMOTION_ICONS = { neutral: '😐', calm: '😌', excited: '🤩', gentle: 
 
 let wizardState = {
   currentStep: 1,
+  maxVisitedStep: 1,  // 通过下一步逐步到达过的最大步骤（跳跃点击不更新，避免前面步骤误标勾）
   selectedTemplate: null,
   selectedSubtitleStyle: 'douyin_hot',
   wizScriptTab: 'manual',
@@ -1152,14 +1153,14 @@ function renderWizardStepper() {
   steps.forEach((step, idx) => {
     const stepNum = parseInt(step.dataset.step);
     step.classList.remove('active', 'completed');
-    if (stepNum < wizardState.currentStep) {
+    if (stepNum < wizardState.currentStep && stepNum < wizardState.maxVisitedStep) {
       step.classList.add('completed');
     } else if (stepNum === wizardState.currentStep) {
       step.classList.add('active');
     }
   });
   lines.forEach((line, idx) => {
-    line.classList.toggle('completed', idx + 1 < wizardState.currentStep);
+    line.classList.toggle('completed', idx + 1 < wizardState.currentStep && idx + 1 < wizardState.maxVisitedStep);
   });
   // 显示当前面板
   document.querySelectorAll('.wizard-panel').forEach(p => p.classList.remove('active'));
@@ -1193,6 +1194,7 @@ function wizardNext() {
   }
   wizardSaveCurrentStep();
   wizardState.currentStep++;
+  wizardState.maxVisitedStep = Math.max(wizardState.maxVisitedStep, wizardState.currentStep);
   renderWizardStepper();
 }
 
