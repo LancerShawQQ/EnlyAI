@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
   <title>EnlyAI · 虚拟人口播智能体</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260702apple12">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260702apple13">
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
   <!-- 移动端点击修复（内联确保优先级，避免外部CSS缓存导致失效） -->
@@ -136,8 +136,8 @@
             <h1 class="hero-title">开始创作你的数字人口播视频</h1>
             <p class="hero-subtitle">AI 驱动 · 全流程自动化 · 商业级品质</p>
             <div class="hero-actions">
-              <button class="btn btn-primary btn-lg" id="dash-new-video-btn"><i data-lucide="rocket"></i> 新建口播视频</button>
-              <button class="btn btn-secondary btn-lg" id="dash-from-template-btn"><i data-lucide="clipboard-list"></i> 从模板开始</button>
+              <button class="btn btn-primary" id="dash-new-video-btn"><i data-lucide="rocket"></i> 新建口播视频</button>
+              <button class="btn btn-secondary" id="dash-from-template-btn"><i data-lucide="clipboard-list"></i> 从模板开始</button>
             </div>
           </div>
           <div class="hero-decoration">
@@ -262,9 +262,9 @@
               <span class="hint">点击卡片选中，可一键应用全套样式</span>
             </div>
             <div class="template-grid" id="wizard-template-grid"></div>
-            <div class="form-row" style="margin-top:20px">
-              <button class="btn btn-primary btn-lg" id="wizard-apply-template-btn"><i data-lucide="check"></i> 应用此模板</button>
-              <button class="btn btn-secondary btn-lg" id="wizard-skip-template-btn">跳过，自定义</button>
+            <div class="form-row" style="margin-top:10px">
+              <button class="btn btn-primary" id="wizard-apply-template-btn"><i data-lucide="check"></i> 应用此模板</button>
+              <button class="btn btn-secondary" id="wizard-skip-template-btn">跳过，自定义</button>
             </div>
           </div>
         </div>
@@ -788,7 +788,7 @@
                 </label>
               </div>
             </div>
-            <button class="btn btn-primary btn-lg btn-block" id="wiz-generate-btn" style="margin-top:8px"><i data-lucide="rocket"></i> 开始生成视频</button>
+            <button class="btn btn-primary btn-block" id="wiz-generate-btn" style="margin-top:8px"><i data-lucide="rocket"></i> 开始生成视频</button>
           </div>
           <div class="card">
             <div class="card-header">
@@ -825,9 +825,9 @@
 
         <!-- 向导底部导航 -->
         <div class="wizard-footer">
-          <button class="btn btn-secondary btn-lg" id="wiz-prev-btn">← 上一步</button>
+          <button class="btn btn-secondary" id="wiz-prev-btn"><i data-lucide="arrow-left"></i> 上一步</button>
           <span class="wizard-progress-text" id="wiz-progress-text">第 1 / 6 步</span>
-          <button class="btn btn-primary btn-lg" id="wiz-next-btn">下一步 →</button>
+          <button class="btn btn-primary" id="wiz-next-btn">下一步 <i data-lucide="arrow-right"></i></button>
         </div>
       </div>
 
@@ -894,7 +894,7 @@
                   <span>自动发布到目标平台</span>
                 </label>
               </div>
-              <button class="btn btn-primary btn-lg btn-block" id="gen-btn"><i data-lucide="rocket"></i> 开始生成视频</button>
+              <button class="btn btn-primary btn-block" id="gen-btn"><i data-lucide="rocket"></i> 开始生成视频</button>
             </div>
           </div>
 
@@ -1106,7 +1106,7 @@
                   <option value="publish">多平台发布</option>
                 </select>
               </div>
-              <button class="btn btn-primary btn-lg btn-block" id="step-run-btn"><i data-lucide="play"></i> 执行此模块</button>
+              <button class="btn btn-primary btn-block" id="step-run-btn"><i data-lucide="play"></i> 执行此模块</button>
             </div>
           </div>
 
@@ -1216,7 +1216,7 @@
                   </select>
                 </div>
               </div>
-              <button class="btn btn-primary btn-lg btn-block" id="batch-run-btn"><i data-lucide="package"></i> 开始批量生成</button>
+              <button class="btn btn-primary btn-block" id="batch-run-btn"><i data-lucide="package"></i> 开始批量生成</button>
             </div>
           </div>
 
@@ -1455,10 +1455,10 @@
 
       <!-- ===== 页面 5: 形象管理 ===== -->
       <div class="page" id="page-avatars">
-        <div class="resource-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);">
-          <button class="resource-tab active" data-target="avatars" style="padding:8px 16px;border:none;background:none;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;font-weight:600;">形象管理</button>
-          <button class="resource-tab" data-target="voices" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">音色管理</button>
-          <button class="resource-tab" data-target="templates" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">模板中心</button>
+        <div class="resource-tabs">
+          <button class="resource-tab active" data-target="avatars" type="button">形象管理</button>
+          <button class="resource-tab" data-target="voices" type="button">音色管理</button>
+          <button class="resource-tab" data-target="templates" type="button">模板中心</button>
         </div>
         <div class="page-header">
           <h1 class="page-title">形象管理</h1>
@@ -1514,10 +1514,10 @@
 
       <!-- ===== 页面 6: 音色管理 ===== -->
       <div class="page" id="page-voices">
-        <div class="resource-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);">
-          <button class="resource-tab active" data-target="avatars" style="padding:8px 16px;border:none;background:none;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;font-weight:600;">形象管理</button>
-          <button class="resource-tab" data-target="voices" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">音色管理</button>
-          <button class="resource-tab" data-target="templates" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">模板中心</button>
+        <div class="resource-tabs">
+          <button class="resource-tab active" data-target="avatars" type="button">形象管理</button>
+          <button class="resource-tab" data-target="voices" type="button">音色管理</button>
+          <button class="resource-tab" data-target="templates" type="button">模板中心</button>
         </div>
         <div class="page-header">
           <h1 class="page-title">音色管理</h1>
@@ -1556,10 +1556,10 @@
 
       <!-- ===== 页面 6.5: 模板中心 ===== -->
       <div class="page" id="page-templates">
-        <div class="resource-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);">
-          <button class="resource-tab active" data-target="avatars" style="padding:8px 16px;border:none;background:none;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;font-weight:600;">形象管理</button>
-          <button class="resource-tab" data-target="voices" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">音色管理</button>
-          <button class="resource-tab" data-target="templates" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">模板中心</button>
+        <div class="resource-tabs">
+          <button class="resource-tab active" data-target="avatars" type="button">形象管理</button>
+          <button class="resource-tab" data-target="voices" type="button">音色管理</button>
+          <button class="resource-tab" data-target="templates" type="button">模板中心</button>
         </div>
         <div class="page-header">
           <h1 class="page-title">模板中心</h1>
@@ -1666,11 +1666,11 @@
 
       <!-- ===== 页面 8: 模型配置 ===== -->
       <div class="page" id="page-settings-models">
-        <div class="settings-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
-          <button class="settings-tab active" data-target="settings-models" style="padding:8px 16px;border:none;background:none;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;font-weight:600;">模型配置</button>
-          <button class="settings-tab" data-target="settings-video" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">视频设置</button>
-          <button class="settings-tab" data-target="settings-scene" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">场景与效果</button>
-          <button class="settings-tab" data-target="settings-publish" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">发布设置</button>
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景与效果</button>
+          <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
         </div>
         <div class="page-header">
           <h1 class="page-title">模型配置</h1>
@@ -1745,7 +1745,7 @@
             </div>
             <div id="llm-test-result"></div>
             <div class="form-row" style="margin-top:16px">
-              <button class="btn btn-primary btn-lg" id="llm-save-btn"><i data-lucide="save"></i> 保存配置</button>
+              <button class="btn btn-primary" id="llm-save-btn"><i data-lucide="save"></i> 保存配置</button>
               <button class="btn btn-secondary" id="llm-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
             </div>
           </div>
@@ -1798,7 +1798,7 @@
               </div>
             </div>
             <div class="form-row" style="margin-top:16px">
-              <button class="btn btn-primary btn-lg" id="tts-save-btn"><i data-lucide="save"></i> 保存配置</button>
+              <button class="btn btn-primary" id="tts-save-btn"><i data-lucide="save"></i> 保存配置</button>
               <button class="btn btn-secondary" id="tts-test-btn"><i data-lucide="plug"></i> 测试连接</button>
               <button class="btn btn-secondary" id="tts-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
             </div>
@@ -1846,7 +1846,7 @@
               </div>
             </div>
             <div class="form-row" style="margin-top:16px">
-              <button class="btn btn-primary btn-lg" id="asr-save-btn"><i data-lucide="save"></i> 保存配置</button>
+              <button class="btn btn-primary" id="asr-save-btn"><i data-lucide="save"></i> 保存配置</button>
               <button class="btn btn-secondary" id="asr-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
             </div>
           </div>
@@ -1904,7 +1904,7 @@
               </div>
             </div>
             <div class="form-row" style="margin-top:16px">
-              <button class="btn btn-primary btn-lg" id="avatar-save-btn"><i data-lucide="save"></i> 保存配置</button>
+              <button class="btn btn-primary" id="avatar-save-btn"><i data-lucide="save"></i> 保存配置</button>
               <button class="btn btn-secondary" id="avatar-test-btn"><i data-lucide="plug"></i> 测试连接</button>
               <button class="btn btn-secondary" id="avatar-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
             </div>
@@ -1915,11 +1915,11 @@
 
       <!-- ===== 页面 9: 视频设置 ===== -->
       <div class="page" id="page-settings-video">
-        <div class="settings-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
-          <button class="settings-tab active" data-target="settings-models" style="padding:8px 16px;border:none;background:none;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;font-weight:600;">模型配置</button>
-          <button class="settings-tab" data-target="settings-video" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">视频设置</button>
-          <button class="settings-tab" data-target="settings-scene" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">场景与效果</button>
-          <button class="settings-tab" data-target="settings-publish" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">发布设置</button>
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景与效果</button>
+          <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
         </div>
         <div class="page-header">
           <h1 class="page-title">视频设置</h1>
@@ -2095,7 +2095,7 @@
 
         <div class="card" style="margin-top:20px">
           <div class="form-row">
-            <button class="btn btn-primary btn-lg" id="video-save-btn"><i data-lucide="save"></i> 保存视频设置</button>
+            <button class="btn btn-primary" id="video-save-btn"><i data-lucide="save"></i> 保存视频设置</button>
             <button class="btn btn-secondary" id="video-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
           </div>
         </div>
@@ -2103,11 +2103,11 @@
 
       <!-- ===== 页面 9.5: 场景与效果设置 ===== -->
       <div class="page" id="page-settings-scene">
-        <div class="settings-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
-          <button class="settings-tab active" data-target="settings-models" style="padding:8px 16px;border:none;background:none;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;font-weight:600;">模型配置</button>
-          <button class="settings-tab" data-target="settings-video" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">视频设置</button>
-          <button class="settings-tab" data-target="settings-scene" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">场景与效果</button>
-          <button class="settings-tab" data-target="settings-publish" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">发布设置</button>
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景与效果</button>
+          <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
         </div>
         <div class="page-header">
           <h1 class="page-title">场景与效果</h1>
@@ -2297,7 +2297,7 @@
 
         <div class="card" style="margin-top:20px">
           <div class="form-row">
-            <button class="btn btn-primary btn-lg" id="scene-save-btn"><i data-lucide="save"></i> 保存场景与效果</button>
+            <button class="btn btn-primary" id="scene-save-btn"><i data-lucide="save"></i> 保存场景与效果</button>
             <button class="btn btn-secondary" id="scene-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
           </div>
         </div>
@@ -2305,11 +2305,11 @@
 
       <!-- ===== 页面 10: 发布设置 ===== -->
       <div class="page" id="page-settings-publish">
-        <div class="settings-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
-          <button class="settings-tab active" data-target="settings-models" style="padding:8px 16px;border:none;background:none;color:var(--primary);border-bottom:2px solid var(--primary);cursor:pointer;font-weight:600;">模型配置</button>
-          <button class="settings-tab" data-target="settings-video" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">视频设置</button>
-          <button class="settings-tab" data-target="settings-scene" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">场景与效果</button>
-          <button class="settings-tab" data-target="settings-publish" style="padding:8px 16px;border:none;background:none;color:var(--text-muted);cursor:pointer;">发布设置</button>
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景与效果</button>
+          <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
         </div>
         <div class="page-header">
           <h1 class="page-title">发布设置</h1>
@@ -2387,13 +2387,13 @@
             <label class="form-label">标签 <span class="hint">（逗号分隔）</span></label>
             <input class="form-input" id="publish-tags" placeholder="口播,AI,数字人">
           </div>
-          <button class="btn btn-primary btn-lg btn-block" id="publish-run-btn"><i data-lucide="send"></i> 一键分发</button>
+          <button class="btn btn-primary btn-block" id="publish-run-btn"><i data-lucide="send"></i> 一键分发</button>
           <div id="publish-result" style="margin-top:12px"></div>
         </div>
 
         <div class="card" style="margin-top:20px">
           <div class="form-row">
-            <button class="btn btn-primary btn-lg" id="publish-save-btn"><i data-lucide="save"></i> 保存发布设置</button>
+            <button class="btn btn-primary" id="publish-save-btn"><i data-lucide="save"></i> 保存发布设置</button>
             <button class="btn btn-secondary" id="publish-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
           </div>
         </div>

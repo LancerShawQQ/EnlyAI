@@ -265,7 +265,7 @@ body::after {
 }
 
 .logo-text span {
-  color: var(--accent-primary);
+  color: #1d1d1f;
 }
 
 .sidebar-nav {
@@ -706,7 +706,7 @@ body::after {
 }
 
 .pipeline-step.running .step-icon {
-  background: var(--gradient-primary);
+  background: #1d1d1f;
   color: white;
   border-color: transparent;
   animation: spin 1s linear infinite;
@@ -747,7 +747,7 @@ body::after {
 }
 
 .pipeline-step.running .step-status {
-  color: var(--accent-primary);
+  color: #1d1d1f;
 }
 
 .pipeline-step.success .step-status {
@@ -957,7 +957,6 @@ body::after {
 
 .asset-card:hover {
   border-color: #1d1d1f;
-  transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
 
@@ -1117,29 +1116,33 @@ body::after {
 /* ---------- 子标签页（模型配置） ---------- */
 .sub-tabs {
   display: flex;
-  gap: 4px;
-  padding: 6px;
-  background: var(--bg-surface);
-  border-radius: var(--radius-md);
-  margin-bottom: 20px;
-  border: 1px solid var(--border-subtle);
+  gap: 2px;
+  padding: 3px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  border: none;
   overflow-x: auto;
 }
 
 .sub-tab {
   flex: 1;
   min-width: max-content;
-  padding: 10px 18px;
+  padding: 6px 12px;
   background: transparent;
   border: none;
   color: var(--text-secondary);
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   transition: all var(--transition-fast);
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
 }
 
 .sub-tab:hover {
@@ -1148,9 +1151,10 @@ body::after {
 }
 
 .sub-tab.active {
-  background: var(--gradient-primary);
-  color: white;
-  box-shadow: var(--shadow-glow);
+  background: #ffffff;
+  color: #1d1d1f;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10), 0 1px 1px rgba(0, 0, 0, 0.04);
 }
 
 .sub-page {
@@ -1162,6 +1166,46 @@ body::after {
   display: block;
 }
 
+/* ---------- 资源/设置 Tab（统一苹果风格，替代内联样式） ---------- */
+.resource-tabs,
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  flex-wrap: wrap;
+}
+
+.resource-tab,
+.settings-tab {
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all var(--transition-fast);
+  font-family: var(--font-body);
+  white-space: nowrap;
+}
+
+.resource-tab:hover,
+.settings-tab:hover {
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 4px 4px 0 0;
+}
+
+.resource-tab.active,
+.settings-tab.active {
+  color: #1d1d1f;
+  font-weight: 600;
+  border-bottom-color: #1d1d1f;
+}
+
 /* ---------- 操作按钮网格（文案工作台） ---------- */
 .action-grid {
   display: grid;
@@ -1170,30 +1214,33 @@ body::after {
 }
 
 .action-btn {
-  padding: 8px 6px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-default);
+  padding: 6px 5px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   color: var(--text-primary);
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  border-radius: var(--radius-md);
+  border-radius: 6px;
   transition: all var(--transition-fast);
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
 }
 
 .action-btn:hover {
-  background: var(--bg-glass);
-  border-color: #1d1d1f;
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-glow);
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.18);
 }
 
 .action-btn.active {
-  background: var(--gradient-primary);
-  border-color: transparent;
+  background: #1d1d1f;
+  border-color: #1d1d1f;
   color: white;
+  font-weight: 600;
 }
 
 /* ---------- 文案爆款模板卡片网格 ---------- */
@@ -1220,7 +1267,7 @@ body::after {
 .template-card i {
   width: 22px;
   height: 22px;
-  color: var(--accent-primary);
+  color: #1d1d1f;
   margin-bottom: 2px;
 }
 
@@ -1238,13 +1285,12 @@ body::after {
 
 .template-card:hover {
   border-color: #1d1d1f;
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-glow);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
 }
 
 .template-card.active {
-  background: var(--gradient-primary);
-  border-color: transparent;
+  background: #1d1d1f;
+  border-color: #1d1d1f;
   color: white;
 }
 
@@ -1299,7 +1345,7 @@ body::after {
   accent-color: #1d1d1f;
 }
 .matrix-checkbox-item input[type="checkbox"]:checked + span {
-  color: var(--accent-primary);
+  color: #1d1d1f;
   font-weight: 600;
 }
 
@@ -1320,7 +1366,7 @@ body::after {
 .cover-style-card i {
   width: 22px;
   height: 22px;
-  color: var(--accent-primary);
+  color: #1d1d1f;
   margin-bottom: 2px;
 }
 
@@ -1338,13 +1384,12 @@ body::after {
 
 .cover-style-card:hover {
   border-color: #1d1d1f;
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-glow);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
 }
 
 .cover-style-card.active {
-  background: var(--gradient-primary);
-  border-color: transparent;
+  background: #1d1d1f;
+  border-color: #1d1d1f;
   color: white;
 }
 
@@ -1384,17 +1429,17 @@ body::after {
   appearance: none;
   width: 18px;
   height: 18px;
-  background: var(--gradient-primary);
+  background: #1d1d1f;
   border-radius: 50%;
   cursor: pointer;
-  box-shadow: var(--shadow-glow);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
   border: 2px solid white;
 }
 
 .form-range::-moz-range-thumb {
   width: 18px;
   height: 18px;
-  background: var(--accent-primary);
+  background: #1d1d1f;
   border-radius: 50%;
   cursor: pointer;
   border: 2px solid white;
@@ -1450,7 +1495,7 @@ body::after {
 }
 
 .platform-toggle.active {
-  background: var(--gradient-primary);
+  background: #1d1d1f;
 }
 
 .platform-toggle::after {
@@ -1643,7 +1688,7 @@ input[type="color"]::-webkit-color-swatch {
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 8px;
 }
 
 .form-row > *:only-child {
@@ -1682,8 +1727,7 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 .wizard-step:hover {
-  transform: translateY(-2px);
-}
+  }
 
 .wizard-step-circle {
   width: 28px;
@@ -1784,9 +1828,9 @@ input[type="color"]::-webkit-color-swatch {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 12px 16px;
-  margin-top: 12px;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-top: 8px;
   background: var(--bg-glass);
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
@@ -1840,7 +1884,6 @@ input[type="color"]::-webkit-color-swatch {
 .btn-card:hover {
   border-color: #1d1d1f;
   color: var(--text-primary);
-  transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
 
@@ -1966,7 +2009,7 @@ input[type="color"]::-webkit-color-swatch {
   left: 0;
   right: 0;
   height: 3px;
-  background: var(--gradient-primary);
+  background: #1d1d1f;
   opacity: 0;
   transition: opacity var(--transition-base);
 }
@@ -2019,8 +2062,7 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 .template-card:hover .template-card-icon {
-  transform: translateY(-2px);
-}
+  }
 
 .template-card.selected .template-card-icon {
   background: #1d1d1f;
@@ -2055,7 +2097,7 @@ input[type="color"]::-webkit-color-swatch {
   font-size: 10px;
   padding: 2px 8px;
   background: rgba(0, 0, 0, 0.06);
-  color: var(--accent-primary);
+  color: #1d1d1f;
   border-radius: 10px;
   font-weight: 500;
 }
@@ -2085,8 +2127,7 @@ input[type="color"]::-webkit-color-swatch {
 
 .subtitle-style-card:hover {
   border-color: #1d1d1f;
-  transform: translateY(-2px);
-}
+  }
 
 .subtitle-style-card.active {
   border-color: #1d1d1f;
@@ -2132,7 +2173,7 @@ input[type="color"]::-webkit-color-swatch {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--accent-primary);
+  color: #1d1d1f;
   margin-bottom: 10px;
   display: flex;
   align-items: center;
@@ -2222,7 +2263,7 @@ input[type="color"]::-webkit-color-swatch {
 
 .hero-actions {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -2241,7 +2282,7 @@ input[type="color"]::-webkit-color-swatch {
   width: 180px;
   height: 180px;
   border-radius: 50%;
-  background: var(--gradient-primary);
+  background: #1d1d1f;
   filter: blur(40px);
   opacity: 0.5;
   animation: float 6s ease-in-out infinite;
@@ -2373,8 +2414,7 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 .scene-card:hover .scene-card-icon {
-  transform: translateY(-2px);
-}
+  }
 
 .scene-card-title {
   font-family: var(--font-display);
@@ -2582,7 +2622,7 @@ input[type="color"]::-webkit-color-swatch {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: var(--gradient-primary);
+  background: #1d1d1f;
   color: white;
   font-size: 13px;
   font-weight: 600;
@@ -2656,7 +2696,7 @@ input[type="color"]::-webkit-color-swatch {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: var(--gradient-primary);
+  background: #1d1d1f;
   color: white;
   font-size: 13px;
   font-weight: 600;
@@ -2706,7 +2746,7 @@ input[type="color"]::-webkit-color-swatch {
 
 .voice-card-tag.type-preset {
   background: rgba(0, 0, 0, 0.06);
-  color: var(--accent-primary);
+  color: #1d1d1f;
 }
 
 .voice-card-tag.type-custom {
@@ -2716,7 +2756,7 @@ input[type="color"]::-webkit-color-swatch {
 
 .voice-card-tag.provider {
   background: rgba(0, 0, 0, 0.06);
-  color: var(--accent-primary);
+  color: #1d1d1f;
 }
 
 .voice-card-desc {
@@ -2732,7 +2772,7 @@ input[type="color"]::-webkit-color-swatch {
   border-radius: 50%;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
-  color: var(--accent-primary);
+  color: #1d1d1f;
   font-size: 14px;
   cursor: pointer;
   display: flex;
@@ -2743,7 +2783,7 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 .voice-preview-btn:hover {
-  background: var(--gradient-primary);
+  background: #1d1d1f;
   color: white;
   border-color: transparent;
   transform: scale(1.03);
@@ -2809,7 +2849,7 @@ input[type="color"]::-webkit-color-swatch {
 
 .script-dropdown-item:hover {
   background: var(--bg-surface);
-  color: var(--accent-primary);
+  color: #1d1d1f;
 }
 
 .script-stats {
@@ -2871,7 +2911,7 @@ input[type="color"]::-webkit-color-swatch {
 .viral-analysis-title i {
   width: 16px;
   height: 16px;
-  color: var(--accent-primary);
+  color: #1d1d1f;
 }
 
 .viral-analysis-body {
@@ -2922,7 +2962,7 @@ input[type="color"]::-webkit-color-swatch {
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  border: 4px solid var(--score-color, var(--accent-primary));
+  border: 4px solid var(--score-color, #1d1d1f);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2933,7 +2973,7 @@ input[type="color"]::-webkit-color-swatch {
 .viral-score-num {
   font-size: 24px;
   font-weight: 600;
-  color: var(--score-color, var(--accent-primary));
+  color: var(--score-color, #1d1d1f);
   line-height: 1;
 }
 
@@ -2984,7 +3024,7 @@ input[type="color"]::-webkit-color-swatch {
 .viral-section-title i {
   width: 14px;
   height: 14px;
-  color: var(--accent-primary);
+  color: #1d1d1f;
 }
 
 .viral-section-text {
@@ -3013,7 +3053,7 @@ input[type="color"]::-webkit-color-swatch {
 
 .viral-structure-tag {
   padding: 2px 8px;
-  background: var(--accent-primary);
+  background: #1d1d1f;
   color: white;
   border-radius: 10px;
   font-size: 11px;
@@ -3171,7 +3211,7 @@ input[type="color"]::-webkit-color-swatch {
 
 .script-diff-col-head.script-diff-modified {
   background: rgba(0, 0, 0, 0.04);
-  color: var(--accent-primary);
+  color: #1d1d1f;
 }
 
 .script-diff-content {
@@ -3349,7 +3389,7 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 .progress-stage.running .progress-stage-icon {
-  background: var(--gradient-primary);
+  background: #1d1d1f;
   color: white;
   border-color: transparent;
   animation: spin 1s linear infinite;
@@ -3378,7 +3418,7 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 .progress-stage.running .progress-stage-name {
-  color: var(--accent-primary);
+  color: #1d1d1f;
 }
 
 .progress-stage.success .progress-stage-name {
@@ -3625,8 +3665,8 @@ input[type="color"]::-webkit-color-swatch {
   position: absolute;
   top: 2px;
   bottom: 2px;
-  background: rgba(74, 144, 217, 0.2);
-  border-left: 2px solid #4a90d9;
+  background: rgba(0, 0, 0, 0.06);
+  border-left: 2px solid #1d1d1f;
   border-radius: 2px;
   display: flex;
   align-items: center;
@@ -3680,9 +3720,8 @@ input[type="color"]::-webkit-color-swatch {
 
 .preset-avatar-card:hover,
 .preset-voice-card:hover {
-  border-color: #4a90d9;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(74, 144, 217, 0.15);
+  border-color: #1d1d1f;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .preset-avatar-card img {
@@ -3741,7 +3780,7 @@ input[type="color"]::-webkit-color-swatch {
 .preset-avatar-scenes,
 .preset-voice-scenes {
   font-size: 10px;
-  color: #4a90d9;
+  color: #1d1d1f;
   margin-bottom: 8px;
 }
 
@@ -3779,8 +3818,8 @@ input[type="color"]::-webkit-color-swatch {
   display: inline-block;
   font-size: 10px;
   padding: 2px 8px;
-  background: rgba(74, 144, 217, 0.15);
-  color: #4a90d9;
+  background: rgba(0, 0, 0, 0.05);
+  color: #1d1d1f;
   border-radius: 10px;
   margin-bottom: 8px;
 }
@@ -3837,7 +3876,7 @@ input[type="color"]::-webkit-color-swatch {
 
 .placeholder-input-group input:focus {
   outline: none;
-  border-color: #4a90d9;
+  border-color: #1d1d1f;
 }
 
 .scene-preview-script {
@@ -3897,8 +3936,8 @@ input[type="color"]::-webkit-color-swatch {
 .tl-tip-bar {
   margin-top: 8px;
   padding: 8px 12px;
-  background: rgba(74, 144, 217, 0.08);
-  border-left: 3px solid #4a90d9;
+  background: rgba(0, 0, 0, 0.04);
+  border-left: 3px solid #1d1d1f;
   border-radius: 4px;
   font-size: 11px;
   color: var(--text-secondary);
@@ -3950,7 +3989,7 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 .broll-asset-card:hover {
-  border-color: var(--accent-primary, #4a90d9);
+  border-color: #1d1d1f;
   background: var(--bg-surface-hover, #2a2d34);
 }
 
@@ -4045,7 +4084,7 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 .tl-clip-item .clip-edit:hover {
-  color: #4a90d9;
+  color: #1d1d1f;
 }
 
 .tl-clip-item .clip-edit + .clip-delete {
@@ -4148,7 +4187,7 @@ input[type="color"]::-webkit-color-swatch {
   font-size: 16px;
   letter-spacing: -0.02em;
 }
-.mobile-logo span { color: var(--accent-primary); }
+.mobile-logo span { color: #1d1d1f; }
 
 .menu-toggle {
   width: 44px;
@@ -4178,7 +4217,7 @@ input[type="color"]::-webkit-color-swatch {
 .mobile-quick-create {
   width: 44px;
   height: 44px;
-  background: var(--gradient-primary);
+  background: #1d1d1f;
   border: none;
   border-radius: var(--radius-md);
   color: white;
@@ -4254,7 +4293,7 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 .bottom-nav-item.active {
-  color: var(--accent-primary);
+  color: #1d1d1f;
 }
 
 .bottom-nav-item:active {
@@ -4850,7 +4889,7 @@ input[type="color"]::-webkit-color-swatch {
   height: 22px;
 }
 .card-title-icon svg {
-  color: var(--accent-primary);
+  color: #1d1d1f;
 }
 /* 按钮内图标对齐 */
 .btn svg {
