@@ -117,6 +117,14 @@
   box-sizing: border-box;
 }
 
+/* emoji 字体栈：优先 Apple Color Emoji（精致），降级到系统 emoji
+   Windows Segoe UI Emoji 较扁平，但通过下方容器化样式已大幅提升精致度 */
+.emoji, .scene-card-icon, .template-card-icon, .btn-card-icon,
+.preset-avatar-icon, .preset-voice-icon, .recent-card-thumb,
+.empty-state-icon, .hero-icon-big, .upload-icon, .platform-icon {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif;
+}
+
 html, body {
   height: 100%;
   overflow: hidden;
@@ -442,11 +450,24 @@ body::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: rgba(0, 113, 227, 0.12);
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(0, 113, 227, 0.14), rgba(94, 92, 230, 0.10));
   color: #0071e3;
+  position: relative;
+  box-shadow:
+    0 1px 2px rgba(0, 113, 227, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.card-title-icon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), transparent 50%);
+  pointer-events: none;
 }
 
 /* ---------- 表单 ---------- */
@@ -882,8 +903,28 @@ body::after {
 }
 
 .upload-icon {
-  font-size: 36px;
+  font-size: 32px;
   margin-bottom: 12px;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(0, 113, 227, 0.10), rgba(94, 92, 230, 0.08));
+  box-shadow:
+    0 2px 8px rgba(0, 113, 227, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  position: relative;
+}
+
+.upload-icon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), transparent 55%);
+  pointer-events: none;
 }
 
 .upload-text {
@@ -1012,9 +1053,29 @@ body::after {
 }
 
 .empty-state-icon {
-  font-size: 48px;
+  font-size: 40px;
   margin-bottom: 16px;
-  opacity: 0.5;
+  opacity: 0.6;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(0, 113, 227, 0.08), rgba(94, 92, 230, 0.06));
+  box-shadow:
+    0 2px 8px rgba(0, 113, 227, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  position: relative;
+}
+
+.empty-state-icon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), transparent 55%);
+  pointer-events: none;
 }
 
 /* ---------- 响应式 ---------- */
@@ -1759,8 +1820,8 @@ input[type="color"]::-webkit-color-swatch {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  border-radius: var(--radius-md);
-  transition: all var(--transition-fast);
+  border-radius: var(--radius-lg);
+  transition: all var(--transition-base);
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -1772,7 +1833,7 @@ input[type="color"]::-webkit-color-swatch {
   border-color: var(--accent-primary);
   color: var(--text-primary);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-glow);
+  box-shadow: var(--shadow-md);
 }
 
 .btn-card.active {
@@ -1786,6 +1847,33 @@ input[type="color"]::-webkit-color-swatch {
 .btn-card-icon {
   font-size: 22px;
   line-height: 1;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(0, 113, 227, 0.10), rgba(94, 92, 230, 0.08));
+  box-shadow:
+    0 1px 3px rgba(0, 113, 227, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  position: relative;
+  margin-bottom: 6px;
+}
+
+.btn-card-icon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), transparent 55%);
+  pointer-events: none;
+}
+
+.btn-card.active .btn-card-icon {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.10));
+  color: white;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .btn-card-label {
@@ -1897,9 +1985,42 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 .template-card-icon {
-  font-size: 36px;
-  margin-bottom: 12px;
+  font-size: 32px;
+  margin-bottom: 14px;
   line-height: 1;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(0, 113, 227, 0.10), rgba(94, 92, 230, 0.08));
+  box-shadow:
+    0 2px 6px rgba(0, 113, 227, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  position: relative;
+  transition: transform var(--transition-spring);
+}
+
+.template-card-icon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), transparent 55%);
+  pointer-events: none;
+}
+
+.template-card:hover .template-card-icon {
+  transform: scale(1.08) translateY(-2px);
+}
+
+.template-card.selected .template-card-icon {
+  background: linear-gradient(135deg, #0071e3, #5e5ce6);
+  color: white;
+  box-shadow:
+    0 4px 14px rgba(0, 113, 227, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .template-card-label {
@@ -2135,8 +2256,27 @@ input[type="color"]::-webkit-color-swatch {
 .hero-icon-big {
   position: relative;
   z-index: 1;
-  font-size: 72px;
+  font-size: 56px;
   animation: float 4s ease-in-out infinite;
+  width: 110px;
+  height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 28px;
+  background: linear-gradient(135deg, rgba(0, 113, 227, 0.12), rgba(94, 92, 230, 0.10));
+  box-shadow:
+    0 8px 24px rgba(0, 113, 227, 0.18),
+    inset 0 2px 0 rgba(255, 255, 255, 0.5);
+}
+
+.hero-icon-big::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), transparent 55%);
+  pointer-events: none;
 }
 
 /* ---------- 区块标题 ---------- */
@@ -2199,10 +2339,34 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 .scene-card-icon {
-  font-size: 36px;
-  margin-bottom: 12px;
+  font-size: 32px;
+  margin-bottom: 14px;
   position: relative;
   z-index: 1;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(0, 113, 227, 0.12), rgba(94, 92, 230, 0.08));
+  box-shadow:
+    0 3px 8px rgba(0, 113, 227, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  transition: transform var(--transition-spring);
+}
+
+.scene-card-icon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.45), transparent 55%);
+  pointer-events: none;
+}
+
+.scene-card:hover .scene-card-icon {
+  transform: scale(1.06) translateY(-3px);
 }
 
 .scene-card-title {
@@ -2254,7 +2418,7 @@ input[type="color"]::-webkit-color-swatch {
 .recent-card-thumb {
   width: 100%;
   aspect-ratio: 16/9;
-  background: var(--bg-elevated);
+  background: linear-gradient(135deg, rgba(0, 113, 227, 0.08), rgba(94, 92, 230, 0.06));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2262,6 +2426,14 @@ input[type="color"]::-webkit-color-swatch {
   color: var(--text-muted);
   position: relative;
   overflow: hidden;
+}
+
+.recent-card-thumb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.25), transparent 50%);
+  pointer-events: none;
 }
 
 .recent-card-thumb img {
@@ -3518,8 +3690,29 @@ input[type="color"]::-webkit-color-swatch {
 
 .preset-avatar-icon,
 .preset-voice-icon {
-  font-size: 40px;
-  margin-bottom: 8px;
+  font-size: 36px;
+  margin-bottom: 10px;
+  width: 70px;
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(0, 113, 227, 0.10), rgba(94, 92, 230, 0.08));
+  box-shadow:
+    0 2px 8px rgba(0, 113, 227, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  position: relative;
+}
+
+.preset-avatar-icon::after,
+.preset-voice-icon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), transparent 55%);
+  pointer-events: none;
 }
 
 .preset-avatar-name,
