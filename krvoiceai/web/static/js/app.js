@@ -713,18 +713,12 @@ function applySceneCategoryDefaults(scene) {
 
 async function loadWizardData() {
   try {
-    const [presets, templates, bgmLib, avatars, voices] = await Promise.all([
+    // 步骤1：模板和预设优先渲染（快请求，不阻塞）
+    const [presets, templates] = await Promise.all([
       ensureCreativePresets(),
       ensureTemplates(),
-      ensureBgmLibrary(),
-      api('/api/avatars').catch(() => []),
-      api('/api/voices').catch(() => []),
     ]);
-
-    // 步骤1：模板网格
     renderWizardTemplateGrid(templates);
-
-    // 步骤2：姿态网格
     renderBtnCardGrid('wiz-pose-grid', presets.poses, POSE_ICONS);
     setBtnCardValue('wiz-pose-grid', 'half_body');
     bindBtnCardGrid('wiz-pose-grid');
@@ -734,9 +728,22 @@ async function loadWizardData() {
       document.getElementById('wiz-bg-image-group').style.display = val === 'image' ? 'block' : 'none';
     });
 
-    // 形象/音色卡片网格
-    renderWizardAvatarGrid(avatars);
-    renderWizardVoiceGrid(voices);
+    // 步骤2：慢请求（BGM/形象/音色）并行加载，不阻塞模板渲染
+    Promise.all([
+      ensureBgmLibrary(),
+      api('/api/avatars').catch(() => []),
+      api('/api/voices').catch(() => []),
+    ]).then(([bgmLib, avatars, voices]) => {
+      renderWizardAvatarGrid(avatars);
+      renderWizardVoiceGrid(voices);
+      // BGM 曲目
+      const bgmSel = document.getElementById('wiz-bgm-track');
+      if (bgmSel) {
+        bgmSel.innerHTML = Object.entries(bgmLib).map(([key, info]) =>
+          `<option value="${key}">${info.label}（${info.mood}）</option>`
+        ).join('');
+      }
+    });
 
     // 步骤3：文案 Tab 切换
     document.querySelectorAll('[data-wiztab]').forEach(tab => {
@@ -775,11 +782,6 @@ async function loadWizardData() {
     fillSelect('wiz-transition', presets.transitions);
     fillSelect('wiz-filter', presets.filters);
 
-    // BGM 曲目
-    const bgmSel = document.getElementById('wiz-bgm-track');
-    bgmSel.innerHTML = Object.entries(bgmLib).map(([key, info]) =>
-      `<option value="${key}">${info.label}（${info.mood}）</option>`
-    ).join('');
 
     // 开关联动
     document.getElementById('wiz-show-logo').addEventListener('change', e => {

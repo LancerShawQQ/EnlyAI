@@ -134,6 +134,11 @@ def create_app() -> FastAPI:
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+    # 启动时预初始化 EnlyAI，避免首次请求被懒加载阻塞 5 秒
+    @app.on_event("startup")
+    async def _preinit_app():
+        _get_app()
+
     # ============ 页面路由 ============
 
     @app.get("/")

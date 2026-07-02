@@ -608,7 +608,6 @@ body::after {
   background: rgba(0, 0, 0, 0.06);
   color: var(--text-primary);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
   backdrop-filter: blur(20px);
 }
 
@@ -621,7 +620,6 @@ body::after {
   background: transparent;
   color: var(--text-secondary);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
 }
 
 .btn-ghost:hover {
@@ -634,7 +632,6 @@ body::after {
   background: rgba(255, 69, 58, 0.12);
   color: #d70015;
   border: 1px solid rgba(255, 69, 58, 0.3);
-  border-radius: var(--radius-md);
 }
 
 .btn-danger:hover {
@@ -643,15 +640,15 @@ body::after {
 }
 
 .btn-sm {
-  padding: 7px 16px;
-  min-height: 36px;
+  padding: 5px 12px;
+  min-height: 28px;
   font-size: 12px;
 }
 
 .btn-lg {
-  padding: 14px 32px;
-  min-height: 48px;
-  font-size: 15px;
+  padding: 9px 22px;
+  min-height: 38px;
+  font-size: 14px;
 }
 
 .btn-block {
@@ -1173,7 +1170,7 @@ body::after {
 }
 
 .action-btn {
-  padding: 14px 8px;
+  padding: 8px 6px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   color: var(--text-primary);
@@ -4361,12 +4358,12 @@ input[type="color"]::-webkit-color-swatch {
     padding: 12px 20px;
   }
   .btn-sm {
-    min-height: 40px;
-    padding: 10px 16px;
+    min-height: 36px;
+    padding: 8px 14px;
   }
   .btn-lg {
-    min-height: 52px;
-    padding: 16px 28px;
+    min-height: 44px;
+    padding: 12px 20px;
   }
 
   /* 表单元素触控优化 */

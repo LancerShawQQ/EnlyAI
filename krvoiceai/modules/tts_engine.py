@@ -30,6 +30,17 @@ from ..core.base_module import BaseModule, JobContext, ModuleResult
 from ..core.gpu_runner import GPURunner
 
 
+# edge-tts 情感 -> rate/pitch 映射表（emotion 优先，覆盖 config 派生的 rate/pitch）
+EMOTION_EDGE_MAP = {
+    'neutral':  {'rate': '+0%',  'pitch': '+0Hz'},   # 中性：默认
+    'calm':     {'rate': '-10%', 'pitch': '-2Hz'},   # 平静：稍慢稍低
+    'excited':  {'rate': '+15%', 'pitch': '+3Hz'},   # 激动：加快升高
+    'gentle':   {'rate': '-5%',  'pitch': '+1Hz'},   # 温柔：稍慢微升
+    'serious':  {'rate': '-8%',  'pitch': '-3Hz'},   # 严肃：稍慢偏低
+    'cheerful': {'rate': '+8%',  'pitch': '+2Hz'},   # 欢快：稍快微升
+}
+
+
 class TTSEngine(BaseModule):
     """TTS 声音克隆/合成模块"""
 
@@ -120,8 +131,12 @@ class TTSEngine(BaseModule):
             ctx.audio_duration = duration
             ctx.metadata["tts_timestamps"] = timestamps
             ctx.metadata["tts_provider"] = self.provider
+            emotion_applied = None
+            if self.provider == "edge_tts" and emotion:
+                emotion_applied = EMOTION_EDGE_MAP.get(emotion, EMOTION_EDGE_MAP['neutral'])
             ctx.metadata["tts_audio_opts"] = {
                 "speed": speed, "volume": volume, "pitch": pitch, "emotion": emotion,
+                "emotion_applied": emotion_applied,
             }
 
             return ModuleResult(
@@ -246,6 +261,7 @@ class TTSEngine(BaseModule):
         若 voice_id 对应音色目录下有 sample 音频，则用该音频做零样本声音克隆；
         否则使用内置音色（如 Junhao）。
         """
+        # emotion 暂不支持，仅 edge_tts 支持情感映射
         runtime = self._get_moss_runtime()
         cfg = self.config.get("tts.moss_nano", {}) or {}
 
@@ -345,6 +361,7 @@ class TTSEngine(BaseModule):
         - 音色和格式放在 audio 对象中
         - 返回 base64 编码音频在 choices[0].message.audio.data
         """
+        # emotion 暂不支持，仅 edge_tts 支持情感映射
         self.logger.info(f"MiMo TTS 合成 voice={voice_id} text_len={len(text)}")
 
         # MiMo 单次合成有长度限制，分句合成
@@ -433,6 +450,7 @@ class TTSEngine(BaseModule):
         pitch: int | None = None, emotion: str | None = None,
     ) -> tuple[Path, float, list[dict]]:
         """调用 GPT-SoVITS 云端 API"""
+        # emotion 暂不支持，仅 edge_tts 支持情感映射
         self.logger.info(f"GPT-SoVITS 合成 voice={voice_id} text_len={len(text)} speed={speed}")
 
         # 分句合成，便于时间戳对齐
@@ -507,9 +525,15 @@ class TTSEngine(BaseModule):
             pitch_hz = pitch * 4
             kwargs["pitch"] = f"{pitch_hz:+d}Hz"
 
+        # 情感映射：emotion 优先，覆盖 config 派生的 rate/pitch（用户逐任务选择，更具体）
+        emotion_map = EMOTION_EDGE_MAP.get(emotion or 'neutral', EMOTION_EDGE_MAP['neutral'])
+        if emotion and emotion in EMOTION_EDGE_MAP:
+            kwargs["rate"] = emotion_map["rate"]
+            kwargs["pitch"] = emotion_map["pitch"]
+
         self.logger.info(
             f"edge-tts 合成 voice={self.edge_voice} "
-            f"speed={speed} volume={volume} pitch={pitch} "
+            f"speed={speed} volume={volume} pitch={pitch} emotion={emotion} "
             f"kwargs={kwargs}"
         )
 
