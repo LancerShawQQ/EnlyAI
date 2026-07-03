@@ -52,6 +52,7 @@ class AvatarEngine(BaseModule):
         self.wav2lip_inference_script = self.wav2lip_config.get(
             "inference_script", "../Wav2Lip/inference.py"
         )
+        self.wav2lip_device = self.wav2lip_config.get("device", "auto")
         # 微动作配置
         self.micro_motion_cfg = self.config.get("avatar.micro_motion", {}) or {}
         # GFPGAN 人脸增强配置
@@ -259,6 +260,21 @@ class AvatarEngine(BaseModule):
             f"Wav2Lip 推理参数: resize_factor={auto_resize}（质量优先），音频 {audio_dur:.1f}s"
         )
 
+        # 确定 Wav2Lip 运行设备（基于配置 + 自动检测）
+        w2l_device = "cpu"
+        if self.wav2lip_device == "cuda":
+            w2l_device = "cuda"
+        elif self.wav2lip_device == "auto":
+            try:
+                from ..core.hardware_probe import detect_cuda
+                if detect_cuda():
+                    w2l_device = "cuda"
+                    self.logger.info("Wav2Lip 自动检测到 CUDA，将使用 GPU 加速")
+                else:
+                    self.logger.info("Wav2Lip 未检测到 CUDA，使用 CPU 模式")
+            except Exception:
+                pass
+
         # wav2lip_env 的 site-packages 在 PYTHONPATH，需保证用独立解释器
         cmd = [
             str(env_python), str(inference_script),
@@ -270,12 +286,13 @@ class AvatarEngine(BaseModule):
             "--face_det_batch_size", str(self.wav2lip_config.get("face_det_batch_size", 8)),
             "--wav2lip_batch_size", str(self.wav2lip_config.get("wav2lip_batch_size", 16)),
             "--resize_factor", str(auto_resize),
+            "--device", w2l_device,
         ]
         if self.wav2lip_config.get("nosmooth", False):
             cmd.append("--nosmooth")
 
         self.logger.info(
-            f"运行 Wav2Lip 推理 (CPU模式, env={env_python.parent.parent.name}, "
+            f"运行 Wav2Lip 推理 (设备: {w2l_device}, env={env_python.parent.parent.name}, "
             f"resize_factor={auto_resize})，音频 {audio_dur:.1f}s，预计耗时数分钟至数十分钟..."
         )
         # Wav2Lip 推理脚本内部加载依赖文件用相对路径，必须在 Wav2Lip 根目录运行

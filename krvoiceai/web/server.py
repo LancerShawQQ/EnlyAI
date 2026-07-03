@@ -159,7 +159,21 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     async def health():
-        return _get_app().health_check()
+        data = _get_app().health_check()
+        # 附加 GPU 硬件加速能力（CUDA / NVENC / 编码器）
+        try:
+            from ..core.hardware_probe import (
+                detect_cuda, detect_nvenc, get_acceleration_summary, get_video_encoder,
+            )
+            data["gpu"] = {
+                "cuda_available": detect_cuda(),
+                "nvenc_available": detect_nvenc(),
+                "encoder": get_video_encoder()[0],
+                "summary": get_acceleration_summary(),
+            }
+        except Exception as e:
+            data["gpu"] = {"error": str(e)}
+        return data
 
     @app.post("/api/generate")
     async def generate(req: GenerateRequest):

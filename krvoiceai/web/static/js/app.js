@@ -3101,9 +3101,11 @@ async function loadHealth() {
       { key: 'llm_mock', label: 'LLM 模式', icon: '<i data-lucide="brain"></i>' },
       { key: 'avatars_count', label: '已注册形象', icon: '<i data-lucide="users"></i>' },
       { key: 'voices_count', label: '已注册音色', icon: '<i data-lucide="music"></i>' },
+      { key: 'gpu.cuda_available', label: 'GPU CUDA 加速', icon: '<i data-lucide="cpu"></i>' },
+      { key: 'gpu.nvenc_available', label: 'NVENC 硬件编码', icon: '<i data-lucide="video"></i>' },
     ];
     container.innerHTML = items.map(item => {
-      const val = health[item.key];
+      const val = item.key.includes('.') ? item.key.split('.').reduce((obj, k) => (obj == null ? undefined : obj[k]), health) : health[item.key];
       let display;
       if (typeof val === 'boolean') {
         display = val

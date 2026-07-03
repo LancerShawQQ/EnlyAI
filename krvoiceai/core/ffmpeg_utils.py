@@ -31,6 +31,20 @@ class FFmpegRunner:
         self.ffmpeg = ffmpeg_path or cfg.get("composer.ffmpeg_path", "ffmpeg")
         self.ffprobe = self.ffmpeg.replace("ffmpeg", "ffprobe")
         self.logger = get_logger().bind(component="ffmpeg")
+        # 硬件编码探测（启动时一次性检测，结果缓存于 hardware_probe 的 lru_cache）
+        from .hardware_probe import get_video_encoder, detect_nvenc
+        self._vcodec, self._vpreset, self._vextra = get_video_encoder()
+        self._nvenc_available = detect_nvenc()
+
+    def _video_encoder_args(self) -> list:
+        """返回视频编码器参数列表，自动选择 NVENC/QSV/AMF 或 libx264
+
+        NVENC/QSV/AMF: 含码率/质量控制参数（来自 hardware_probe 的 extra_args）
+        libx264: 仅 codec + preset（沿用各方法原有的 -b:v 或默认 CRF）
+        """
+        args = ["-c:v", self._vcodec, "-preset", self._vpreset]
+        args.extend(self._vextra)
+        return args
 
     def available(self) -> bool:
         """检查 ffmpeg 是否可用"""
@@ -128,9 +142,8 @@ class FFmpegRunner:
             "-i", str(image),
             "-i", str(audio),
             "-vf", vf,
-            "-c:v", "libx264",
-            "-preset", "medium",
-            "-b:v", video_bitrate,
+            *self._video_encoder_args(),
+            *(["-b:v", video_bitrate] if self._vcodec == "libx264" else []),
             "-pix_fmt", "yuv420p",
             "-c:a", "aac",
             "-b:a", "192k",
@@ -452,8 +465,7 @@ class FFmpegRunner:
             "-filter_complex", filter_complex,
             "-map", video_map,
             "-map", audio_map,
-            "-c:v", "libx264",
-            "-preset", "medium",
+            *self._video_encoder_args(),
             "-pix_fmt", "yuv420p",
             "-r", str(fps),
             "-c:a", "aac",
@@ -640,7 +652,7 @@ class FFmpegRunner:
                     "-t", f"{seg_dur:.3f}",
                     "-vf", base_vf + vfade_filter,
                     "-af", afade_filter if afade_filter else "anull",
-                    "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+                    *self._video_encoder_args(), "-pix_fmt", "yuv420p",
                     "-c:a", "aac", "-b:a", "192k",
                     "-shortest", str(seg_file),
                 ]
@@ -651,7 +663,7 @@ class FFmpegRunner:
                     "-t", f"{seg_dur:.3f}",
                     "-vf", base_vf + vfade_filter,
                     "-af", afade_filter if afade_filter else "anull",
-                    "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+                    *self._video_encoder_args(), "-pix_fmt", "yuv420p",
                     "-c:a", "aac", "-b:a", "192k", "-r", str(fps),
                     str(seg_file),
                 ]
@@ -679,8 +691,7 @@ class FFmpegRunner:
                     "-t", f"{seg_dur:.3f}",
                     "-vf", base_vf + main_vfade,
                     "-af", main_afade if main_afade else "anull",
-                    "-c:v", "libx264",
-                    "-preset", "medium",
+                    *self._video_encoder_args(),
                     "-pix_fmt", "yuv420p",
                     "-c:a", "aac",
                     "-b:a", "192k",
@@ -731,7 +742,7 @@ class FFmpegRunner:
         if end is not None and end > start:
             args += ["-t", f"{end - start:.3f}"]
         args += [
-            "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+            *self._video_encoder_args(), "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",
             str(output),
         ]
@@ -801,7 +812,7 @@ class FFmpegRunner:
             "-i", str(video),
             "-vf", ",".join(vf_parts),
             "-af", ",".join(af_parts) if af_parts else "anull",
-            "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+            *self._video_encoder_args(), "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",
             str(output),
         ]
@@ -856,7 +867,7 @@ class FFmpegRunner:
                 "-i", str(video),
                 "-filter_complex", vf,
                 "-map", "[v]", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+                *self._video_encoder_args(), "-pix_fmt", "yuv420p",
                 "-r", str(fps),
                 "-c:a", "aac", "-b:a", "192k",
                 "-movflags", "+faststart",
@@ -883,7 +894,7 @@ class FFmpegRunner:
                 "-f", "lavfi", "-i", "anullsrc=channel_layout=mono:sample_rate=44100",
                 "-filter_complex", vf,
                 "-map", "[v]", "-map", "1:a",
-                "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+                *self._video_encoder_args(), "-pix_fmt", "yuv420p",
                 "-r", str(fps),
                 "-c:a", "aac", "-b:a", "192k",
                 "-shortest", "-movflags", "+faststart",
@@ -903,7 +914,7 @@ class FFmpegRunner:
                 "-i", str(video),
                 "-filter_complex", vf,
                 "-map", "[v]", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+                *self._video_encoder_args(), "-pix_fmt", "yuv420p",
                 "-r", str(fps),
                 "-c:a", "aac", "-b:a", "192k",
                 "-movflags", "+faststart",
@@ -927,7 +938,7 @@ class FFmpegRunner:
                 "-f", "lavfi", "-i", "anullsrc=channel_layout=mono:sample_rate=44100",
                 "-filter_complex", vf,
                 "-map", "[v]", "-map", "1:a",
-                "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+                *self._video_encoder_args(), "-pix_fmt", "yuv420p",
                 "-r", str(fps),
                 "-c:a", "aac", "-b:a", "192k",
                 "-shortest", "-movflags", "+faststart",
@@ -947,7 +958,7 @@ class FFmpegRunner:
                 "-i", str(bg_image),
                 "-filter_complex", vf,
                 "-map", "[v]", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+                *self._video_encoder_args(), "-pix_fmt", "yuv420p",
                 "-r", str(fps),
                 "-c:a", "aac", "-b:a", "192k",
                 "-movflags", "+faststart",
@@ -971,7 +982,7 @@ class FFmpegRunner:
                 "-f", "lavfi", "-i", "anullsrc=channel_layout=mono:sample_rate=44100",
                 "-filter_complex", vf,
                 "-map", "[v]", "-map", "2:a",
-                "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+                *self._video_encoder_args(), "-pix_fmt", "yuv420p",
                 "-r", str(fps),
                 "-c:a", "aac", "-b:a", "192k",
                 "-shortest", "-movflags", "+faststart",
@@ -988,7 +999,7 @@ class FFmpegRunner:
                 "-i", str(video),
                 "-vf", vf,
                 "-map", "0:v", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+                *self._video_encoder_args(), "-pix_fmt", "yuv420p",
                 "-c:a", "aac", "-b:a", "192k",
                 "-movflags", "+faststart",
                 str(output),
@@ -1075,8 +1086,7 @@ class FFmpegRunner:
         args = [
             "-i", str(video),
             "-vf", vf,
-            "-c:v", "libx264",
-            "-preset", "medium",
+            *self._video_encoder_args(),
             "-pix_fmt", "yuv420p",
             "-r", str(fps),
             "-c:a", "aac",
