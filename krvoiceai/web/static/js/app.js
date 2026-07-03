@@ -987,22 +987,17 @@ async function playVoicePreview(voiceId, btn) {
   setBtnIcon(btn, 'pause', '');
   _currentPreviewBtn = btn;
   try {
-    // 调用 module/run 执行 TTS 合成短句
-    const result = await api('/api/module/run', {
+    // 直接调用轻量 TTS 试听端点，跳过流水线前置步骤（script_write 等 LLM 调用）
+    const result = await api('/api/preview/tts', {
       method: 'POST',
       body: {
-        module_name: 'tts',
-        script: '你好，这是音色试听',
-        avatar_id: document.getElementById('wiz-avatar').value || 'default',
+        text: '你好，这是音色试听',
         voice_id: voiceId,
-        script_mode: 'polish',
-        platform: 'douyin',
       },
     });
-    const ctx = result.context || {};
-    const audioPath = ctx.audio_path;
+    const audioPath = result.audio_path;
     if (!audioPath) {
-      throw new Error('未返回音频文件');
+      throw new Error(result.error || '未返回音频文件');
     }
     const audio = new Audio(`/api/files?path=${encodeURIComponent(audioPath)}`);
     _currentPreviewAudio = audio;
@@ -3951,6 +3946,7 @@ function openClipModal(clickTime, endOrDuration, fillGap = false) {
     transition: 'none',
   };
   fillClipModalForm(tlState.pendingClip);
+  fillTlSubtitleSegs();
   document.getElementById('tl-clip-modal').style.display = '';
   document.querySelector('#tl-clip-modal .modal-title').textContent = '添加 B-roll 片段';
   document.querySelector('#tl-clip-modal .btn-primary').textContent = '添加片段';
@@ -3963,6 +3959,7 @@ function openClipModalForEdit(idx) {
   tlState.editingClipIdx = idx;
   tlState.pendingClip = { ...clip };
   fillClipModalForm(clip);
+  fillTlSubtitleSegs();
   document.getElementById('tl-clip-modal').style.display = '';
   document.querySelector('#tl-clip-modal .modal-title').textContent = '编辑 B-roll 片段';
   document.querySelector('#tl-clip-modal .btn-primary').textContent = '保存修改';
@@ -3980,6 +3977,31 @@ function fillClipModalForm(clip) {
   document.getElementById('clip-volume-val').textContent = Math.round((clip.volume || 0) * 100) + '%';
   document.getElementById('clip-transition').value = clip.transition || 'none';
   onClipModeChange();
+}
+
+// 填充时间轴编辑器弹窗的字幕段落下拉
+function fillTlSubtitleSegs() {
+  const sel = document.getElementById('clip-subtitle-seg');
+  if (!sel) return;
+  const segs = tlState.subtitleSegments || [];
+  sel.innerHTML = '<option value="-1">自定义时间</option>';
+  segs.forEach((seg, i) => {
+    const text = (seg.text || '').substring(0, 20);
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `第${i + 1}句 (${seg.start.toFixed(1)}-${seg.end.toFixed(1)}s)${text ? ': ' + text : ''}`;
+    sel.appendChild(opt);
+  });
+}
+
+// 时间轴编辑器弹窗字幕段落选择联动
+function onTlSubtitleSegChange(idx) {
+  if (idx === '-1' || idx === -1) return;
+  const segs = tlState.subtitleSegments || [];
+  const seg = segs[parseInt(idx)];
+  if (!seg) return;
+  document.getElementById('clip-start').value = seg.start.toFixed(1);
+  document.getElementById('clip-end').value = seg.end.toFixed(1);
 }
 
 // 模式切换时显示/隐藏画中画设置
@@ -4561,19 +4583,28 @@ function openWizardClipModal(start, editIdx, maxEnd) {
   modal.className = 'glass-card-heavy';
   modal.style.cssText = 'width:400px;max-width:90vw;padding:24px';
   modal.innerHTML = `
-    <h3 style="font-size:18px;font-weight:600;margin-bottom:16px">${isEdit ? '编辑' : '添加'} B-roll 片段</h3>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="font-size:18px;font-weight:600;margin:0">${isEdit ? '编辑' : '添加'} B-roll 片段</h3>
+      <button type="button" onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;font-size:24px;color:var(--text-secondary);cursor:pointer;padding:0 4px;line-height:1">×</button>
+    </div>
     <div style="margin-bottom:12px">
       <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:4px">素材</label>
       <div style="padding:8px 12px;background:var(--bg-elevated);border-radius:8px;font-size:13px">${clip.filename || '未选择'}</div>
     </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:4px">按字幕段落选择位置</label>
+      <select id="wiz-clip-subtitle-seg" onchange="onWizardSubtitleSegChange(this.value)" style="width:100%;padding:8px;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:8px;color:var(--text-primary);font-size:13px">
+        <option value="-1">自定义时间</option>
+      </select>
+    </div>
     <div style="display:flex;gap:12px;margin-bottom:12px">
       <div style="flex:1">
         <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:4px">开始(s)</label>
-        <input type="number" id="wiz-clip-start" value="${clip.start.toFixed(1)}" step="0.5" min="0" style="width:100%;padding:8px;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:8px;color:var(--text-primary)">
+        <input type="number" id="wiz-clip-start" value="${clip.start.toFixed(1)}" step="0.5" min="0" style="width:100%;padding:8px;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:8px;color:var(--text-primary)" oninput="document.getElementById('wiz-clip-subtitle-seg').value='-1'">
       </div>
       <div style="flex:1">
         <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:4px">结束(s)</label>
-        <input type="number" id="wiz-clip-end" value="${clip.end.toFixed(1)}" step="0.5" min="0" style="width:100%;padding:8px;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:8px;color:var(--text-primary)">
+        <input type="number" id="wiz-clip-end" value="${clip.end.toFixed(1)}" step="0.5" min="0" style="width:100%;padding:8px;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:8px;color:var(--text-primary)" oninput="document.getElementById('wiz-clip-subtitle-seg').value='-1'">
       </div>
     </div>
     <div style="margin-bottom:12px">
@@ -4618,6 +4649,36 @@ function openWizardClipModal(start, editIdx, maxEnd) {
   overlay.appendChild(modal);
   overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
   document.body.appendChild(overlay);
+  // 填充字幕段落选项
+  fillWizardSubtitleSegs();
+}
+
+// 填充Wizard弹窗的字幕段落下拉
+function fillWizardSubtitleSegs() {
+  const sel = document.getElementById('wiz-clip-subtitle-seg');
+  if (!sel) return;
+  const segs = wizBrollState.subtitleSegments || [];
+  // 保留"自定义"选项，清空其余
+  sel.innerHTML = '<option value="-1">自定义时间</option>';
+  segs.forEach((seg, i) => {
+    const text = (seg.text || '').substring(0, 20);
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `第${i + 1}句 (${seg.start.toFixed(1)}-${seg.end.toFixed(1)}s)${text ? ': ' + text : ''}`;
+    sel.appendChild(opt);
+  });
+}
+
+// Wizard弹窗字幕段落选择联动
+function onWizardSubtitleSegChange(idx) {
+  if (idx === '-1' || idx === -1) return;
+  const segs = wizBrollState.subtitleSegments || [];
+  const seg = segs[parseInt(idx)];
+  if (!seg) return;
+  const startEl = document.getElementById('wiz-clip-start');
+  const endEl = document.getElementById('wiz-clip-end');
+  if (startEl) startEl.value = seg.start.toFixed(1);
+  if (endEl) endEl.value = seg.end.toFixed(1);
 }
 
 // 保存片段

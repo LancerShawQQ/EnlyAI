@@ -143,6 +143,19 @@ class ScriptExtractor(BaseModule):
             return ModuleResult(success=False, error=str(e))
 
     def extract(self, video_url: str, lang: str = "zh") -> str:
+
+        # === 提取结果缓存（按URL hash，避免重复提取耗时3分钟）===
+        import hashlib as _hashlib
+        _url_hash = _hashlib.md5(video_url.encode()).hexdigest()[:12]
+        _cache_dir = Path(getattr(self, 'work_dir', Path('.'))) / '.extract_cache'
+        _cache_file = _cache_dir / f'{_url_hash}.txt'
+        if _cache_file.exists():
+            _age = time.time() - _cache_file.stat().st_mtime
+            if _age < 86400:  # 24小时内的缓存有效
+                cached = _cache_file.read_text(encoding='utf-8').strip()
+                if cached:
+                    self.logger.info(f'命中提取缓存（URL hash={_url_hash}, {_age/3600:.1f}h前缓存）')
+                    return cached
         """直接调用接口：从视频/文章 URL 或本地文件提取文案
 
         支持三类输入：
@@ -233,6 +246,13 @@ class ScriptExtractor(BaseModule):
             except Exception as e:
                 self.logger.warning(f"文章提取失败，降级到 mock: {e}")
                 text = self._extract_mock(video_url)
+        # 写入缓存
+        try:
+            _cache_dir.mkdir(parents=True, exist_ok=True)
+            _cache_file.write_text(text, encoding='utf-8')
+            self.logger.info(f'提取结果已缓存（URL hash={_url_hash}）')
+        except Exception:
+            pass
         return self._clean_text(text)
 
     def _extract_from_local_file(self, path: Path) -> str:
@@ -528,7 +548,7 @@ class ScriptExtractor(BaseModule):
         # 优先：Playwright 无头浏览器（最可靠，绕过所有 JS 挑战）
         # 重试机制：偶发页面加载超时，重试一次提升成功率
         desc, video_url = "", ""
-        for attempt in (1, 2):
+        for attempt in (1,):  # 单次尝试，失败直接降级（避免翻倍耗时）
             desc, video_url = self._fetch_with_playwright(url, "douyin")
             if (desc and len(desc) >= 10) or video_url:
                 self.logger.info(f"抖音 Playwright 提取成功（第{attempt}次）: desc={len(desc)}字, video_url={'有' if video_url else '无'}")
@@ -641,20 +661,20 @@ class ScriptExtractor(BaseModule):
                 self.logger.info(f"Playwright 渲染: {share_url}")
                 try:
                     try:
-                        page.goto(share_url, wait_until="domcontentloaded", timeout=30000)
-                        page.wait_for_timeout(3000)
+                        page.goto(share_url, wait_until="domcontentloaded", timeout=20000)
+                        page.wait_for_timeout(1500)
                     except Exception as e:
                         self.logger.debug(f"Playwright 页面加载超时: {str(e)[:80]}")
 
                     # 滚动 + play() 触发视频懒加载（抖音视频默认不预加载流）
                     try:
                         page.evaluate('window.scrollTo(0, 300)')
-                        page.wait_for_timeout(1000)
+                        page.wait_for_timeout(500)
                         page.evaluate(
                             'var v=document.querySelector("video");'
                             'if(v){v.muted=true; v.play().catch(function(){});}'
                         )
-                        page.wait_for_timeout(4000)
+                        page.wait_for_timeout(2000)
                     except Exception as e:
                         self.logger.debug(f"触发视频加载失败: {str(e)[:80]}")
 
@@ -742,7 +762,7 @@ class ScriptExtractor(BaseModule):
             "User-Agent": self._BROWSER_UA,
             "Referer": "https://www.douyin.com/",
         }
-        with httpx.Client(headers=headers, timeout=60, follow_redirects=True) as client:
+        with httpx.Client(headers=headers, timeout=30, follow_redirects=True) as client:
             with client.stream("GET", video_url) as resp:
                 resp.raise_for_status()
                 with open(video_path, "wb") as f:
@@ -977,7 +997,7 @@ class ScriptExtractor(BaseModule):
         use_cookies_file = bool(cookies_path and cookies_path.exists() and cookies_path.is_file())
         configured_browser = self.cookies_from_browser.lower().strip() if self.cookies_from_browser else ""
         # 多浏览器回退列表：配置的优先，再尝试其他常见浏览器
-        all_browsers = ["chrome", "edge", "firefox", "brave"]
+        all_browsers = ["edge", "chrome", "firefox", "brave"]  # edge优先（chrome运行时锁定cookies数据库）
         if configured_browser and configured_browser in all_browsers:
             all_browsers = [configured_browser] + [b for b in all_browsers if b != configured_browser]
         elif configured_browser:

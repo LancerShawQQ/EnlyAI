@@ -1401,11 +1401,17 @@
                 </div>
               </div>
               <div class="form-group">
+                <label class="form-label">按字幕段落选择位置</label>
+                <select class="form-input" id="clip-subtitle-seg" onchange="onTlSubtitleSegChange(this.value)">
+                  <option value="-1">自定义时间</option>
+                </select>
+              </div>
+              <div class="form-group">
                 <label class="form-label">时间段（秒）</label>
                 <div style="display:flex;gap:8px;align-items:center">
-                  <input type="number" class="form-input" id="clip-start" step="0.1" min="0" style="flex:1" placeholder="开始">
+                  <input type="number" class="form-input" id="clip-start" step="0.1" min="0" style="flex:1" placeholder="开始" oninput="document.getElementById('clip-subtitle-seg').value='-1'">
                   <span>—</span>
-                  <input type="number" class="form-input" id="clip-end" step="0.1" min="0" style="flex:1" placeholder="结束">
+                  <input type="number" class="form-input" id="clip-end" step="0.1" min="0" style="flex:1" placeholder="结束" oninput="document.getElementById('clip-subtitle-seg').value='-1'">
                 </div>
               </div>
               <div class="form-group" id="clip-pip-settings">
