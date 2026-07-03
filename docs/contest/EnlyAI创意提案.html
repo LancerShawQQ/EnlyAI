@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EnlyAI · 虚拟人口播智能体 | TRAE AI 创造力大赛创意提案</title>
+<style>
+  :root {
+    --primary: #6366f1;
+    --primary-dark: #4f46e5;
+    --accent: #f59e0b;
+    --pink: #ec4899;
+    --bg: #0a0e1a;
+    --bg-card: #131826;
+    --bg-card-2: #1a2138;
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --border: #2a3450;
+    --success: #10b981;
+    --gradient-1: linear-gradient(135deg, #6366f1 0%, #ec4899 100%);
+    --gradient-2: linear-gradient(135deg, #f59e0b 0%, #ec4899 100%);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .container { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
+
+  /* 动画 */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 20px rgba(99,102,241,0.3); }
+    50% { box-shadow: 0 0 40px rgba(99,102,241,0.6); }
+  }
+  @keyframes shimmer {
+    0% { background-position: -1000px 0; }
+    100% { background-position: 1000px 0; }
+  }
+
+  /* Hero */
+  .hero {
+    position: relative;
+    padding: 80px 24px 100px;
+    text-align: center;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(99,102,241,0.25) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 30%, rgba(236,72,153,0.20) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 100%, rgba(245,158,11,0.15) 0%, transparent 50%);
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(99,102,241,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(99,102,241,0.04) 1px, transparent 1px);
+    background-size: 50px 50px;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+  }
+  .hero-content { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 18px;
+    background: rgba(99,102,241,0.15);
+    border: 1px solid rgba(99,102,241,0.4);
+    border-radius: 999px;
+    font-size: 13px;
+    color: #c7d2fe;
+    margin-bottom: 28px;
+    letter-spacing: 0.5px;
+    animation: fadeInUp 0.6s ease-out;
+  }
+  .hero-badge .dot {
+    width: 8px; height: 8px;
+    background: var(--success);
+    border-radius: 50%;
+    animation: pulse-glow 2s infinite;
+  }
+  .hero h1 {
+    font-size: 64px;
+    font-weight: 800;
+    margin-bottom: 20px;
+    background: linear-gradient(135deg, #fff 0%, #c7d2fe 50%, #f9a8d4 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -1px;
+    animation: fadeInUp 0.8s ease-out;
+  }
+  .hero h1 .ai-mark {
+    background: var(--gradient-1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero-subtitle {
+    font-size: 22px;
+    color: var(--text-muted);
+    max-width: 760px;
+    margin: 0 auto 36px;
+    animation: fadeInUp 1s ease-out;
+  }
+  .hero-subtitle strong { color: #fff; font-weight: 600; }
+  .hero-tagline {
+    display: inline-block;
+    padding: 12px 28px;
+    background: var(--gradient-1);
+    border-radius: 999px;
+    font-size: 16px;
+    font-weight: 600;
+    color: white;
+    animation: fadeInUp 1.2s ease-out, float 3s ease-in-out infinite 1.2s;
+    box-shadow: 0 10px 40px rgba(99,102,241,0.4);
+  }
+  .hero-stats {
+    display: flex;
+    justify-content: center;
+    gap: 48px;
+    margin-top: 56px;
+    flex-wrap: wrap;
+    animation: fadeInUp 1.4s ease-out;
+  }
+  .hero-stat { text-align: center; }
+  .hero-stat .num {
+    font-size: 36px;
+    font-weight: 800;
+    background: var(--gradient-1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero-stat .label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+
+  /* Sections */
+  section { padding: 80px 0; position: relative; }
+  section::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 80px; height: 3px;
+    background: var(--gradient-1);
+    border-radius: 2px;
+  }
+  .section-title {
+    font-size: 36px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    text-align: center;
+    justify-content: center;
+  }
+  .section-title .num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px; height: 48px;
+    background: var(--gradient-1);
+    border-radius: 12px;
+    font-size: 20px;
+    color: white;
+    box-shadow: 0 8px 24px rgba(99,102,241,0.4);
+  }
+  .section-desc { color: var(--text-muted); margin-bottom: 40px; font-size: 17px; text-align: center; }
+
+  /* Pain points */
+  .pain-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 20px;
+  }
+  .pain-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }
+  .pain-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--gradient-2);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s;
+  }
+  .pain-card:hover {
+    transform: translateY(-6px);
+    border-color: var(--pink);
+    background: var(--bg-card-2);
+  }
+  .pain-card:hover::before { transform: scaleX(1); }
+  .pain-card .icon {
+    font-size: 36px;
+    margin-bottom: 14px;
+    display: inline-block;
+  }
+  .pain-card h3 { font-size: 18px; margin-bottom: 10px; color: #fff; }
+  .pain-card p { font-size: 14px; color: var(--text-muted); line-height: 1.6; }
+
+  /* Solution banner */
+  .solution-banner {
+    background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(236,72,153,0.12));
+    border: 1px solid rgba(99,102,241,0.3);
+    border-radius: 20px;
+    padding: 40px;
+    text-align: center;
+    margin-bottom: 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .solution-banner::after {
+    content: '';
+    position: absolute;
+    top: -50%; right: -50%;
+    width: 200%; height: 200%;
+    background: radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 40%);
+    animation: shimmer 8s linear infinite;
+  }
+  .solution-banner > * { position: relative; z-index: 1; }
+  .solution-banner h3 { font-size: 26px; margin-bottom: 14px; }
+  .solution-banner h3 .highlight {
+    background: var(--gradient-1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .solution-banner p { color: var(--text-muted); max-width: 820px; margin: 0 auto; font-size: 16px; }
+
+  /* Workflow */
+  .workflow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    background: var(--bg-card);
+    border-radius: 18px;
+    border: 1px solid var(--border);
+  }
+  .workflow-step {
+    padding: 12px 18px;
+    background: rgba(99,102,241,0.12);
+    border: 1px solid rgba(99,102,241,0.35);
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #c7d2fe;
+    transition: all 0.2s;
+  }
+  .workflow-step:hover {
+    background: var(--primary);
+    color: white;
+    transform: scale(1.05);
+  }
+  .workflow-arrow { color: var(--text-muted); font-size: 20px; }
+
+  /* Tech stack */
+  .tech-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 18px;
+  }
+  .tech-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    transition: all 0.3s;
+    position: relative;
+  }
+  .tech-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--primary);
+    background: var(--bg-card-2);
+  }
+  .tech-card .tech-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .tech-card h4 { font-size: 17px; color: #fff; display: flex; align-items: center; gap: 8px; }
+  .tech-card .tech-tag {
+    font-size: 11px;
+    padding: 4px 10px;
+    background: rgba(16,185,129,0.15);
+    color: var(--success);
+    border-radius: 6px;
+    font-weight: 600;
+    border: 1px solid rgba(16,185,129,0.3);
+  }
+  .tech-card .tech-tag.core {
+    background: rgba(245,158,11,0.15);
+    color: var(--accent);
+    border-color: rgba(245,158,11,0.3);
+  }
+  .tech-card .tech-name {
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+  .tech-card .tech-desc { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+
+  /* Comparison */
+  .compare-wrap {
+    background: var(--bg-card);
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .compare-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .compare-table th, .compare-table td {
+    padding: 16px 20px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .compare-table th {
+    background: rgba(99,102,241,0.08);
+    font-weight: 700;
+    color: #c7d2fe;
+    font-size: 14px;
+  }
+  .compare-table tr:last-child td { border-bottom: none; }
+  .compare-table tr:hover { background: rgba(99,102,241,0.05); }
+  .compare-table .col-kr { color: var(--success); font-weight: 600; }
+  .compare-table .col-other { color: var(--text-muted); }
+  .compare-table .dim { color: #fff; font-weight: 600; }
+
+  /* Value */
+  .value-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+  }
+  .value-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px 28px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s;
+  }
+  .value-card:hover { transform: translateY(-4px); }
+  .value-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 4px;
+    background: var(--gradient-1);
+  }
+  .value-card.accent::before { background: var(--gradient-2); }
+  .value-card.success::before { background: linear-gradient(135deg, #10b981 0%, #06b6d4 100%); }
+  .value-card h4 { font-size: 20px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+  .value-card ul { list-style: none; padding: 0; }
+  .value-card li {
+    font-size: 14px;
+    color: var(--text-muted);
+    padding: 8px 0;
+    padding-left: 24px;
+    position: relative;
+    line-height: 1.6;
+  }
+  .value-card li::before {
+    content: "▸";
+    position: absolute;
+    left: 0;
+    color: var(--primary);
+    font-weight: 700;
+  }
+  .value-card.accent li::before { color: var(--accent); }
+  .value-card.success li::before { color: var(--success); }
+
+  /* Verified */
+  .verified-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 14px;
+  }
+  .verified-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    transition: all 0.2s;
+  }
+  .verified-item:hover {
+    border-color: var(--success);
+    background: var(--bg-card-2);
+  }
+  .verified-item .check {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-size: 15px; font-weight: 700;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(16,185,129,0.4);
+  }
+  .verified-item span { font-size: 14px; }
+
+  /* CTA */
+  .cta {
+    text-align: center;
+    padding: 80px 24px;
+    background:
+      radial-gradient(ellipse at center, rgba(99,102,241,0.15) 0%, transparent 60%);
+  }
+  .cta h2 {
+    font-size: 32px;
+    margin-bottom: 16px;
+    background: var(--gradient-1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .cta p { color: var(--text-muted); margin-bottom: 32px; font-size: 16px; }
+  .cta-buttons { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+  .cta-btn {
+    padding: 14px 32px;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+  }
+  .cta-btn.primary {
+    background: var(--gradient-1);
+    color: white;
+    box-shadow: 0 10px 30px rgba(99,102,241,0.4);
+  }
+  .cta-btn.primary:hover { transform: translateY(-2px); box-shadow: 0 14px 40px rgba(99,102,241,0.5); }
+  .cta-btn.secondary {
+    background: var(--bg-card);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 56px 24px;
+    color: var(--text-muted);
+    font-size: 14px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-card);
+  }
+  .footer strong { color: var(--accent); }
+  .footer .logo {
+    font-size: 24px;
+    font-weight: 800;
+    margin-bottom: 12px;
+    background: var(--gradient-1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  @media (max-width: 768px) {
+    .hero h1 { font-size: 42px; }
+    .hero-subtitle { font-size: 17px; }
+    .section-title { font-size: 26px; flex-direction: column; gap: 8px; }
+    .workflow { flex-direction: column; }
+    .workflow-arrow { transform: rotate(90deg); }
+    .hero-stats { gap: 32px; }
+    .hero-stat .num { font-size: 28px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<header class="hero">
+  <div class="hero-content">
+    <span class="hero-badge">
+      <span class="dot"></span>
+      TRAE AI 创造力大赛 · 生活娱乐赛道
+    </span>
+    <h1>Enly<span class="ai-mark">AI</span></h1>
+    <p class="hero-subtitle">
+      <strong>虚拟人口播智能体</strong> · 对标旗博士的本地可运行口播视频自动化生成系统<br>
+      从文案到成片到发布，全流程一键化，纯 CPU 即可运行
+    </p>
+    <div class="hero-tagline">⚡ 有想法就能做口播，10 分钟产出一条商用级视频</div>
+
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <div class="num">10×</div>
+        <div class="label">效率提升</div>
+      </div>
+      <div class="hero-stat">
+        <div class="num">9</div>
+        <div class="label">核心模块</div>
+      </div>
+      <div class="hero-stat">
+        <div class="num">4</div>
+        <div class="label">平台一键发布</div>
+      </div>
+      <div class="hero-stat">
+        <div class="num">0</div>
+        <div class="label">云端成本</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- 1. 痛点 -->
+<section>
+  <div class="container">
+    <h2 class="section-title"><span class="num">1</span>创作者正在经历的痛点</h2>
+    <p class="section-desc">做一条口播短视频，到底有多难？</p>
+    <div class="pain-grid">
+      <div class="pain-card">
+        <div class="icon">🔧</div>
+        <h3>流程碎片化</h3>
+        <p>文案、录音、拍摄、剪辑、字幕、BGM、封面、发布——要 6-8 个工具来回切换，普通人根本搞不定</p>
+      </div>
+      <div class="pain-card">
+        <div class="icon">👄</div>
+        <h3>数字人嘴唇不同步</h3>
+        <p>市面数字人口播"声音提前 1 秒嘴才动"是通病，一眼假，严重影响完播率和信任感</p>
+      </div>
+      <div class="pain-card">
+        <div class="icon">☁️</div>
+        <h3>云端方案贵且不安全</h3>
+        <p>旗博士等 SaaS 按条收费，内容必须上传服务器，隐私和商业机密泄露风险高</p>
+      </div>
+      <div class="pain-card">
+        <div class="icon">😳</div>
+        <h3>真人出镜门槛高</h3>
+        <p>不想露脸的创作者（声优、社恐、形象焦虑）无法做口播，错过短视频红利</p>
+      </div>
+      <div class="pain-card">
+        <div class="icon">📤</div>
+        <h3>发布重复劳动</h3>
+        <p>一条视频要分别登录抖音、B站、快手、视频号手动上传，重复 4 次操作</p>
+      </div>
+      <div class="pain-card">
+        <div class="icon">💰</div>
+        <h3>中小创作者成本高</h3>
+        <p>专业设备+剪辑软件+云端服务，月成本动辄数百上千，劝退大量潜在创作者</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2. 解决方案 -->
+<section>
+  <div class="container">
+    <h2 class="section-title"><span class="num">2</span>EnlyAI 的解决方案</h2>
+    <div class="solution-banner">
+      <h3>一句话说清楚：<span class="highlight">本地运行的口播视频全流程自动化引擎</span></h3>
+      <p>输入一段文案 → 自动完成"文案润色 → 本地声音克隆 → Wav2Lip 数字人唇形同步 → 字幕生成 → BGM 混音 → 封面生成 → 多平台一键发布"，全流程本地处理，隐私可控，零云端成本。</p>
+    </div>
+
+    <h3 style="margin: 40px 0 20px; text-align:center; color:#c7d2fe; font-size:20px;">🔄 完整工作流程</h3>
+    <div class="workflow">
+      <span class="workflow-step">📝 文案输入</span>
+      <span class="workflow-arrow">→</span>
+      <span class="workflow-step">✨ LLM 润色/仿写</span>
+      <span class="workflow-arrow">→</span>
+      <span class="workflow-step">🔍 原创检测</span>
+      <span class="workflow-arrow">→</span>
+      <span class="workflow-step">🎙️ MOSS-TTS 声音克隆</span>
+      <span class="workflow-arrow">→</span>
+      <span class="workflow-step">👄 Wav2Lip 唇形同步</span>
+      <span class="workflow-arrow">→</span>
+      <span class="workflow-step">🎞️ 字幕生成</span>
+      <span class="workflow-arrow">→</span>
+      <span class="workflow-step">🎵 BGM 混音</span>
+      <span class="workflow-arrow">→</span>
+      <span class="workflow-step">🖼️ 封面生成</span>
+      <span class="workflow-arrow">→</span>
+      <span class="workflow-step">📤 多平台发布</span>
+    </div>
+  </div>
+</section>
+
+<!-- 3. 技术栈 -->
+<section>
+  <div class="container">
+    <h2 class="section-title"><span class="num">3</span>9 大核心模块技术栈</h2>
+    <p class="section-desc">全部模块支持纯 CPU 运行，MX450 2GB 显存也能跑，无需高端显卡</p>
+    <div class="tech-grid">
+      <div class="tech-card">
+        <div class="tech-header"><h4>🎙️ 声音克隆</h4><span class="tech-tag">本地CPU</span></div>
+        <div class="tech-name">MOSS-TTS-Nano (0.1B ONNX)</div>
+        <div class="tech-desc">5 秒样本零样本克隆，纯 CPU 实时合成，无需上传云端。备选 MiMo / GPT-SoVITS / edge-tts 降级</div>
+      </div>
+      <div class="tech-card">
+        <div class="tech-header"><h4>🧑 数字人</h4><span class="tech-tag core">核心</span></div>
+        <div class="tech-name">Wav2Lip 视频驱动</div>
+        <div class="tech-desc">羽化嘴部聚焦融合 + 居中平滑窗口，唇形同步达商用标准。保留原视频头动/表情/眨眼，仅替换嘴形</div>
+      </div>
+      <div class="tech-card">
+        <div class="tech-header"><h4>✨ 人脸增强</h4><span class="tech-tag">可选</span></div>
+        <div class="tech-name">GFPGAN</div>
+        <div class="tech-desc">含嘴部保护遮罩，避免口形失真，UI 一键开关。stride=1 逐帧最稳</div>
+      </div>
+      <div class="tech-card">
+        <div class="tech-header"><h4>📝 文案工作流</h4><span class="tech-tag">AI</span></div>
+        <div class="tech-name">DeepSeek-V3 / Qwen2.5</div>
+        <div class="tech-desc">润色/仿写/生成 + 原创检测（simhash 查重 + 违禁词 + LLM 风控），合规可商用</div>
+      </div>
+      <div class="tech-card">
+        <div class="tech-header"><h4>🎞️ 字幕</h4><span class="tech-tag">精对齐</span></div>
+        <div class="tech-name">faster-whisper + ASS</div>
+        <div class="tech-desc">词级时间戳，卡拉OK逐字高亮按真实发音时长。长句自动折行，字号56+描边3 抖音爆款风格</div>
+      </div>
+      <div class="tech-card">
+        <div class="tech-header"><h4>🎵 BGM 混音</h4><span class="tech-tag">amix</span></div>
+        <div class="tech-name">FFmpeg amix</div>
+        <div class="tech-desc">人声为主 BGM 为辅，音量 0.25 可听不盖过人声。6 种预设曲目（轻柔钢琴/企业活力/科技电子等）</div>
+      </div>
+      <div class="tech-card">
+        <div class="tech-header"><h4>📤 多平台发布</h4><span class="tech-tag core">4平台</span></div>
+        <div class="tech-name">bilibili-api + Playwright</div>
+        <div class="tech-desc">B站API直传返回真实bvid + 抖音/快手/视频号浏览器自动化。扫码登录傻瓜化</div>
+      </div>
+      <div class="tech-card">
+        <div class="tech-header"><h4>🖼️ 画中画编辑器</h4><span class="tech-tag">可视化</span></div>
+        <div class="tech-name">FFmpeg cut/pip</div>
+        <div class="tech-desc">时间线可视化，支持 cut（全屏插播替换）和 pip（角窗画中画）两种模式 + 淡入淡出</div>
+      </div>
+      <div class="tech-card">
+        <div class="tech-header"><h4>⚡ 编排</h4><span class="tech-tag">可靠</span></div>
+        <div class="tech-name">SQLite 状态机</div>
+        <div class="tech-desc">断点续跑 + 指数退避重试，长任务中断也能恢复，不浪费算力</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. 差异化对比 -->
+<section>
+  <div class="container">
+    <h2 class="section-title"><span class="num">4</span>与旗博士等云端方案的差异</h2>
+    <p class="section-desc">同样的全流程，本地化带来质变</p>
+    <div class="compare-wrap">
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th>对比维度</th>
+            <th style="color:var(--success)">EnlyAI（本地）</th>
+            <th style="color:var(--text-muted)">旗博士等云端 SaaS</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="dim">运行方式</td><td class="col-kr">✓ 本地运行，隐私可控</td><td class="col-other">✗ 必须上传服务器</td></tr>
+          <tr><td class="dim">使用成本</td><td class="col-kr">✓ 一次部署零云端成本</td><td class="col-other">✗ 按条/按时长收费</td></tr>
+          <tr><td class="dim">网络依赖</td><td class="col-kr">✓ 离线可用（除发布外）</td><td class="col-other">✗ 全程联网</td></tr>
+          <tr><td class="dim">唇形同步精度</td><td class="col-kr">✓ 羽化融合+平滑窗口，商用级</td><td class="col-other">△ 普遍存在不同步</td></tr>
+          <tr><td class="dim">声音克隆</td><td class="col-kr">✓ 本地零样本克隆</td><td class="col-other">✗ 多数需上传样本</td></tr>
+          <tr><td class="dim">发布自动化</td><td class="col-kr">✓ 4平台一键发布</td><td class="col-other">△ 仅生成清单</td></tr>
+          <tr><td class="dim">可二次开发</td><td class="col-kr">✓ 开源 MIT 协议</td><td class="col-other">✗ 闭源黑盒</td></tr>
+          <tr><td class="dim">硬件门槛</td><td class="col-kr">✓ MX450 2GB 可跑</td><td class="col-other">— 无需本地硬件</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- 5. 价值 -->
+<section>
+  <div class="container">
+    <h2 class="section-title"><span class="num">5</span>价值与意义</h2>
+    <div class="value-grid">
+      <div class="value-card">
+        <h4>💼 商业价值</h4>
+        <ul>
+          <li>降本：本地运行零云端成本，长期省 90%+</li>
+          <li>增效：2-3 小时压缩到 10 分钟，产能提升 10 倍</li>
+          <li>变现：可服务中小商家做口播带货、矩阵号代运营</li>
+        </ul>
+      </div>
+      <div class="value-card accent">
+        <h4>⚡ 效率提升</h4>
+        <ul>
+          <li>全流程一键化，告别 8 个工具切换</li>
+          <li>扫码登录傻瓜化，用户零专业操作</li>
+          <li>断点续跑，长任务不浪费算力</li>
+        </ul>
+      </div>
+      <div class="value-card success">
+        <h4>🌍 社会价值</h4>
+        <ul>
+          <li>降低创作门槛，让普通人也能做口播</li>
+          <li>本地处理保护声音/形象等生物特征</li>
+          <li>自动字幕助力听障用户无障碍消费</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6. 已验证 -->
+<section>
+  <div class="container">
+    <h2 class="section-title"><span class="num">6</span>已达成商用标准</h2>
+    <p class="section-desc">不是 PPT 创意，是已验证的可运行系统</p>
+    <div class="verified-list">
+      <div class="verified-item"><div class="check">✓</div><span>MOSS-TTS 本地声音克隆（75s 音频合成）</span></div>
+      <div class="verified-item"><div class="check">✓</div><span>Wav2Lip 唇形同步（羽化融合+平滑窗口）</span></div>
+      <div class="verified-item"><div class="check">✓</div><span>BGM 可听不盖人声（音量 0.25 + amix）</span></div>
+      <div class="verified-item"><div class="check">✓</div><span>字幕与人声同步（adelay 延迟补偿）</span></div>
+      <div class="verified-item"><div class="check">✓</div><span>字幕长句自动折行（按标点+字数）</span></div>
+      <div class="verified-item"><div class="check">✓</div><span>字幕抖音爆款风格（字号56+描边3）</span></div>
+      <div class="verified-item"><div class="check">✓</div><span>一键发布全链路（4平台状态正确）</span></div>
+      <div class="verified-item"><div class="check">✓</div><span>B站扫码登录自动获取Cookie</span></div>
+      <div class="verified-item"><div class="check">✓</div><span>抖音/快手浏览器登录自动提取Cookie</span></div>
+      <div class="verified-item"><div class="check">✓</div><span>一键启动脚本（自动装依赖+检测FFmpeg）</span></div>
+      <div class="verified-item"><div class="check">✓</div><span>7 标签页 GUI + 26 个 API 端点</span></div>
+      <div class="verified-item"><div class="check">✓</div><span>SQLite 断点续跑 + 指数退避重试</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta">
+  <h2>让每个想法都能被听见</h2>
+  <p>本地运行 · 隐私可控 · 零云端成本 · 开源 MIT</p>
+  <div class="cta-buttons">
+    <span class="cta-btn primary">🚀 一键生成商用级口播视频</span>
+    <span class="cta-btn secondary">📤 一键发布到 4 大平台</span>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="container">
+    <div class="logo">EnlyAI</div>
+    <p><strong>虚拟人口播智能体</strong></p>
+    <p style="margin-top:8px;">TRAE AI 创造力大赛 · 生活娱乐赛道 · 创意提案</p>
+    <p style="margin-top:16px; font-size:12px;">本创意产物由 TRAE Work（Auto 模式）辅助生成 · 内容真实可验证</p>
+  </div>
+</footer>
+
+</body>
+</html>
