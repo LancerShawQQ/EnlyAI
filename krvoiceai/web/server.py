@@ -274,6 +274,25 @@ def create_app() -> FastAPI:
         )
         return {"success": ok}
 
+    @app.post("/api/jobs/{job_id}/rerun/async")
+    async def rerun_job_async(job_id: str):
+        """异步重跑任务（断点续跑），立即返回，前端轮询 /api/jobs/{job_id} 获取进度
+
+        与 /api/generate/async 对称：在后台线程运行任务，不阻塞 HTTP 响应。
+        供前端"重跑此任务"按钮调用，避免长时间等待。
+        """
+        krvoice = _get_app()
+        job = krvoice.get_job(job_id)
+        if not job:
+            raise HTTPException(404, "任务不存在")
+        # 在后台线程中运行任务（不等待完成），orchestrator.run_job 支持断点续跑
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(
+            None,
+            lambda: krvoice.orchestrator.run_job(job_id),
+        )
+        return {"job_id": job_id, "status": "pending"}
+
     @app.get("/api/avatars")
     async def list_avatars():
         return _get_app().list_avatars()

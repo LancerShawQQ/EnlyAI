@@ -1899,18 +1899,78 @@ async function pollGenerateJob(payload) {
   const submitResp = await api('/api/generate/async', { method: 'POST', body: payload });
   const jobId = submitResp.job_id;
   if (!jobId) throw new Error('任务提交失败：未返回 job_id');
+  return _pollJobLoop(jobId);
+}
 
-  // 2. 启动已用时计时器
+// 重跑当前任务（断点续跑）：从失败/卡住的步骤恢复，无需从头开始
+async function rerunCurrentJob() {
+  if (!_currentJobId) {
+    toast('未找到可重跑的任务', 'error');
+    return;
+  }
+  const jobId = _currentJobId;
+  const btn = document.getElementById('wiz-generate-btn');
+  try {
+    toast('正在重跑任务（断点续跑，从失败步骤恢复）...', 'info');
+    const resp = await api(`/api/jobs/${jobId}/rerun/async`, { method: 'POST' });
+    if (!resp.job_id) throw new Error('重跑请求失败');
+    // 重置模态框 UI 并重新轮询
+    document.getElementById('progress-modal-result').style.display = 'none';
+    document.getElementById('progress-modal-close').style.display = 'none';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 重跑中...'; }
+    showProgressModal();
+    document.getElementById('progress-modal-title').textContent = '正在重跑视频（断点续跑）...';
+    const result = await _pollJobLoop(jobId);
+    _displayWizardResult(result);
+    toast(result.success ? '视频生成成功！' : '生成未完全成功', result.success ? 'success' : 'error');
+  } catch (e) {
+    let errMsg = e.message || '重跑失败';
+    toast(`重跑失败: ${errMsg}`, 'error');
+    console.error(e);
+    finishProgressModalError(errMsg);
+  } finally {
+    if (btn) { btn.disabled = false; setBtnIcon(btn, 'rocket', '开始生成视频'); }
+  }
+}
+
+// 在向导结果区展示生成结果
+function _displayWizardResult(result) {
+  const output = result.output || {};
+  const videoPath = output.final_video || result.video_path;
+  const title = output.title || result.title || '';
+  const scriptText = output.script_text || result.script_text || '';
+  const videoEl = document.getElementById('wiz-result-video');
+  if (videoPath) {
+    videoEl.innerHTML = `<video src="/api/files?path=${encodeURIComponent(videoPath)}" controls autoplay></video>`;
+  } else {
+    videoEl.innerHTML = '<div class="result-video-placeholder">视频未生成</div>';
+  }
+  document.getElementById('wiz-result-title').textContent = title || '—';
+  document.getElementById('wiz-result-script').textContent = scriptText || '—';
+}
+
+// 轮询任务状态（提交新任务和重跑共用）
+async function _pollJobLoop(jobId) {
+  // 重置全局跟踪状态
+  _currentJobId = jobId;
+  _currentRunningStep = null;
+  _lastProgressTime = Date.now();
+  _tierAlerts = { avatar_enter: false, min30: false, min60: false, stale: false };
+
+  // 启动已用时计时器（每秒更新，显示当前步骤名）
   if (_progressTimerId) clearInterval(_progressTimerId);
   _progressTimerId = setInterval(() => {
     const elapsed = Math.floor((Date.now() - _progressStartTime) / 1000);
+    const m = Math.floor(elapsed / 60);
+    const s = elapsed % 60;
     const etaEl = document.getElementById('progress-eta');
     if (etaEl && !etaEl.textContent.includes('已完成') && !etaEl.textContent.includes('失败')) {
-      etaEl.textContent = `已用时 ${elapsed} 秒 · 正在生成...`;
+      const stepName = _currentRunningStep ? (STEP_INFO[_currentRunningStep]?.name || _currentRunningStep) : '初始化';
+      etaEl.textContent = `已用时 ${m}分${s}秒 · 正在执行：${stepName}`;
     }
   }, 1000);
 
-  // 3. 轮询任务状态
+  // 轮询任务状态
   const wizPipeline = document.getElementById('wiz-pipeline');
   // 最长等待 180 分钟（Wav2Lip GPU 模式约 20-30 分钟，CPU 模式长文案可达 90-120 分钟，留充足余量）
   const maxWait = 10800000;
@@ -1937,6 +1997,7 @@ async function pollGenerateJob(payload) {
     const jobUpdatedAt = job.updated_at || 0;
     if (jobUpdatedAt > lastUpdatedAt) {
       lastUpdatedAt = jobUpdatedAt;
+      _lastProgressTime = Date.now();  // 后端有推进，刷新本地卡住检测基准
     }
 
     // 构建 stepsState
@@ -1947,6 +2008,38 @@ async function pollGenerateJob(payload) {
         stepsState[s.step] = s.status;
         if (s.status === 'running') runningStep = s.step;
       }
+    }
+    _currentRunningStep = runningStep;
+
+    // ===== 分级超时提醒（不等 2 小时才告知用户）=====
+    const elapsedSec = (Date.now() - t0) / 1000;
+
+    // 进入 avatar（Wav2Lip）步骤时立即提示耗时
+    if (runningStep === 'avatar' && !_tierAlerts.avatar_enter) {
+      _tierAlerts.avatar_enter = true;
+      toast('数字人合成（Wav2Lip）已开始，此步骤耗时较长：GPU 约 20-30 分钟，CPU 约 60-120 分钟，请耐心等待', 'info');
+    }
+
+    // 卡住检测：后端 updated_at 超过 5 分钟无更新（任务可能卡死）
+    if (_lastProgressTime > 0 && (Date.now() - _lastProgressTime > 300000) && !_tierAlerts.stale) {
+      _tierAlerts.stale = true;
+      toast('⚠ 任务已 5 分钟无进度更新，可能卡住。可点击"重跑此任务"从断点恢复，或等待自动恢复', 'warning');
+    }
+
+    // 30 分钟节点：仍在 avatar 步骤时安抚用户
+    if (elapsedSec > 1800 && !_tierAlerts.min30) {
+      _tierAlerts.min30 = true;
+      if (runningStep === 'avatar') {
+        toast('数字人合成仍在进行（已 30 分钟）。CPU 模式长文案可能需要 60-120 分钟，属正常范围', 'info');
+      } else if (runningStep) {
+        toast(`任务已运行 30 分钟，正在执行：${STEP_INFO[runningStep]?.name || runningStep}`, 'info');
+      }
+    }
+
+    // 60 分钟节点：建议优化方案
+    if (elapsedSec > 3600 && !_tierAlerts.min60) {
+      _tierAlerts.min60 = true;
+      toast('已耗时 60 分钟。如需加速：减少文案长度 / 设置中切换 resize_factor=2 / 使用 GPU 服务器', 'warning');
     }
 
     // 更新向导页内 pipeline
@@ -2040,18 +2133,7 @@ async function wizardGenerate() {
     });
 
     // 展示结果（向导页内）
-    const output = result.output || {};
-    const videoPath = output.final_video || result.video_path;
-    const title = output.title || result.title || '';
-    const scriptText = output.script_text || result.script_text || '';
-    const videoEl = document.getElementById('wiz-result-video');
-    if (videoPath) {
-      videoEl.innerHTML = `<video src="/api/files?path=${encodeURIComponent(videoPath)}" controls autoplay></video>`;
-    } else {
-      videoEl.innerHTML = '<div class="result-video-placeholder">视频未生成</div>';
-    }
-    document.getElementById('wiz-result-title').textContent = title || '—';
-    document.getElementById('wiz-result-script').textContent = scriptText || '—';
+    _displayWizardResult(result);
 
     toast(result.success ? '视频生成成功！' : '生成未完全成功', result.success ? 'success' : 'error');
   } catch (e) {
@@ -2077,18 +2159,31 @@ async function wizardGenerate() {
 // ========== 进度模态框 ==========
 
 let _progressStartTime = 0;
+let _currentJobId = null;            // 当前轮询的任务 ID，供失败后"重跑此任务"使用
+let _currentRunningStep = null;      // 当前正在执行的步骤名，供计时器显示
+let _lastProgressTime = 0;           // 后端 updated_at 最后一次推进的本地时间，用于卡住检测
+let _tierAlerts = { avatar_enter: false, min30: false, min60: false, stale: false };
+
+// 步骤预估耗时权重（秒，GPU 模式参考值），用于计算预计剩余时间
+const STEP_ETA_WEIGHTS = {
+  script_extract: 90, script_write: 10, tts: 20, avatar: 1500,
+  subtitle: 15, compose: 45, title: 8, cover: 8, publish: 20,
+};
 
 function showProgressModal() {
   const modal = document.getElementById('progress-modal');
   if (!modal) return;
   _progressStartTime = Date.now();
+  _currentRunningStep = null;
   modal.style.display = 'flex';
   document.getElementById('progress-modal-title').textContent = '正在生成视频...';
   document.getElementById('progress-modal-close').style.display = 'none';
   document.getElementById('progress-modal-result').style.display = 'none';
   document.getElementById('progress-bar-fill').style.width = '0%';
   document.getElementById('progress-percent').textContent = '0%';
-  document.getElementById('progress-eta').textContent = '预估剩余时间 计算中...';
+  document.getElementById('progress-eta').textContent = '已用时 0分0秒 · 正在执行：初始化';
+  const hintEl = document.getElementById('progress-hint');
+  if (hintEl) { hintEl.style.display = 'none'; hintEl.textContent = ''; }
   // 渲染 9 个阶段
   const stagesEl = document.getElementById('progress-stages');
   stagesEl.innerHTML = STEP_ORDER.map(step => {
@@ -2103,6 +2198,14 @@ function showProgressModal() {
   }).join('');
 }
 
+// 步骤特别提示（进入 running 时显示，帮助用户理解耗时原因）
+const STEP_HINTS = {
+  avatar: '⏳ 数字人合成（Wav2Lip）耗时较长：GPU 约 20-30 分钟，CPU 约 60-120 分钟。此步骤期间任务无新进度属正常现象，请耐心等待',
+  script_extract: '正在提取文案（下载视频 + ASR 转写），约 1-3 分钟',
+  tts: '正在合成语音，约 10-30 秒',
+  compose: '正在合成最终视频（字幕+BGM+水印），约 30-60 秒',
+};
+
 function updateProgressModal(stepsState, result) {
   const stagesEl = document.getElementById('progress-stages');
   if (!stagesEl) return;
@@ -2110,6 +2213,7 @@ function updateProgressModal(stepsState, result) {
   const statusText = { pending: '等待中', running: '执行中', success: '已完成', failed: '失败', skipped: '已跳过' };
   let completed = 0;
   let failed = 0;
+  let runningStepName = null;
   stagesEl.querySelectorAll('.progress-stage').forEach(stage => {
     const step = stage.dataset.step;
     const status = stepsState[step] || 'pending';
@@ -2118,20 +2222,31 @@ function updateProgressModal(stepsState, result) {
     stage.querySelector('.progress-stage-status').textContent = statusText[status] || status;
     if (status === 'success' || status === 'skipped') completed++;
     if (status === 'failed') failed++;
+    if (status === 'running') runningStepName = step;
   });
   // 进度百分比
   const percent = Math.round((completed / STEP_ORDER.length) * 100);
   document.getElementById('progress-bar-fill').style.width = percent + '%';
   document.getElementById('progress-percent').textContent = percent + '%';
-  // 预估剩余时间
+
+  // 步骤提示 + 加权预估剩余时间（progress-hint 由本函数独占，progress-eta 由计时器独占）
+  const hintEl = document.getElementById('progress-hint');
   const elapsed = (Date.now() - _progressStartTime) / 1000;
-  if (completed > 0 && completed < STEP_ORDER.length) {
-    const avgPerStep = elapsed / completed;
-    const remaining = Math.round(avgPerStep * (STEP_ORDER.length - completed));
-    document.getElementById('progress-eta').textContent = `预估剩余时间 ${remaining} 秒`;
-  } else if (completed >= STEP_ORDER.length) {
-    document.getElementById('progress-eta').textContent = `已完成 · 用时 ${elapsed.toFixed(1)} 秒`;
+  if (hintEl) {
+    if (completed >= STEP_ORDER.length) {
+      hintEl.style.display = 'block';
+      hintEl.textContent = `✓ 全部完成 · 用时 ${Math.floor(elapsed / 60)}分${Math.floor(elapsed % 60)}秒`;
+    } else if (runningStepName && STEP_HINTS[runningStepName]) {
+      hintEl.style.display = 'block';
+      hintEl.textContent = STEP_HINTS[runningStepName];
+    } else if (runningStepName) {
+      hintEl.style.display = 'block';
+      hintEl.textContent = `正在执行：${STEP_INFO[runningStepName]?.name || runningStepName}`;
+    } else {
+      hintEl.style.display = 'none';
+    }
   }
+
   // 完成或失败时显示结果
   const isDone = result && (result.success || result.status === 'success' || result.status === 'failed' || failed > 0 || completed >= STEP_ORDER.length);
   if (isDone) {
@@ -2146,6 +2261,10 @@ function finishProgressModal(result, hasFailed) {
   const output = result.output || {};
   const videoPath = output.final_video;
   const title = output.title || '';
+  // 重跑按钮（失败或无视频时显示，支持断点续跑）
+  const rerunBtn = (_currentJobId && (hasFailed || !videoPath))
+    ? `<button class="btn btn-primary" type="button" onclick="rerunCurrentJob()"><i data-lucide="rotate-cw"></i> 重跑此任务（断点续跑）</button>`
+    : '';
   if (videoPath) {
     resultEl.innerHTML = `
       <div class="progress-modal-result-title">${escapeHtml(title)}</div>
@@ -2153,6 +2272,7 @@ function finishProgressModal(result, hasFailed) {
       <div class="progress-modal-result-actions">
         <div class="video-path-display" style="flex:1;text-align:left;padding:8px 12px;background:var(--bg-elevated);border-radius:8px;font-size:12px;color:var(--text-secondary);font-family:var(--font-mono);word-break:break-all"><i data-lucide="folder" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i>${escapeHtml(videoPath)}</div>
         <button class="btn btn-secondary" type="button" onclick="copyToClipboard('${videoPath.replace(/'/g, "\\'")}')"><i data-lucide="copy"></i> 复制路径</button>
+        ${rerunBtn}
         <button class="btn btn-secondary" type="button" onclick="closeProgressModal()"><i data-lucide="refresh-cw"></i> 再做一个</button>
       </div>
     `;
@@ -2160,6 +2280,7 @@ function finishProgressModal(result, hasFailed) {
     resultEl.innerHTML = `
       <div class="progress-modal-result-title">视频未生成</div>
       <div class="progress-modal-result-actions">
+        ${rerunBtn}
         <button class="btn btn-secondary" type="button" onclick="closeProgressModal()"><i data-lucide="refresh-cw"></i> 再做一个</button>
       </div>
     `;
@@ -2172,9 +2293,15 @@ function finishProgressModalError(message) {
   document.getElementById('progress-modal-title').textContent = '生成失败';
   document.getElementById('progress-modal-close').style.display = 'flex';
   const resultEl = document.getElementById('progress-modal-result');
+  // 重跑按钮（有 job_id 时显示，支持断点续跑从失败步骤恢复）
+  const rerunBtn = _currentJobId
+    ? `<button class="btn btn-primary" type="button" onclick="rerunCurrentJob()"><i data-lucide="rotate-cw"></i> 重跑此任务（断点续跑）</button>`
+    : '';
   resultEl.innerHTML = `
     <div class="progress-modal-result-title" style="color:var(--color-error)"><i data-lucide="x-circle"></i> ${escapeHtml(message)}</div>
     <div class="progress-modal-result-actions">
+      ${rerunBtn}
+      <button class="btn btn-secondary" type="button" onclick="navigate('jobs')"><i data-lucide="clipboard-list"></i> 查看任务列表</button>
       <button class="btn btn-secondary" type="button" onclick="closeProgressModal()">关闭</button>
     </div>
   `;
@@ -2837,10 +2964,15 @@ async function showJobDetail(jobId) {
 async function rerunJob(jobId) {
   if (!confirm(`确定要续跑任务 ${jobId} 吗？`)) return;
   try {
-    toast('正在续跑任务...', 'info');
-    const result = await api(`/api/jobs/${jobId}/rerun`, { method: 'POST' });
-    toast(result.success ? '续跑成功' : '续跑失败', result.success ? 'success' : 'error');
-    loadJobs();
+    toast('已开始续跑任务（断点续跑），可在列表查看状态', 'info');
+    // 使用异步端点，避免长任务阻塞 HTTP 请求
+    const result = await api(`/api/jobs/${jobId}/rerun/async`, { method: 'POST' });
+    if (result.job_id) {
+      _currentJobId = jobId;  // 记录当前任务，供向导页"重跑此任务"使用
+      loadJobs();
+    } else {
+      toast('续跑请求失败', 'error');
+    }
   } catch (e) {
     toast(`续跑失败: ${e.message}`, 'error');
   }
