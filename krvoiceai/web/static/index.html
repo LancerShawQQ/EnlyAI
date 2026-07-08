@@ -2470,11 +2470,11 @@
           </div>
           <div style="color:var(--text-secondary);font-size:13px;line-height:1.8">
             <p><strong>FFmpeg</strong>：视频处理引擎，必须可用</p>
-            <p><strong>云端 TTS</strong>：GPT-SoVITS 语音合成服务。不可用时降级为静音音频（mock 模式）</p>
-            <p><strong>云端数字人</strong>：MuseTalk 口播生成服务。不可用时降级为占位图视频（mock 模式）</p>
-            <p><strong>LLM 模式</strong>：Mock 模式表示未配置 API Key，使用模板化文案。配置 DeepSeek/Qwen API Key 后切换为真实生成</p>
+            <p><strong>云端 TTS</strong>：语音合成服务状态检查（当前默认 MOSS NANO 本地克隆，无需云端）。该项检查云端 GPU TTS 服务，不可用时本地模式不受影响</p>
+            <p><strong>云端数字人</strong>：口播生成服务状态检查（当前默认 Wav2Lip 本地唇形同步，无需云端）。该项检查云端 GPU 数字人服务，不可用时本地模式不受影响</p>
+            <p><strong>LLM 模式</strong>：Mock 模式表示未配置 API Key，使用模板化文案。配置 DeepSeek/Qwen API Key 后切换为真实生成（当前默认 DeepSeek）</p>
             <p style="margin-top:12px;padding:12px;background:rgba(99,102,241,0.1);border-radius:8px">
-              <i data-lucide="lightbulb"></i> <strong>提示</strong>：GPU 服务不在线时，系统自动降级为 mock 模式，可跑通全流程但产物为占位内容。配置云端 GPU 后即可生成真实音视频。前往「设置 → 模型配置」配置各模型。
+              <i data-lucide="lightbulb"></i> <strong>提示</strong>：默认使用本地模式（MOSS NANO + Wav2Lip），无需云端 GPU 即可生成真实音视频。云端 GPU 服务为可选增强。前往「设置 → 模型配置」可切换 provider。
             </p>
           </div>
         </div>

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -623,6 +624,38 @@ class EnlyAI:
         tts = TTSEngine()
         tts.setup()  # 触发 GPU 不可用时的 mock 降级
         return tts.register_voice(voice_id, Path(sample_audio))
+
+    def delete_avatar(self, avatar_id: str) -> bool:
+        """删除已注册的数字人形象（不允许删除 default 形象）"""
+        if avatar_id == "default":
+            return False
+        avatars_dir = Path(self.config.get("avatar.avatars_dir", "./config/avatars"))
+        target = avatars_dir / avatar_id
+        if not target.exists() or not target.is_dir():
+            return False
+        # 安全检查：确保 target 在 avatars_dir 内（防止路径穿越）
+        try:
+            target.resolve().relative_to(avatars_dir.resolve())
+        except ValueError:
+            return False
+        shutil.rmtree(target)
+        self.logger.info(f"已删除形象: {avatar_id}")
+        return True
+
+    def delete_voice(self, voice_id: str) -> bool:
+        """删除已注册的克隆音色（预制音色在 yaml 中，不在 voices_dir 目录，天然不会被误删）"""
+        voices_dir = Path(self.config.get("tts.voices_dir", "./config/voices"))
+        target = voices_dir / voice_id
+        if not target.exists() or not target.is_dir():
+            return False
+        # 安全检查：确保 target 在 voices_dir 内
+        try:
+            target.resolve().relative_to(voices_dir.resolve())
+        except ValueError:
+            return False
+        shutil.rmtree(target)
+        self.logger.info(f"已删除音色: {voice_id}")
+        return True
 
     # ============ 健康检查 ============
 

@@ -1467,14 +1467,23 @@ function collectWizardAudioWithBgm() {
 }
 
 function collectWizardSubtitle() {
+  const preset = wizardState.selectedSubtitleStyle || 'douyin_hot';
+  // 从预设读取颜色相关字段，确保切换预设时颜色同步保存（向导UI无独立颜色控件，颜色由预设决定）
+  const styleInfo = (_creativePresets && _creativePresets.subtitle_styles && _creativePresets.subtitle_styles[preset]) || {};
   return {
-    preset: wizardState.selectedSubtitleStyle || 'douyin_hot',
+    preset: preset,
     animation: document.getElementById('wiz-sub-anim').value,
     position: document.getElementById('wiz-sub-position').value,
     font_size: parseInt(document.getElementById('wiz-sub-size').value),
     letter_spacing: parseInt(document.getElementById('wiz-sub-letter').value),
     dual_line: document.getElementById('wiz-sub-dual').checked,
     karaoke: document.getElementById('wiz-sub-karaoke').checked,
+    // 颜色字段：从字幕样式预设带入，与后端 apply_template 逻辑一致
+    primary_color: styleInfo.primary_color,
+    outline_color: styleInfo.outline_color,
+    outline_width: styleInfo.outline_width,
+    shadow_color: styleInfo.shadow_color,
+    bold: styleInfo.bold,
   };
 }
 
@@ -3303,9 +3312,11 @@ async function loadAvatars() {
       if (a.reference_image || hasLipSync || mode !== 'mock') {
         imgHtml = `<img src="/api/avatars/${encodeURIComponent(a.avatar_id)}/preview" style="width:100%;height:120px;object-fit:cover;border-radius:6px" onerror="this.outerHTML='<div style=&quot;width:100%;height:120px;background:#f5f5f5;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#bbb&quot;>无预览</div>'">`;
       }
+      const isDefault = a.avatar_id === 'default';
       return `
-        <div class="asset-card" style="padding:10px">
+        <div class="asset-card" style="padding:10px;position:relative">
           ${imgHtml}
+          ${isDefault ? '' : `<button onclick="deleteAvatar('${a.avatar_id}')" title="删除" type="button" style="position:absolute;top:8px;right:8px;background:rgba(239,68,68,0.9);color:#fff;border:none;border-radius:6px;padding:5px;cursor:pointer;display:flex;align-items:center"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>`}
           <div class="asset-id" style="margin-top:8px">${a.avatar_id}</div>
           <div style="display:flex;gap:8px;margin-top:4px">${lipBadge} ${modeBadge}</div>
           ${refType === 'video' ? '<div style="font-size:11px;color:#6b7280;margin-top:2px;display:flex;align-items:center;gap:3px"><i data-lucide="video" style="width:12px;height:12px"></i> 视频参考</div>' : ''}
@@ -3374,14 +3385,62 @@ async function loadVoices() {
       if (window.lucide) lucide.createIcons();
       return;
     }
-    grid.innerHTML = voices.map(v => `
-      <div class="asset-card">
-        <div class="asset-id">${v.voice_id}</div>
-        <div class="asset-meta">已注册</div>
-      </div>
-    `).join('');
+    grid.innerHTML = voices.map(v => {
+      const isCustom = v.type === 'custom';
+      const providerLabel = v.provider === 'moss_nano' ? 'MOSS' : (v.provider === 'edge_tts' ? 'Edge' : (v.provider || ''));
+      const typeLabel = v.type === 'preset' ? '预制' : (v.type === 'provider_default' ? '默认' : '克隆');
+      const genderIcon = v.gender === 'female' ? '👩' : (v.gender === 'male' ? '👨' : '🎵');
+      const displayName = v.label || v.voice_id;
+      const actions = [];
+      actions.push(`<button class="voice-preview-btn" data-voice="${v.voice_id}" type="button" title="试听" style="background:#f5f5f5;color:#333;border:none;border-radius:6px;padding:6px;cursor:pointer;display:flex;align-items:center"><i data-lucide="play" style="width:14px;height:14px"></i></button>`);
+      if (isCustom) {
+        actions.push(`<button onclick="deleteVoice('${v.voice_id}')" title="删除" type="button" style="background:rgba(239,68,68,0.1);color:#ef4444;border:none;border-radius:6px;padding:6px;cursor:pointer;display:flex;align-items:center"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>`);
+      }
+      return `
+        <div class="asset-card" style="padding:10px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div style="flex:1;min-width:0">
+              <div class="asset-id">${genderIcon} ${displayName}</div>
+              <div style="font-size:11px;color:#999;margin-top:4px">${typeLabel} · ${providerLabel}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0">${actions.join('')}</div>
+          </div>
+          ${v.description ? `<div style="font-size:12px;color:#6b7280;margin-top:6px">${v.description}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+    // 绑定试听按钮事件
+    grid.querySelectorAll('.voice-preview-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        playVoicePreview(btn.dataset.voice, btn);
+      });
+    });
   } catch (e) {
     toast(`加载音色失败: ${e.message}`, 'error');
+  }
+}
+
+async function deleteAvatar(avatarId) {
+  if (avatarId === 'default') { toast('默认形象不可删除', 'error'); return; }
+  if (!confirm(`确定删除形象「${avatarId}」？此操作不可恢复。`)) return;
+  try {
+    await api(`/api/avatars/${encodeURIComponent(avatarId)}`, { method: 'DELETE' });
+    toast('形象已删除', 'success');
+    loadAvatars();
+  } catch (e) {
+    toast(`删除失败: ${e.message}`, 'error');
+  }
+}
+
+async function deleteVoice(voiceId) {
+  if (!confirm(`确定删除音色「${voiceId}」？此操作不可恢复。`)) return;
+  try {
+    await api(`/api/voices/${encodeURIComponent(voiceId)}`, { method: 'DELETE' });
+    toast('音色已删除', 'success');
+    loadVoices();
+  } catch (e) {
+    toast(`删除失败: ${e.message}`, 'error');
   }
 }
 

@@ -418,15 +418,17 @@ class SettingsManager:
         self.update_section("subtitle", subtitle_payload)
         applied["subtitle"] = subtitle_payload
 
-        # 2. BGM + 情感
+        # 2. BGM + 情感（曲目和情感由模板指定，音量/淡入淡出/开关保留用户已有偏好）
+        current_audio = self.get_section("audio", mask_sensitive=False)
+        current_bgm = current_audio.get("bgm", {}) or {}
         audio_payload = {
             "emotion": tpl.get("emotion", "neutral"),
             "bgm": {
-                "enabled": True,
+                "enabled": current_bgm.get("enabled", True),
                 "track": tpl.get("bgm_track", "soft_piano"),
-                "volume": 15,
-                "fade_in": 1.0,
-                "fade_out": 1.0,
+                "volume": current_bgm.get("volume", 25),
+                "fade_in": current_bgm.get("fade_in", 1.0),
+                "fade_out": current_bgm.get("fade_out", 1.0),
             },
         }
         self.update_section("audio", audio_payload)

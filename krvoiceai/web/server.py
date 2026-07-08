@@ -593,6 +593,22 @@ def create_app() -> FastAPI:
         tmp.unlink(missing_ok=True)
         return {"success": ok, "voice_id": voice_id}
 
+    @app.delete("/api/avatars/{avatar_id}")
+    async def delete_avatar(avatar_id: str):
+        """删除已注册形象（不允许删除 default）"""
+        ok = _get_app().delete_avatar(avatar_id)
+        if not ok:
+            raise HTTPException(400, "删除失败（可能不存在或为默认形象）")
+        return {"success": True, "avatar_id": avatar_id}
+
+    @app.delete("/api/voices/{voice_id}")
+    async def delete_voice(voice_id: str):
+        """删除已注册克隆音色（预制音色不可删除）"""
+        ok = _get_app().delete_voice(voice_id)
+        if not ok:
+            raise HTTPException(400, "删除失败（可能不存在或为预制音色）")
+        return {"success": True, "voice_id": voice_id}
+
     # 文件下载（视频/封面等）
     @app.get("/api/files")
     async def get_file(path: str):
