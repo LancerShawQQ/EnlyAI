@@ -377,14 +377,35 @@ class AvatarEngine(BaseModule):
             except Exception as e:
                 self.logger.warning(f"检测 wav2lip_env CUDA 异常: {e}")
 
-        # GPU 模式下自动提高 batch_size（配置值过小会严重浪费 GPU 并行能力）
-        # 配置默认 face_det_batch_size=2/wav2lip_batch_size=2（CPU 安全值），
-        # GPU 模式下自动提升到 8/16，可显著缩短推理时间（34分钟→15-20分钟）
-        _cfg_face_batch = int(self.wav2lip_config.get("face_det_batch_size", 8))
-        _cfg_wav2lip_batch = int(self.wav2lip_config.get("wav2lip_batch_size", 16))
+        # batch_size 根据GPU显存动态选择（MX450 2GB用2/2最块，大显存可提升并行）
+        # 实测：MX450 2GB + batch=8/16 → 99分钟（显存压力致速度暴降）
+        #        MX450 2GB + batch=2/2  → 21分钟（配置值，历史最优）
+        _cfg_face_batch = int(self.wav2lip_config.get("face_det_batch_size", 2))
+        _cfg_wav2lip_batch = int(self.wav2lip_config.get("wav2lip_batch_size", 2))
         if w2l_device == "cuda":
-            _face_batch = max(_cfg_face_batch, 8)
-            _wav2lip_batch = max(_cfg_wav2lip_batch, 16)
+            # 检测GPU显存，动态选择batch_size
+            gpu_vram_gb = 0
+            try:
+                r = subprocess.run(
+                    [str(env_python), "-c",
+                     "import torch; print(torch.cuda.get_device_properties(0).total_memory // (1024**3))"],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if r.returncode == 0:
+                    gpu_vram_gb = int(r.stdout.strip())
+            except Exception:
+                pass
+            if gpu_vram_gb >= 8:
+                _face_batch = max(_cfg_face_batch, 8)
+                _wav2lip_batch = max(_cfg_wav2lip_batch, 16)
+            elif gpu_vram_gb >= 4:
+                _face_batch = max(_cfg_face_batch, 4)
+                _wav2lip_batch = max(_cfg_wav2lip_batch, 8)
+            else:
+                # 低显存GPU（如MX450 2GB）：用配置值2/2，避免显存压力导致速度暴降
+                _face_batch = _cfg_face_batch
+                _wav2lip_batch = _cfg_wav2lip_batch
+            self.logger.info(f"GPU显存={gpu_vram_gb}GB → face_det_batch={_face_batch}, wav2lip_batch={_wav2lip_batch}")
         else:
             _face_batch = _cfg_face_batch
             _wav2lip_batch = _cfg_wav2lip_batch

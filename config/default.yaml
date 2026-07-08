@@ -78,7 +78,7 @@ avatar:
   default_avatar: default
   # 输出视频参数
   output_fps: 25
-  output_resolution: [1080, 1920]  # 竖版
+  output_resolution: [720, 1280]  # 竖版（匹配standard形象原始720×1280，避免无意义放大）
   # Wav2Lip 配置（本地 CPU 唇形同步，嘴会动）
   wav2lip:
     # 模型权重（wav2lip_gan.pth 比 wav2lip.pth 画质略好）
@@ -425,7 +425,7 @@ composer:
   ffmpeg_path: ffmpeg  # 可指定绝对路径
   # 输出参数
   output_fps: 30
-  output_resolution: [1080, 1920]
+  output_resolution: [720, 1280]
   video_bitrate: "8M"
   audio_bitrate: "192k"
   # BGM 库
