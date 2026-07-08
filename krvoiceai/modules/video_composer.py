@@ -305,10 +305,13 @@ class VideoComposer(BaseModule):
                     bgm_chain += f",afade=t=out:st={fade_out_st:.2f}:d={self.bgm_fade_out}"
             bgm_chain += "[bgm]"
             # 人声(TTS,含封面延迟) + BGM 混音
+            # amix 后加 loudnorm 做最终响度归一化，避免人声被 BGM 压制或出现嗡嗡声
+            # dropout_transition=0 避免某一路静音时另一路音量突增
             audio_filter = (
                 _voice_chain("voice") + ";"
                 + bgm_chain + ";"
-                f"[voice][bgm]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+                f"[voice][bgm]amix=inputs=2:duration=first:dropout_transition=0,"
+                f"loudnorm=I=-16:TP=-1.5:LRA=11[aout]"
             )
         elif voice_audio and Path(voice_audio).exists():
             # 只有人声，无 BGM（含封面延迟补偿）

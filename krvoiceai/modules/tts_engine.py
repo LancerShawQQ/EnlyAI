@@ -571,8 +571,14 @@ class TTSEngine(BaseModule):
             kwargs["rate"] = emotion_map["rate"]
             kwargs["pitch"] = emotion_map["pitch"]
 
+        # 关键修复：edge_tts 必须使用用户选择的 voice_id，而非配置中的 edge_voice
+        # voice_id 来自前端音色卡片选择（如 zh-CN-YunxiNeural 男声）
+        # 仅当 voice_id 为空/default 时，才回退到 config 的 edge_voice
+        actual_voice = voice_id if voice_id and voice_id not in ("default", "", "None") else self.edge_voice
+
         self.logger.info(
-            f"edge-tts 合成 voice={self.edge_voice} "
+            f"edge-tts 合成 voice={actual_voice} (请求voice_id={voice_id}, "
+            f"edge_voice={self.edge_voice}) "
             f"speed={speed} volume={volume} pitch={pitch} emotion={emotion} "
             f"kwargs={kwargs}"
         )
@@ -583,7 +589,10 @@ class TTSEngine(BaseModule):
         mp3_path = output_path.with_suffix(".mp3")
 
         async def _synth():
-            communicate = edge_tts.Communicate(text, self.edge_voice, **kwargs)
+            # edge-tts 首字吞音修复：在文本前加一个逗号停顿，让合成器"热身"
+            # 避免开头2个字被吞掉（edge-tts 已知问题）
+            warmup_text = f"，{text}" if not text.startswith(("，", ",", "。", ".")) else text
+            communicate = edge_tts.Communicate(warmup_text, actual_voice, **kwargs)
             await communicate.save(str(mp3_path))
 
         asyncio.run(_synth())

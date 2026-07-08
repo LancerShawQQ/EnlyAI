@@ -377,6 +377,18 @@ class AvatarEngine(BaseModule):
             except Exception as e:
                 self.logger.warning(f"检测 wav2lip_env CUDA 异常: {e}")
 
+        # GPU 模式下自动提高 batch_size（配置值过小会严重浪费 GPU 并行能力）
+        # 配置默认 face_det_batch_size=2/wav2lip_batch_size=2（CPU 安全值），
+        # GPU 模式下自动提升到 8/16，可显著缩短推理时间（34分钟→15-20分钟）
+        _cfg_face_batch = int(self.wav2lip_config.get("face_det_batch_size", 8))
+        _cfg_wav2lip_batch = int(self.wav2lip_config.get("wav2lip_batch_size", 16))
+        if w2l_device == "cuda":
+            _face_batch = max(_cfg_face_batch, 8)
+            _wav2lip_batch = max(_cfg_wav2lip_batch, 16)
+        else:
+            _face_batch = _cfg_face_batch
+            _wav2lip_batch = _cfg_wav2lip_batch
+
         # wav2lip_env 的 site-packages 在 PYTHONPATH，需保证用独立解释器
         cmd = [
             str(env_python), str(inference_script),
@@ -385,8 +397,8 @@ class AvatarEngine(BaseModule):
             "--audio", str(audio_abs),
             "--outfile", str(output_abs),
             "--pads", *[str(p) for p in self.wav2lip_config.get("pads", [0, 20, 0, 0])],
-            "--face_det_batch_size", str(self.wav2lip_config.get("face_det_batch_size", 8)),
-            "--wav2lip_batch_size", str(self.wav2lip_config.get("wav2lip_batch_size", 16)),
+            "--face_det_batch_size", str(_face_batch),
+            "--wav2lip_batch_size", str(_wav2lip_batch),
             "--resize_factor", str(auto_resize),
             # 注意：原版 Wav2Lip inference.py 不支持 --device 参数，
             # 它通过 torch.cuda.is_available() 自动检测 CUDA。
@@ -397,7 +409,8 @@ class AvatarEngine(BaseModule):
 
         self.logger.info(
             f"运行 Wav2Lip 推理 (预期设备: {w2l_device} 自动检测, env={env_python.parent.parent.name}, "
-            f"resize_factor={auto_resize})，音频 {audio_dur:.1f}s，预计耗时数分钟至数十分钟..."
+            f"resize_factor={auto_resize}, face_det_batch={_face_batch}, wav2lip_batch={_wav2lip_batch})，"
+            f"音频 {audio_dur:.1f}s，预计耗时数分钟至数十分钟..."
         )
         # Wav2Lip 推理脚本内部加载依赖文件用相对路径，必须在 Wav2Lip 根目录运行
         wav2lip_root = inference_script.parent
@@ -427,6 +440,29 @@ class AvatarEngine(BaseModule):
             f"Wav2Lip 唇形同步完成: {output_path.name} "
             f"({output_path.stat().st_size // 1024}KB)"
         )
+
+        # 轻量锐化后处理：Wav2Lip 输出的人脸区域（尤其嘴唇）常有轻微模糊，
+        # 用 unsharp 滤镜增强边缘清晰度（GPU 模式下几乎不增加耗时）
+        # 不启用 GFPGAN 时用此方案作为快速质量提升
+        if not self.gfpgan_cfg.get("enabled", False):
+            try:
+                sharpened_path = output_path.with_name("avatar_sharpened.mp4")
+                import subprocess as _sp
+                _sharpen_cmd = [
+                    self.ffmpeg.ffmpeg,
+                    "-y", "-i", str(output_path),
+                    "-vf", "unsharp=5:5:0.8:3:3:0.4",
+                    "-c:a", "copy",
+                    str(sharpened_path),
+                ]
+                _r = _sp.run(_sharpen_cmd, capture_output=True, text=True, timeout=120)
+                if _r.returncode == 0 and sharpened_path.exists():
+                    output_path = sharpened_path
+                    self.logger.info(f"唇形锐化完成: {output_path.name}")
+                else:
+                    self.logger.warning(f"唇形锐化失败（不影响输出）: {_r.stderr[-150:]}")
+            except Exception as _e:
+                self.logger.warning(f"唇形锐化异常（不影响输出）: {_e}")
 
         # GFPGAN 人脸增强（可选，提升脸部清晰度，CPU 可跑但较慢）
         # 在竖屏转换前增强（横屏原始分辨率，增强效果更好）

@@ -739,6 +739,11 @@ async function loadWizardData() {
     });
 
     // 步骤2：慢请求（BGM/形象/音色）并行加载，不阻塞模板渲染
+    // 先显示骨架屏，避免10s空白让用户以为卡住
+    const _avatarGrid = document.getElementById('wiz-avatar-grid');
+    const _voiceGrid = document.getElementById('wiz-voice-grid');
+    if (_avatarGrid) showSkeletonCards(_avatarGrid, 4);
+    if (_voiceGrid) showSkeletonCards(_voiceGrid, 4);
     Promise.all([
       ensureBgmLibrary(),
       api('/api/avatars').catch(() => []),
@@ -2213,7 +2218,7 @@ function showProgressModal() {
 
 // 步骤特别提示（进入 running 时显示，帮助用户理解耗时原因）
 const STEP_HINTS = {
-  avatar: '⏳ 数字人合成（Wav2Lip）耗时较长：GPU 约 20-30 分钟，CPU 约 60-120 分钟。此步骤期间任务无新进度属正常现象，请耐心等待',
+  avatar: '⏳ 数字人合成（Wav2Lip）耗时较长：GPU 约 15-30 分钟，CPU 约 60-120 分钟。此步骤期间任务无新进度属正常现象，请耐心等待',
   script_extract: '正在提取文案（下载视频 + ASR 转写），约 1-3 分钟',
   tts: '正在合成语音，约 10-30 秒',
   compose: '正在合成最终视频（字幕+BGM+水印），约 30-60 秒',
@@ -2222,8 +2227,8 @@ const STEP_HINTS = {
 function updateProgressModal(stepsState, result) {
   const stagesEl = document.getElementById('progress-stages');
   if (!stagesEl) return;
-  const icons = { pending: '○', running: '⟳', success: '✓', failed: '✕', skipped: '−' };
-  const statusText = { pending: '等待中', running: '执行中', success: '已完成', failed: '失败', skipped: '已跳过' };
+  const icons = { pending: '○', running: '⟳', success: '✓', failed: '✕', skipped: '✓' };
+  const statusText = { pending: '等待中', running: '执行中', success: '已完成', failed: '失败', skipped: '已完成' };
   let completed = 0;
   let failed = 0;
   let runningStepName = null;
@@ -2713,10 +2718,10 @@ function renderPipeline(stepsState = {}) {
     const info = STEP_INFO[step];
     const status = stepsState[step] || 'pending';
     const icons = {
-      pending: '○', running: '⟳', success: '✓', failed: '✕', skipped: '−',
+      pending: '○', running: '⟳', success: '✓', failed: '✕', skipped: '✓',
     };
     const statusText = {
-      pending: '等待中', running: '执行中...', success: '已完成', failed: '失败', skipped: '已跳过',
+      pending: '等待中', running: '执行中...', success: '已完成', failed: '失败', skipped: '已完成',
     };
     return `
       <div class="pipeline-step ${status}">

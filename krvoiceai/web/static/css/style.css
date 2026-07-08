@@ -3408,7 +3408,13 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 .progress-stage.skipped .progress-stage-icon {
-  color: var(--color-skipped);
+  background: var(--color-success);
+  color: white;
+  border-color: transparent;
+}
+
+.progress-stage.skipped .progress-stage-name {
+  color: var(--color-success);
 }
 
 .progress-stage-name {

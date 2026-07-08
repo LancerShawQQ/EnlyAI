@@ -254,14 +254,15 @@ class FFmpegRunner:
 
         if remove_silence:
             # silenceremove: 消除首尾静音 + 过长停顿
-            # start_duration: 开头超过0.5秒的静音移除
-            # stop_duration: 中间超过1.0秒的静音压缩到0.3秒
+            # start_threshold: -40dB（更严格，避免误切低音量字，-50dB会切掉开头正常的低音量语音）
+            # start_duration: 0.3秒（缩短，只切纯静音段，保留正常起音）
+            # stop_duration: 中间超过1.5秒的静音才处理（避免误切正常停顿）
             filters.append(
-                "silenceremove=start_periods=1:start_duration=0.5:"
-                "start_threshold=-50dB:"
-                "stop_periods=-1:stop_duration=1.0:"
-                "stop_threshold=-50dB:"
-                "window=0.1"
+                "silenceremove=start_periods=1:start_duration=0.3:"
+                "start_threshold=-40dB:"
+                "stop_periods=-1:stop_duration=1.5:"
+                "stop_threshold=-40dB:"
+                "window=0.05"
             )
 
         if voice_enhance:
