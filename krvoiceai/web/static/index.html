@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
   <title>EnlyAI · 虚拟人口播智能体</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260708pub">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260708v3">
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
   <!-- 移动端点击修复（内联确保优先级，避免外部CSS缓存导致失效） -->
@@ -527,6 +527,9 @@
             <div class="form-group">
               <label class="form-label">情感</label>
               <div class="btn-card-grid" id="wiz-emotion-grid"></div>
+              <div id="wiz-emotion-hint" style="display:none;font-size:12px;color:var(--color-text-secondary);margin-top:6px;padding:6px 8px;background:rgba(255,200,0,0.1);border-radius:6px">
+                ⚠️ 当前音色（MOSS NANO）不支持情感调节，情感设置将被忽略
+              </div>
             </div>
             <div class="form-group">
               <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
@@ -2512,7 +2515,7 @@
   <!-- Toast 容器 -->
   <div class="toast-container" id="toast-container"></div>
 
-  <script src="/static/js/app.js?v=20260708pub"></script>
-  <script src="/static/js/settings.js?v=20260621d"></script>
+  <script src="/static/js/app.js?v=20260708v3"></script>
+  <script src="/static/js/settings.js?v=20260708v3"></script>
 </body>
 </html>

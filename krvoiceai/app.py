@@ -505,46 +505,91 @@ class EnlyAI:
         return result
 
     def list_voices(self) -> list[dict]:
-        """列出所有可用音色（含预制音色 + 已注册克隆音色 + 当前 provider 默认音色）"""
+        """列出所有可用音色（根据当前 tts.provider 返回对应音色库）
+
+        - edge_tts: 返回 avatar_voice_library.yaml 中的 10 个预制音色
+        - moss_nano: 返回 MOSS 内置音色（Junhao/Trump/Ava/Bella/Adam/Nathan）+ 已注册克隆音色
+        - 其他 provider: 返回默认音色 + 克隆音色
+        """
         voices_dir = Path(self.config.get("tts.voices_dir", "./config/voices"))
         result = []
         seen_ids = set()
         provider = self.config.get("tts.provider", "edge_tts")
 
-        # 1. 预制音色库（从 avatar_voice_library.yaml 加载，edge_tts provider 下全部可用）
-        preset_file = Path("./config/presets/avatar_voice_library.yaml")
-        if preset_file.exists():
-            try:
-                import yaml
-                with open(preset_file, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f) or {}
-                for vid, info in (data.get("voices", {}) or {}).items():
-                    if vid in seen_ids:
-                        continue
-                    result.append({
-                        "voice_id": vid,
-                        "label": info.get("label", vid),
-                        "gender": info.get("gender", ""),
-                        "description": info.get("description", ""),
-                        "type": "preset",
-                        "provider": "edge_tts",
-                    })
-                    seen_ids.add(vid)
-            except Exception:
-                pass
+        if provider == "edge_tts":
+            # edge_tts: 从 avatar_voice_library.yaml 加载 10 个预制音色
+            preset_file = Path("./config/presets/avatar_voice_library.yaml")
+            if preset_file.exists():
+                try:
+                    import yaml
+                    with open(preset_file, "r", encoding="utf-8") as f:
+                        data = yaml.safe_load(f) or {}
+                    for vid, info in (data.get("voices", {}) or {}).items():
+                        if vid in seen_ids:
+                            continue
+                        result.append({
+                            "voice_id": vid,
+                            "label": info.get("label", vid),
+                            "gender": info.get("gender", ""),
+                            "description": info.get("description", ""),
+                            "type": "preset",
+                            "provider": "edge_tts",
+                            "supports_emotion": True,  # edge_tts 支持 emotion 映射
+                        })
+                        seen_ids.add(vid)
+                except Exception:
+                    pass
+            # edge_tts 默认音色兜底
+            default_voice = self.config.get("tts.edge_voice", "zh-CN-XiaoxiaoNeural")
+            if default_voice and default_voice not in seen_ids:
+                result.append({
+                    "voice_id": default_voice,
+                    "label": default_voice,
+                    "type": "provider_default",
+                    "provider": "edge_tts",
+                    "supports_emotion": True,
+                })
+                seen_ids.add(default_voice)
 
-        # 2. 当前 provider 的默认音色（若不在预制库中则补充）
-        default_voice = self.config.get("tts.default_voice", "zh-CN-XiaoxiaoNeural")
-        if default_voice and default_voice not in seen_ids:
-            result.append({
-                "voice_id": default_voice,
-                "label": default_voice,
-                "type": "provider_default",
-                "provider": provider,
-            })
-            seen_ids.add(default_voice)
+        elif provider == "moss_nano":
+            # MOSS-TTS-Nano: 内置 6 个音色（Junhao/Trump/Ava/Bella/Adam/Nathan）
+            moss_builtin = {
+                "Junhao":  {"label": "君浩（男·中文）",  "gender": "male",   "description": "沉稳男声，适合新闻播报"},
+                "Trump":   {"label": "特朗普（男·英文）","gender": "male",   "description": "英文男声，适合外语内容"},
+                "Ava":     {"label": "Ava（女·英文）",    "gender": "female", "description": "英文女声，自然流畅"},
+                "Bella":   {"label": "Bella（女·中文）",  "gender": "female", "description": "温柔女声，适合情感内容"},
+                "Adam":    {"label": "Adam（男·英文）",   "gender": "male",   "description": "英文男声，沉稳专业"},
+                "Nathan":  {"label": "Nathan（男·英文）", "gender": "male",   "description": "英文男声，浑厚有力"},
+            }
+            builtin_voice = self.config.get("tts.moss_nano.builtin_voice", "Junhao")
+            for vid, info in moss_builtin.items():
+                if vid in seen_ids:
+                    continue
+                result.append({
+                    "voice_id": vid,
+                    "label": info["label"],
+                    "gender": info["gender"],
+                    "description": info["description"],
+                    "type": "preset" if vid == builtin_voice else "preset",
+                    "provider": "moss_nano",
+                    "supports_emotion": False,  # MOSS NANO 暂不支持 emotion 映射
+                })
+                seen_ids.add(vid)
 
-        # 3. 已注册的自定义克隆音色（用户上传的音色样本）
+        else:
+            # 其他 provider（mimo/gpt_sovits/mock）：返回默认音色
+            default_voice = self.config.get("tts.default_voice", "zh-CN-XiaoxiaoNeural")
+            if default_voice:
+                result.append({
+                    "voice_id": default_voice,
+                    "label": default_voice,
+                    "type": "provider_default",
+                    "provider": provider,
+                    "supports_emotion": False,
+                })
+                seen_ids.add(default_voice)
+
+        # 已注册的自定义克隆音色（所有 provider 通用，moss_nano 用做零样本克隆参考）
         if voices_dir.exists():
             for d in sorted(voices_dir.iterdir()):
                 if not d.is_dir():
@@ -556,6 +601,7 @@ class EnlyAI:
                     "label": d.name + "（克隆）",
                     "type": "custom",
                     "provider": provider,
+                    "supports_emotion": provider == "edge_tts",
                 }
                 for ext in (".wav", ".mp3", ".flac", ".m4a"):
                     samples = list(d.glob(f"*{ext}"))

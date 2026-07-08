@@ -915,7 +915,7 @@ function renderWizardAvatarGrid(avatars) {
 function renderWizardVoiceGrid(voices) {
   const grid = document.getElementById('wiz-voice-grid');
   if (!grid) return;
-  const list = voices && voices.length ? voices : [{ voice_id: 'zh-CN-XiaoxiaoNeural', label: '晓晓（女·温暖）', type: 'preset', provider: 'edge_tts' }];
+  const list = voices && voices.length ? voices : [{ voice_id: 'zh-CN-XiaoxiaoNeural', label: '晓晓（女·温暖）', type: 'preset', provider: 'edge_tts', gender: 'female' }];
   grid.innerHTML = list.map(v => {
     const id = v.voice_id;
     const type = v.type || 'custom';
@@ -924,16 +924,20 @@ function renderWizardVoiceGrid(voices) {
     const displayName = v.label || v.voice_id;
     const desc = v.description || '';
     const gender = v.gender || '';
+    const genderIcon = gender === 'female' ? '👩' : (gender === 'male' ? '👨' : '🎵');
+    const genderLabel = gender === 'female' ? '女声' : (gender === 'male' ? '男声' : '');
+    const providerLabel = provider === 'edge_tts' ? 'Edge' : (provider === 'moss_nano' ? 'MOSS' : provider);
     const typeLabel = type === 'preset' ? '预制' : (type === 'provider_default' || type === 'default' ? '默认' : '克隆');
     const typeClass = type === 'preset' ? 'type-preset' : (type === 'provider_default' || type === 'default' ? 'type-default' : 'type-custom');
     return `
-      <div class="voice-card" data-id="${id}">
+      <div class="voice-card" data-id="${id}" data-supports-emotion="${v.supports_emotion ? '1' : '0'}">
         <div class="voice-card-header">
           <div class="voice-card-info">
-            <div class="voice-card-name">${displayName}</div>
+            <div class="voice-card-name">${genderIcon} ${displayName}</div>
             <div class="voice-card-tags">
               <span class="voice-card-tag ${typeClass}">${typeLabel}</span>
-              ${gender ? `<span class="voice-card-tag provider">${gender}</span>` : ''}
+              ${genderLabel ? `<span class="voice-card-tag provider">${genderLabel}</span>` : ''}
+              <span class="voice-card-tag provider-tag">${providerLabel}</span>
             </div>
             ${desc ? `<div class="voice-card-desc">${desc}</div>` : ''}
           </div>
@@ -946,8 +950,24 @@ function renderWizardVoiceGrid(voices) {
   // 默认选中第一个
   const firstId = list[0].voice_id;
   document.getElementById('wiz-voice').value = firstId;
+  // 检查音色是否支持emotion，更新emotion区域提示
+  function updateEmotionSupport(card) {
+    const supports = card.dataset.supportsEmotion === '1';
+    const emotionGrid = document.getElementById('wiz-emotion-grid');
+    const emotionHint = document.getElementById('wiz-emotion-hint');
+    if (emotionGrid) {
+      emotionGrid.style.opacity = supports ? '1' : '0.4';
+      emotionGrid.style.pointerEvents = supports ? 'auto' : 'none';
+    }
+    if (emotionHint) {
+      emotionHint.style.display = supports ? 'none' : 'block';
+    }
+  }
   grid.querySelectorAll('.voice-card').forEach(card => {
-    if (card.dataset.id === firstId) card.classList.add('selected');
+    if (card.dataset.id === firstId) {
+      card.classList.add('selected');
+      updateEmotionSupport(card);
+    }
     card.addEventListener('click', e => {
       // 点击试听按钮不触发选中
       if (e.target.closest('.voice-preview-btn')) return;
@@ -958,6 +978,7 @@ function renderWizardVoiceGrid(voices) {
       } else {
         card.classList.add('selected');
         document.getElementById('wiz-voice').value = card.dataset.id;
+        updateEmotionSupport(card);
       }
     });
   });
@@ -1959,7 +1980,19 @@ function _displayWizardResult(result) {
   const scriptText = output.script_text || result.script_text || '';
   const videoEl = document.getElementById('wiz-result-video');
   if (videoPath) {
-    videoEl.innerHTML = `<video src="/api/files?path=${encodeURIComponent(videoPath)}" controls autoplay></video>`;
+    const downloadName = (title || 'video').replace(/[^\w\u4e00-\u9fa5]/g, '_').slice(0, 30) + '.mp4';
+    videoEl.innerHTML = `
+      <video src="/api/files?path=${encodeURIComponent(videoPath)}" controls autoplay></video>
+      <div style="margin-top:8px;display:flex;gap:8px">
+        <a class="btn btn-sm btn-primary" href="/api/files?path=${encodeURIComponent(videoPath)}" download="${downloadName}">
+          <i data-lucide="download"></i> 下载视频
+        </a>
+        <button class="btn btn-sm btn-secondary" onclick="copyToClipboard('${videoPath.replace(/\\/g, '\\\\')}')">
+          <i data-lucide="copy"></i> 复制路径
+        </button>
+      </div>
+    `;
+    if (window.lucide) lucide.createIcons();
   } else {
     videoEl.innerHTML = '<div class="result-video-placeholder">视频未生成</div>';
   }
@@ -2943,7 +2976,11 @@ async function loadJobs() {
       tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text-muted)">暂无任务</td></tr>';
       return;
     }
-    tbody.innerHTML = jobs.map(j => `
+    tbody.innerHTML = jobs.map(j => {
+      const output = j.output || {};
+      const videoPath = output.final_video || output.video_path;
+      const hasVideo = j.status === 'success' && videoPath;
+      return `
       <tr>
         <td style="font-family:var(--font-mono);font-size:12px">${j.job_id}</td>
         <td>${statusBadge(j.status)}</td>
@@ -2951,11 +2988,13 @@ async function loadJobs() {
         <td>${formatTime(j.updated_at)}</td>
         <td>
           <button class="btn btn-sm btn-secondary" onclick="showJobDetail('${j.job_id}')">详情</button>
+          ${hasVideo ? `<a class="btn btn-sm btn-primary" href="/api/files?path=${encodeURIComponent(videoPath)}" download="${j.job_id}.mp4">下载</a>` : ''}
           <button class="btn btn-sm btn-secondary" onclick="rerunJob('${j.job_id}')">续跑</button>
           <button class="btn btn-sm btn-danger" onclick="deleteJob('${j.job_id}')">删除</button>
         </td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
   } catch (e) {
     toast(`加载任务失败: ${e.message}`, 'error');
   }
@@ -2974,12 +3013,29 @@ async function showJobDetail(jobId) {
         </div>
       </div>
     `).join('');
+    const output = job.output || {};
+    const videoPath = output.final_video || output.video_path;
+    const hasVideo = job.status === 'success' && videoPath;
     detail.innerHTML = `
       <div style="margin-bottom:16px">
         <strong>任务 ID:</strong> ${job.job_id}<br>
         <strong>状态:</strong> ${statusBadge(job.status)}<br>
         <strong>创建时间:</strong> ${formatTime(job.created_at)}
       </div>
+      ${hasVideo ? `
+        <div style="margin-bottom:16px">
+          <div style="font-weight:600;margin-bottom:8px">生成结果</div>
+          <video src="/api/files?path=${encodeURIComponent(videoPath)}" controls style="max-width:100%;border-radius:8px;margin-bottom:8px"></video>
+          <div style="display:flex;gap:8px">
+            <a class="btn btn-sm btn-primary" href="/api/files?path=${encodeURIComponent(videoPath)}" download="${job.job_id}.mp4">
+              <i data-lucide="download"></i> 下载视频
+            </a>
+            <button class="btn btn-sm btn-secondary" onclick="copyToClipboard('${videoPath.replace(/\\/g, '\\\\')}')">
+              <i data-lucide="copy"></i> 复制路径
+            </button>
+          </div>
+        </div>
+      ` : ''}
       <div class="pipeline">${stepsHtml}</div>
       ${job.error ? `<div style="margin-top:12px;color:var(--color-error)">错误: ${job.error}</div>` : ''}
     `;

@@ -875,6 +875,10 @@ async function loadCookieManager() {
       const c = cookies[key] || {};
       const configured = c.configured;
       const enabled = c.enabled;
+      // B站支持扫码登录，其他平台用浏览器自动登录
+      const loginBtn = key === 'bilibili'
+        ? `<button class="btn btn-sm btn-primary" onclick="loginBilibiliQrcode()" id="bilibili-login-btn">扫码登录</button>`
+        : `<button class="btn btn-sm btn-primary" onclick="loginBrowserPlatform('${key}')">浏览器登录</button>`;
       return `
         <div class="cookie-mgr-card" data-platform="${key}" style="padding:12px;border:1px solid var(--border-default);border-radius:var(--radius-md);background:var(--bg-elevated)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -884,15 +888,113 @@ async function loadCookieManager() {
               <span class="badge ${configured ? 'badge-success' : 'badge-muted'}">${configured ? '已配置' : '未配置'}</span>
               ${enabled ? '<span class="badge badge-info">已启用</span>' : ''}
             </div>
-            ${configured ? `<button class="btn btn-sm btn-secondary" onclick="deleteCookie('${key}')">删除</button>` : ''}
+            <div style="display:flex;gap:6px">
+              ${loginBtn}
+              ${configured ? `<button class="btn btn-sm btn-secondary" onclick="deleteCookie('${key}')">删除</button>` : ''}
+            </div>
           </div>
-          <textarea class="form-textarea" id="cookie-input-${key}" style="min-height:50px;font-size:11px" placeholder='粘贴 ${info.name} 的 Cookie（JSON 格式或 raw 字符串）'></textarea>
-          <button class="btn btn-sm btn-primary" style="margin-top:6px" onclick="saveCookie('${key}')">保存 Cookie</button>
+          <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:6px">
+            ${key === 'bilibili' ? '推荐扫码登录，自动获取Cookie' : '推荐浏览器登录，自动获取Cookie'}
+          </div>
+          <details style="margin-top:4px">
+            <summary style="font-size:11px;color:var(--color-text-secondary);cursor:pointer">手动输入 Cookie（高级）</summary>
+            <textarea class="form-textarea" id="cookie-input-${key}" style="min-height:50px;font-size:11px;margin-top:6px" placeholder='粘贴 ${info.name} 的 Cookie（JSON 格式或 raw 字符串）'></textarea>
+            <button class="btn btn-sm btn-secondary" style="margin-top:6px" onclick="saveCookie('${key}')">保存 Cookie</button>
+          </details>
+          <div id="bilibili-qrcode-area" style="text-align:center;margin-top:8px"></div>
         </div>
       `;
     }).join('');
   } catch (e) {
     listEl.innerHTML = `<div class="hint">加载 Cookie 状态失败: ${e.message}</div>`;
+  }
+}
+
+// B站扫码登录
+let _bilibiliLoginPolling = false;
+async function loginBilibiliQrcode() {
+  const btn = document.getElementById('bilibili-login-btn');
+  const qrcodeArea = document.getElementById('bilibili-qrcode-area');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 获取二维码...';
+  if (qrcodeArea) qrcodeArea.innerHTML = '';
+  try {
+    const result = await api('/api/publish/login/bilibili/qrcode', { method: 'POST' });
+    if (!result.qrcode_url && !result.qrcode_image) throw new Error('未获取到二维码');
+    // 显示二维码
+    if (result.qrcode_image) {
+      // base64 图片
+      if (qrcodeArea) qrcodeArea.innerHTML = `
+        <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:6px">请用哔哩哔哩APP扫描二维码登录</div>
+        <img src="data:image/png;base64,${result.qrcode_image}" style="max-width:200px;border:1px solid var(--border-default);border-radius:8px" />
+        <div style="font-size:11px;color:var(--color-text-secondary);margin-top:4px">等待扫码确认...</div>
+      `;
+    } else if (result.qrcode_url) {
+      if (qrcodeArea) qrcodeArea.innerHTML = `
+        <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:6px">请用哔哩哔哩APP扫描二维码登录</div>
+        <img src="${result.qrcode_url}" style="max-width:200px;border:1px solid var(--border-default);border-radius:8px" />
+        <div style="font-size:11px;color:var(--color-text-secondary);margin-top:4px">等待扫码确认...</div>
+      `;
+    }
+    btn.innerHTML = '等待扫码...';
+    // 轮询检查扫码状态
+    _bilibiliLoginPolling = true;
+    _pollBilibiliLogin();
+  } catch (e) {
+    toast(`B站扫码登录失败: ${e.message}`, 'error');
+    btn.disabled = false;
+    btn.innerHTML = '扫码登录';
+  }
+}
+
+async function _pollBilibiliLogin() {
+  if (!_bilibiliLoginPolling) return;
+  try {
+    const result = await api('/api/publish/login/bilibili/check');
+    if (result.status === 'success' || result.success) {
+      _bilibiliLoginPolling = false;
+      const btn = document.getElementById('bilibili-login-btn');
+      const qrcodeArea = document.getElementById('bilibili-qrcode-area');
+      if (btn) { btn.disabled = false; btn.innerHTML = '扫码登录'; }
+      if (qrcodeArea) qrcodeArea.innerHTML = '<div style="color:var(--color-success);font-size:13px;padding:8px">✓ 登录成功，Cookie已自动保存</div>';
+      toast('B站登录成功！Cookie已自动保存', 'success');
+      loadCookieManager();
+      return;
+    }
+    if (result.status === 'expired' || result.status === 'failed') {
+      _bilibiliLoginPolling = false;
+      const btn = document.getElementById('bilibili-login-btn');
+      const qrcodeArea = document.getElementById('bilibili-qrcode-area');
+      if (btn) { btn.disabled = false; btn.innerHTML = '扫码登录'; }
+      if (qrcodeArea) qrcodeArea.innerHTML = '<div style="color:var(--color-error);font-size:13px;padding:8px">二维码已过期，请重新扫码</div>';
+      toast('二维码已过期，请重新扫码', 'error');
+      return;
+    }
+    // 继续轮询（每2秒）
+    setTimeout(_pollBilibiliLogin, 2000);
+  } catch (e) {
+    _bilibiliLoginPolling = false;
+    const btn = document.getElementById('bilibili-login-btn');
+    if (btn) { btn.disabled = false; btn.innerHTML = '扫码登录'; }
+    toast(`检查扫码状态失败: ${e.message}`, 'error');
+  }
+}
+
+// 浏览器自动登录（抖音/快手/视频号）
+async function loginBrowserPlatform(platform) {
+  const platformName = PLATFORM_INFO[platform]?.name || platform;
+  toast(`正在打开浏览器登录${platformName}，请在弹出窗口中完成登录...`, 'info');
+  try {
+    const result = await api(`/api/publish/login/${platform}`, { method: 'POST' });
+    if (result.success || result.status === 'success') {
+      toast(`${platformName}登录成功！Cookie已自动保存`, 'success');
+      loadCookieManager();
+    } else {
+      toast(`${platformName}登录未完成: ${result.message || result.error || '可能超时或用户取消'}`, 'error');
+    }
+  } catch (e) {
+    toast(`${platformName}浏览器登录失败: ${e.message}`, 'error');
   }
 }
 

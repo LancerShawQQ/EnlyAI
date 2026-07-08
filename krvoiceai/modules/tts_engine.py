@@ -298,20 +298,33 @@ class TTSEngine(BaseModule):
     ) -> tuple[Path, float, list[dict]]:
         """使用本地 MOSS-TTS-Nano ONNX 合成（支持声音克隆）
 
-        若 voice_id 对应音色目录下有 sample 音频，则用该音频做零样本声音克隆；
-        否则使用内置音色（如 Junhao）。
+        音色选择优先级：
+        1. voice_id 对应目录下有 sample 音频 → 用该音频做零样本声音克隆
+        2. voice_id 是 MOSS 内置音色（Junhao/Trump/Ava/Bella/Adam/Nathan）→ 用该内置音色
+        3. 回退到 config 的 builtin_voice（默认 Junhao）
         """
         # emotion 暂不支持，仅 edge_tts 支持情感映射
         runtime = self._get_moss_runtime()
         cfg = self.config.get("tts.moss_nano", {}) or {}
 
+        # MOSS 内置音色清单
+        MOSS_BUILTIN_VOICES = {"Junhao", "Trump", "Ava", "Bella", "Adam", "Nathan"}
+        config_builtin = cfg.get("builtin_voice", "Junhao")
+
         # 查找该音色的参考音频（用于声音克隆）
         prompt_audio_path = None
-        builtin_voice = cfg.get("builtin_voice", "Junhao")
+        # 决定使用哪个内置音色：用户选的如果是MOSS内置音色则用之，否则回退到config
+        actual_builtin = config_builtin
         if voice_id and voice_id != "default":
+            # 检查是否是 MOSS 内置音色
+            if voice_id in MOSS_BUILTIN_VOICES:
+                actual_builtin = voice_id
+                self.logger.info(
+                    f"MOSS 使用内置音色 voice={voice_id}"
+                )
+            # 检查是否有克隆样本
             voice_dir = self.voices_dir / voice_id
             if voice_dir.exists():
-                # 找到任意 sample 音频
                 for ext in (".wav", ".mp3", ".flac", ".m4a"):
                     candidates = list(voice_dir.glob(f"sample*{ext}")) + list(
                         voice_dir.glob(f"*{ext}")
@@ -323,18 +336,19 @@ class TTSEngine(BaseModule):
                         )
                         break
 
-        if prompt_audio_path is None:
+        if prompt_audio_path is None and voice_id not in MOSS_BUILTIN_VOICES:
             self.logger.info(
-                f"MOSS 使用内置音色 voice={builtin_voice}（未找到克隆样本）"
+                f"MOSS 未找到 {voice_id} 的克隆样本，回退到内置音色 {actual_builtin}"
             )
 
         self.logger.info(
-            f"MOSS-TTS-Nano 合成 voice={voice_id} text_len={len(text)}"
+            f"MOSS-TTS-Nano 合成 voice={voice_id} builtin={actual_builtin} "
+            f"clone={'是' if prompt_audio_path else '否'} text_len={len(text)}"
         )
 
         result = runtime.synthesize(
             text=text,
-            voice=builtin_voice,
+            voice=actual_builtin,
             prompt_audio_path=prompt_audio_path,
             output_audio_path=str(output_path.resolve()),
             streaming=bool(cfg.get("realtime_streaming", True)),

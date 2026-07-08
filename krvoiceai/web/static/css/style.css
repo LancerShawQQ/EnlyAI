@@ -2825,6 +2825,11 @@ input[type="color"]::-webkit-color-swatch {
   color: #1d1d1f;
 }
 
+.voice-card-tag.provider-tag {
+  background: rgba(0, 122, 255, 0.12);
+  color: #0071e3;
+}
+
 .voice-card-desc {
   font-size: 11px;
   color: var(--text-tertiary);
