@@ -875,8 +875,13 @@ class VideoComposer(BaseModule):
         # 转义文字
         safe_text = text.replace(":", r"\:").replace("'", r"\'")
         # 尝试加载中文字体
+        # 注意：Windows 路径中的冒号（C:）需转义为 \:，否则被 FFmpeg 当作参数分隔符
         font_path = self._find_chinese_font()
-        font_opt = f":fontfile='{font_path}'" if font_path else ""
+        if font_path:
+            escaped_font = font_path.replace(":", "\\:")
+            font_opt = f":fontfile='{escaped_font}'"
+        else:
+            font_opt = ""
 
         # 根据前缀选择渐变色（片头用深蓝→紫，片尾用深紫→红）
         if prefix == "intro":
