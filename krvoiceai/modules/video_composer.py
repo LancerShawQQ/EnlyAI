@@ -674,24 +674,23 @@ class VideoComposer(BaseModule):
         ]
         self.ffmpeg.run(args)
 
-        # concat（用 filter 重新编码，避免参数不一致导致 copy 失败）
+        # 拼接封面 + 原视频
         combined = work_dir / "_tmp_with_cover.mp4"
-        args = [
-            "-i", str(cover_clip),
-            "-i", str(normalized_video),
-            "-filter_complex",
-            f"[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]",
-            "-map", "[outv]", "-map", "[outa]",
-            "-c:v", self._vcodec,
-            "-preset", self._vpreset,
-            *self._vextra,
-            "-pix_fmt", "yuv420p",
-            "-r", str(self.output_fps),
-            "-c:a", "aac",
-            "-b:a", self.audio_bitrate,
-            str(combined),
-        ]
-        self.ffmpeg.run(args)
+        if self.transition != "none":
+            # xfade 转场拼接（封面→主视频）
+            try:
+                combined = self._xfade_concat(
+                    [cover_clip, normalized_video], work_dir, "_tmp_with_cover.mp4"
+                )
+            except Exception as e:
+                self.logger.warning(f"xfade 转场失败，回退 concat: {e}")
+                combined = self._plain_concat(
+                    [cover_clip, normalized_video], work_dir, "_tmp_with_cover.mp4"
+                )
+        else:
+            combined = self._plain_concat(
+                [cover_clip, normalized_video], work_dir, "_tmp_with_cover.mp4"
+            )
         return combined
 
     def pick_bgm(self, style: str = "default") -> Optional[Path]:
@@ -752,24 +751,115 @@ class VideoComposer(BaseModule):
             return normalized
 
         combined = work_dir / "_tmp_with_intro_outro.mp4"
-        # 构建输入
-        inputs = []
+        if self.transition != "none" and len(segments) >= 2:
+            # xfade 转场拼接（片头→主视频→片尾）
+            try:
+                combined = self._xfade_concat(
+                    segments, work_dir, "_tmp_with_intro_outro.mp4"
+                )
+            except Exception as e:
+                self.logger.warning(f"xfade 转场失败，回退 concat: {e}")
+                combined = self._plain_concat(
+                    segments, work_dir, "_tmp_with_intro_outro.mp4"
+                )
+        else:
+            combined = self._plain_concat(
+                segments, work_dir, "_tmp_with_intro_outro.mp4"
+            )
+        self.logger.info(f"拼接片头片尾完成: {len(segments)} 段")
+        return combined
+
+    def _plain_concat(
+        self, segments: list[Path], work_dir: Path, output_name: str
+    ) -> Path:
+        """普通 concat 拼接（无转场）
+
+        所有 segments 必须已包含音频流（静音轨亦可）。
+        """
+        output = work_dir / output_name
+        inputs: list[str] = []
         for s in segments:
             inputs += ["-i", str(s)]
-        # concat 滤镜
         concat_parts = "".join(f"[{i}:v][{i}:a]" for i in range(len(segments)))
         args = inputs + [
             "-filter_complex",
             f"{concat_parts}concat=n={len(segments)}:v=1:a=1[outv][outa]",
             "-map", "[outv]", "-map", "[outa]",
-            "-c:v", self._vcodec, "-preset", self._vpreset, *self._vextra, "-pix_fmt", "yuv420p",
+            "-c:v", self._vcodec, "-preset", self._vpreset,
+            *self._vextra, "-pix_fmt", "yuv420p",
             "-r", str(self.output_fps),
             "-c:a", "aac", "-b:a", self.audio_bitrate,
-            str(combined),
+            str(output),
         ]
         self.ffmpeg.run(args)
-        self.logger.info(f"拼接片头片尾完成: {len(segments)} 段")
-        return combined
+        return output
+
+    def _xfade_concat(
+        self, segments: list[Path], work_dir: Path, output_name: str
+    ) -> Path:
+        """使用 xfade 转场拼接多段视频
+
+        视频用 xfade 链式转场，音频用 concat（xfade 不支持音频转场）。
+        所有 segments 必须已包含音频流（静音轨亦可）。
+
+        Args:
+            segments: 视频片段列表（至少 2 段）
+            work_dir: 临时文件目录
+            output_name: 输出文件名
+        """
+        td = self.transition_duration
+        transition = self.transition
+
+        # 探测每段时长
+        durations: list[float] = []
+        for seg in segments:
+            info = self.ffmpeg.probe_video_info(Path(seg))
+            durations.append(info.duration if info else 0)
+
+        # 构建 xfade 滤镜链
+        # offset 计算示例（3段，时长 d0/d1/d2，转场时长 td）：
+        #   第1次 xfade: [0:v][1:v] offset=d0-td → 产出时长 d0+d1-td
+        #   第2次 xfade: [v01][2:v] offset=d0+d1-td-td → 产出时长 d0+d1+d2-2*td
+        inputs: list[str] = []
+        for seg in segments:
+            inputs += ["-i", str(seg)]
+
+        filter_parts: list[str] = []
+        prev_label = "0:v"
+        cum_duration = durations[0]
+        for i in range(1, len(segments)):
+            offset = max(0, cum_duration - td)
+            out_label = "vxout" if i == len(segments) - 1 else f"vx{i:02d}"
+            filter_parts.append(
+                f"[{prev_label}][{i}:v]xfade=transition={transition}"
+                f":duration={td}:offset={offset:.3f}[{out_label}]"
+            )
+            prev_label = out_label
+            cum_duration = cum_duration + durations[i] - td
+
+        # 音频 concat（xfade 不支持音频转场，音频用 concat 保持简单）
+        audio_concat = "".join(f"[{i}:a]" for i in range(len(segments)))
+        filter_parts.append(
+            f"{audio_concat}concat=n={len(segments)}:v=0:a=1[aout]"
+        )
+
+        filter_complex = ";".join(filter_parts)
+        output = work_dir / output_name
+        args = inputs + [
+            "-filter_complex", filter_complex,
+            "-map", "[vxout]", "-map", "[aout]",
+            "-c:v", self._vcodec, "-preset", self._vpreset,
+            *self._vextra, "-pix_fmt", "yuv420p",
+            "-r", str(self.output_fps),
+            "-c:a", "aac", "-b:a", self.audio_bitrate,
+            str(output),
+        ]
+        self.ffmpeg.run(args)
+        self.logger.info(
+            f"xfade 转场拼接完成: {len(segments)} 段, "
+            f"transition={transition}, duration={td}s"
+        )
+        return output
 
     def _generate_text_clip(
         self, text: str, duration: float, work_dir: Path, prefix: str
