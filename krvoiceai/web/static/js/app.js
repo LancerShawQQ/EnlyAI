@@ -827,6 +827,12 @@ async function loadWizardData() {
     // 文案字数统计 + 时长预估 + 警告
     document.getElementById('wiz-script').addEventListener('input', e => {
       updateScriptStats(e.target.value);
+      // 文案变化时自动刷新画中画字幕时间轴（若已启用）
+      const brollEnabled = document.getElementById('wiz-broll-enabled')?.checked;
+      if (brollEnabled) {
+        autoLoadWizardSubtitles();
+        renderWizardTimeline();
+      }
     });
 
     // 文案 AI 工具栏
@@ -4931,8 +4937,28 @@ function toggleWizardBroll() {
   document.getElementById('wiz-broll-group').style.display = enabled ? 'block' : 'none';
   if (enabled) {
     loadWizardBrollAssets();
+    // 自动从文案加载字幕时间轴（对标商业口播智能体：启用即可见字幕段落）
+    autoLoadWizardSubtitles();
     renderWizardTimeline();
   }
+}
+
+// 自动从文案预估字幕时间轴（无需用户手动点击"智能推荐"）
+function autoLoadWizardSubtitles() {
+  const script = document.getElementById('wiz-script')?.value || document.getElementById('wizard-script')?.value || '';
+  if (!script.trim()) {
+    return; // 无文案时不生成
+  }
+  const sentences = script.split(/[。！？\n]/).filter(s => s.trim().length > 2);
+  if (!sentences.length) return;
+  let currentTime = 1.5; // 字幕从1.5s开始（跳过封面段）
+  wizBrollState.subtitleSegments = sentences.map(s => {
+    const dur = Math.max(2, s.length * 0.35);
+    const seg = { text: s.trim(), start: currentTime, end: currentTime + dur };
+    currentTime += dur + 0.2;
+    return seg;
+  });
+  wizBrollState.duration = currentTime + 1;
 }
 
 // 加载 B-roll 素材库
@@ -5002,25 +5028,20 @@ async function onWizardBrollUpload(input) {
   input.value = '';
 }
 
-// 智能推荐 B-roll
+// 智能推荐 B-roll（刷新字幕时间轴）
 async function wizardBrollSuggest() {
-  const script = document.getElementById('wizard-script')?.value || document.getElementById('wiz-script')?.value || '';
-  if (!script) {
+  const script = document.getElementById('wiz-script')?.value || '';
+  if (!script.trim()) {
     toast('请先在步骤3输入文案', 'warning');
     return;
   }
-  toast('智能推荐需要先生成视频以获取字幕时间戳，请先完成生成后在"我的任务"中使用精修编辑器', 'info');
-  const sentences = script.split(/[。！？\n]/).filter(s => s.trim().length > 2);
-  let currentTime = 1.5;
-  wizBrollState.subtitleSegments = sentences.map(s => {
-    const dur = Math.max(2, s.length * 0.35);
-    const seg = { text: s.trim(), start: currentTime, end: currentTime + dur };
-    currentTime += dur + 0.2;
-    return seg;
-  });
-  wizBrollState.duration = currentTime + 1;
+  autoLoadWizardSubtitles();
   renderWizardTimeline();
-  toast(`已基于文案预估 ${wizBrollState.subtitleSegments.length} 段字幕时间轴`, 'success');
+  if (wizBrollState.subtitleSegments.length) {
+    toast(`已基于文案预估 ${wizBrollState.subtitleSegments.length} 段字幕时间轴，点击段落卡片可插入 B-roll`, 'success');
+  } else {
+    toast('无法从文案提取句子，请检查文案内容', 'warning');
+  }
 }
 
 // 渲染时间轴
@@ -5118,7 +5139,7 @@ function renderWizardSubtitleList() {
   if (!container) return;
   const segs = wizBrollState.subtitleSegments || [];
   if (!segs.length) {
-    container.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;padding:12px;text-align:center">暂无字幕数据（点击"智能推荐"或先生成视频后从任务列表精修）</div>';
+    container.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;padding:12px;text-align:center">暂无字幕数据，请在步骤3输入文案后自动生成<br>或点击"智能推荐"刷新</div>';
     return;
   }
   container.innerHTML = segs.map((seg, idx) => {
