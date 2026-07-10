@@ -597,6 +597,9 @@ class EnlyAI:
                     continue
                 if d.name in seen_ids:
                     continue
+                # 排除预生成试听样本目录（不是音色）
+                if d.name == "samples":
+                    continue
                 info = {
                     "voice_id": d.name,
                     "label": d.name + "（克隆）",

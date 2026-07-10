@@ -83,7 +83,9 @@ class VideoComposer(BaseModule):
         self.bgm_fade_out = self.config.get("audio.bgm.fade_out", 1.0)
 
         # 视频效果配置
-        self.transition = self.config.get("effects.transition", "none")
+        # 空字符串视为 "none"（避免 xfade 收到空 transition 值报错）
+        _transition = self.config.get("effects.transition", "none")
+        self.transition = _transition if _transition else "none"
         self.transition_duration = self.config.get("effects.transition_duration", 0.5)
         self.video_filter = self.config.get("effects.filter", "none")
         self.filter_intensity = self.config.get("effects.filter_intensity", 50)

@@ -64,6 +64,8 @@ class AvatarEngine(BaseModule):
         self.scene_bg_type = scene_cfg.get("background_type", "transparent")
         self.scene_bg_color = scene_cfg.get("background_color", "#1A1A2E")
         self.scene_bg_image = scene_cfg.get("background_image", "")
+        # 环境检测缓存（进程内只检测一次，避免每次 run() 重复等待 torch import）
+        self._env_check_result: tuple[bool, str] | None = None
 
     def setup(self) -> None:
         if self.provider == "wav2lip":
@@ -100,7 +102,13 @@ class AvatarEngine(BaseModule):
 
         不再静默降级。返回 (ready, reason)。
         ready=True 表示可真实推理；ready=False 时 reason 给出具体缺失项和指引。
+
+        结果缓存在实例变量中，进程内只检测一次（torch import 约30s，
+        避免每次 run() 重复检测导致在高负载时超时）。
         """
+        if self._env_check_result is not None:
+            return self._env_check_result
+
         from ..core.config import PROJECT_ROOT
         project_root = Path(PROJECT_ROOT)
 
@@ -130,22 +138,26 @@ class AvatarEngine(BaseModule):
             )
 
         # 4. 依赖（torch/librosa）能在独立环境 import
+        # timeout=180s：torch import 正常约30s，高负载时可达120s+，给足余量
         try:
             result = subprocess.run(
                 [str(env_python), "-c",
                  "import torch, librosa, cv2, numpy, scipy; "
                  "print('deps ok', torch.__version__)"],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True, text=True, timeout=180,
             )
             if result.returncode != 0:
-                return False, (
+                self._env_check_result = (False, (
                     f"wav2lip_env 依赖缺失: {result.stderr[-200:]}。"
                     f"请在该环境执行 pip install torch librosa opencv-python scipy。"
-                )
+                ))
+                return self._env_check_result
         except Exception as e:
-            return False, f"检测 wav2lip_env 依赖异常: {e}"
+            self._env_check_result = (False, f"检测 wav2lip_env 依赖异常: {e}")
+            return self._env_check_result
 
-        return True, "ok"
+        self._env_check_result = (True, "ok")
+        return self._env_check_result
 
     def _check_wav2lip_deps(self) -> bool:
         """[已废弃] 检查主环境依赖 —— 改用 _check_wav2lip_env 检测独立环境

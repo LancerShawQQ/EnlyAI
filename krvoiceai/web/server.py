@@ -728,14 +728,59 @@ def create_app() -> FastAPI:
 
     @app.get("/api/bgm/preview/{track}")
     async def preview_bgm(track: str):
-        """预览 BGM 文件（用于 UI 试听按钮）"""
+        """预览 BGM 文件（用于 UI 试听按钮）
+
+        直接返回本地文件，浏览器通过 Range 请求流式播放，5秒内出声。
+        """
         from pathlib import Path as _Path
         bgm_dir = _Path(_get_app().config.get("composer.bgm_dir", "./config/bgm"))
         for ext in (".mp3", ".m4a", ".wav"):
             p = bgm_dir / f"{track}{ext}"
             if p.exists():
-                return FileResponse(str(p), media_type="audio/mpeg")
+                return FileResponse(
+                    str(p), media_type="audio/mpeg",
+                    headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=3600"},
+                )
         return JSONResponse({"error": "BGM not found"}, status_code=404)
+
+    # ============ 音色试听 API ============
+
+    @app.get("/api/voice/preview/{voice_id}")
+    async def preview_voice(voice_id: str):
+        """音色试听：优先返回预生成样本（即时），无样本时实时合成（回退）
+
+        预生成样本存放在 config/voices/samples/{voice_id}.wav，
+        由 scripts/pregenerate_voice_samples.py 一次性生成。
+        内置音色（Junhao/Trump/Ava/Bella/Adam/Nathan）均有预生成样本。
+        自定义克隆音色无预生成样本，回退到实时 TTS（约30-60s）。
+        """
+        from pathlib import Path as _Path
+        # 1. 检查预生成样本
+        samples_dir = _Path("./config/voices/samples")
+        for ext in (".wav", ".mp3"):
+            sample = samples_dir / f"{voice_id}{ext}"
+            if sample.exists():
+                return FileResponse(
+                    str(sample), media_type="audio/wav",
+                    headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=86400"},
+                )
+        # 2. 无预生成样本 → 实时合成（回退，自定义克隆音色走此路径）
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: _get_app().preview_tts(
+                "你好，这是音色试听", voice_id,
+            ),
+        )
+        if result.get("success") and result.get("audio_path"):
+            return FileResponse(
+                result["audio_path"], media_type="audio/wav",
+                headers={"Accept-Ranges": "bytes"},
+            )
+        return JSONResponse(
+            {"error": result.get("error", "试听生成失败")},
+            status_code=500,
+        )
 
     # ============ 场景化预制模板 API（对标腾讯智影/万兴播爆） ============
 

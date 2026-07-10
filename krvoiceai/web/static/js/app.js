@@ -1175,19 +1175,8 @@ async function playVoicePreview(voiceId, btn) {
   setBtnIcon(btn, 'pause', '');
   _currentPreviewBtn = btn;
   try {
-    // 直接调用轻量 TTS 试听端点，跳过流水线前置步骤（script_write 等 LLM 调用）
-    const result = await api('/api/preview/tts', {
-      method: 'POST',
-      body: {
-        text: '你好，这是音色试听',
-        voice_id: voiceId,
-      },
-    });
-    const audioPath = result.audio_path;
-    if (!audioPath) {
-      throw new Error(result.error || '未返回音频文件');
-    }
-    const audio = new Audio(`/api/files?path=${encodeURIComponent(audioPath)}`);
+    // 直接请求预生成试听样本（内置音色即时返回，自定义音色回退实时合成）
+    const audio = new Audio(`/api/voice/preview/${encodeURIComponent(voiceId)}`);
     _currentPreviewAudio = audio;
     audio.addEventListener('ended', () => {
       btn.classList.remove('playing');
