@@ -131,6 +131,30 @@ avatar:
     inference_steps: 25   # 扩散步数（25 平衡，50 最高质量，10 最快）
     resolution: 512       # 处理分辨率（512 推荐，256 更快）
     seed: -1              # 随机种子（-1 随机）
+  # LongCat-Video-Avatar 1.5 配置（云端 GPU，provider=longcat 时使用）
+  # 美团开源，MIT 协议，Whisper-large-v3 音频编码器，商用级唇形同步
+  # 优势：唇形同步精准（头部移动不丢同步）+ 全身时序稳定 + DMD 蒸馏 8 步生成
+  # 要求：云端需 8GB+ 显存 GPU（配合 INT8 量化），本地仅需网络连接
+  # 部署：将 krvoiceai/modules/longcat_server.py 部署到 GPU 服务器
+  longcat:
+    server_url: ""                 # 云端服务地址，如 http://xxx.xxx.xxx.xxx:8000
+    api_key: ""                    # API Key 鉴权（可选）
+    model_type: avatar-v1.5        # avatar-v1.5（推荐）或 avatar-v1.0
+    resolution: 480p               # 480p（更快）或 720p（更清晰）
+    timeout: 600                   # 请求超时秒数（长视频可能较慢）
+  # MuseTalk 配置（本地高质量引擎，provider=musetalk 时使用）
+  # 腾讯开源 MIT 协议，256×256 逐帧人脸对齐，解决 Wav2Lip 头部移动唇形精度下降
+  # 优势：单步潜空间 inpainting（非扩散），v1.5 加 GAN+感知+sync loss
+  # 要求：NVIDIA GPU（官方最低 4GB fp16），独立 Python 3.10 conda 环境
+  # 部署：将 krvoiceai/modules/musetalk_server.py 部署到 MuseTalk conda 环境运行
+  musetalk:
+    server_url: ""                 # MuseTalk 服务地址，如 http://localhost:8010
+    api_key: ""                    # API Key 鉴权（可选）
+    version: v15                   # v15（推荐，质量更好）或 v10
+    use_float16: true              # fp16 推理（降低显存，2GB 显存必须启用）
+    fps: 25                        # 输出帧率
+    bbox_shift: 5                  # 人脸裁剪框偏移（正值下移）
+    timeout: 600                   # 请求超时秒数
 
 # ASR 配置（字幕/文案提取）
 asr:

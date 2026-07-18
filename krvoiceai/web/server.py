@@ -591,6 +591,40 @@ def create_app() -> FastAPI:
         tmp.unlink(missing_ok=True)
         return {"success": ok, "avatar_id": avatar_id}
 
+    @app.post("/api/avatar/longcat/test")
+    async def test_longcat_connection(req: dict):
+        """测试 LongCat 云端服务连通性
+
+        Request body: {"server_url": "http://xxx:8000", "api_key": ""}
+        Response: {"ok": true/false, "message": "...", "gpu": "...", "model_loaded": bool}
+        """
+        server_url = req.get("server_url", "").rstrip("/")
+        api_key = req.get("api_key", "")
+        if not server_url:
+            return {"ok": False, "message": "未配置服务器地址"}
+
+        from ..modules.longcat_avatar_engine import LongCatAvatarClient
+        client = LongCatAvatarClient(server_url=server_url, api_key=api_key)
+        ok, msg = client.health_check()
+        return {"ok": ok, "message": msg}
+
+    @app.post("/api/avatar/musetalk/test")
+    async def test_musetalk_connection(req: dict):
+        """测试 MuseTalk 服务连通性
+
+        Request body: {"server_url": "http://localhost:8010", "api_key": ""}
+        Response: {"ok": true/false, "message": "..."}
+        """
+        server_url = req.get("server_url", "").rstrip("/")
+        api_key = req.get("api_key", "")
+        if not server_url:
+            return {"ok": False, "message": "未配置服务器地址"}
+
+        from ..modules.musetalk_avatar_engine import MuseTalkAvatarClient
+        client = MuseTalkAvatarClient(server_url=server_url, api_key=api_key)
+        ok, msg = client.health_check()
+        return {"ok": ok, "message": msg}
+
     @app.get("/api/voices")
     async def list_voices():
         return _get_app().list_voices()

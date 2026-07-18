@@ -421,16 +421,40 @@ function loadAvatarSettings() {
   const res = avatar.output_resolution || [1080, 1920];
   document.getElementById('avatar-res-w').value = res[0];
   document.getElementById('avatar-res-h').value = res[1];
+  // LongCat 配置回填
+  const longcat = avatar.longcat || {};
+  document.getElementById('longcat-server-url').value = longcat.server_url || '';
+  document.getElementById('longcat-api-key').value = longcat.api_key || '';
+  document.getElementById('longcat-model-type').value = longcat.model_type || 'avatar-v1.5';
+  document.getElementById('longcat-resolution').value = longcat.resolution || '480p';
+  document.getElementById('longcat-timeout').value = longcat.timeout || 600;
+  // MuseTalk 配置回填
+  const musetalk = avatar.musetalk || {};
+  document.getElementById('musetalk-server-url').value = musetalk.server_url || '';
+  document.getElementById('musetalk-api-key').value = musetalk.api_key || '';
+  document.getElementById('musetalk-version').value = musetalk.version || 'v15';
+  document.getElementById('musetalk-use-float16').value = String(musetalk.use_float16 !== false);
+  document.getElementById('musetalk-fps').value = musetalk.fps || 25;
+  document.getElementById('musetalk-bbox-shift').value = musetalk.bbox_shift || 5;
 }
 
 function onAvatarProviderChange() {
   const provider = document.getElementById('avatar-provider').value;
   const apiBaseGroup = document.getElementById('avatar-api-base-group');
-  apiBaseGroup.style.display = provider === 'mock' ? 'none' : 'block';
+  const longcatGroup = document.getElementById('avatar-longcat-group');
+  const musetalkGroup = document.getElementById('avatar-musetalk-group');
+  // api-base 仅对 latentsync/echomimic 显示（musetalk/longcat 有独立配置区）
+  const showApiBase = ['latentsync', 'echomimic'].includes(provider);
+  apiBaseGroup.style.display = showApiBase ? 'block' : 'none';
+  // LongCat 配置区仅对 longcat 显示
+  longcatGroup.style.display = provider === 'longcat' ? 'block' : 'none';
+  // MuseTalk 配置区仅对 musetalk 显示
+  musetalkGroup.style.display = provider === 'musetalk' ? 'block' : 'none';
+  // wav2lip/mock 不需要 api-base
   // 自动填充默认地址
   if (_presets && _presets.avatar[provider]) {
     const preset = _presets.avatar[provider];
-    if (preset.default_api_base && provider !== 'mock') {
+    if (preset.default_api_base && showApiBase) {
       const cur = document.getElementById('avatar-api-base').value;
       if (!cur) document.getElementById('avatar-api-base').value = preset.default_api_base;
     }
@@ -455,6 +479,24 @@ async function saveAvatarSettings() {
       parseInt(document.getElementById('avatar-res-w').value),
       parseInt(document.getElementById('avatar-res-h').value),
     ],
+  };
+  // LongCat 配置
+  data.longcat = {
+    server_url: document.getElementById('longcat-server-url').value.trim(),
+    api_key: document.getElementById('longcat-api-key').value.trim(),
+    model_type: document.getElementById('longcat-model-type').value,
+    resolution: document.getElementById('longcat-resolution').value,
+    timeout: parseInt(document.getElementById('longcat-timeout').value) || 600,
+  };
+  // MuseTalk 配置
+  data.musetalk = {
+    server_url: document.getElementById('musetalk-server-url').value.trim(),
+    api_key: document.getElementById('musetalk-api-key').value.trim(),
+    version: document.getElementById('musetalk-version').value,
+    use_float16: document.getElementById('musetalk-use-float16').value === 'true',
+    fps: parseInt(document.getElementById('musetalk-fps').value) || 25,
+    bbox_shift: parseInt(document.getElementById('musetalk-bbox-shift').value) || 5,
+    timeout: 600,
   };
   try {
     const result = await api('/api/settings/avatar', {
@@ -486,13 +528,68 @@ async function resetAvatarSettings() {
 }
 
 async function testAvatarConnection() {
-  const payload = {
-    provider: document.getElementById('avatar-provider').value,
-    api_base: document.getElementById('avatar-api-base').value,
-  };
+  const provider = document.getElementById('avatar-provider').value;
   const btn = document.getElementById('avatar-test-btn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> 测试中...';
+
+  // LongCat 走专用测试 API
+  if (provider === 'longcat') {
+    const serverUrl = document.getElementById('longcat-server-url').value.trim();
+    const apiKey = document.getElementById('longcat-api-key').value.trim();
+    if (!serverUrl) {
+      showTestResult('avatar-test-result', { success: false, message: '请先填写 LongCat 服务器地址' });
+      toast('请先填写服务器地址', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '🔌 测试连接';
+      return;
+    }
+    try {
+      const result = await api('/api/avatar/longcat/test', {
+        method: 'POST', body: { server_url: serverUrl, api_key: apiKey },
+      });
+      showTestResult('avatar-test-result', { success: result.ok, message: result.message });
+      toast(result.ok ? 'LongCat 连接成功' : '连接失败', result.ok ? 'success' : 'error');
+    } catch (e) {
+      showTestResult('avatar-test-result', { success: false, message: e.message });
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '🔌 测试连接';
+    }
+    return;
+  }
+
+  // MuseTalk 走专用测试 API
+  if (provider === 'musetalk') {
+    const serverUrl = document.getElementById('musetalk-server-url').value.trim();
+    const apiKey = document.getElementById('musetalk-api-key').value.trim();
+    if (!serverUrl) {
+      showTestResult('avatar-test-result', { success: false, message: '请先填写 MuseTalk 服务器地址' });
+      toast('请先填写服务器地址', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '🔌 测试连接';
+      return;
+    }
+    try {
+      const result = await api('/api/avatar/musetalk/test', {
+        method: 'POST', body: { server_url: serverUrl, api_key: apiKey },
+      });
+      showTestResult('avatar-test-result', { success: result.ok, message: result.message });
+      toast(result.ok ? 'MuseTalk 连接成功' : '连接失败', result.ok ? 'success' : 'error');
+    } catch (e) {
+      showTestResult('avatar-test-result', { success: false, message: e.message });
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '🔌 测试连接';
+    }
+    return;
+  }
+
+  // 其他 provider 走原有测试逻辑
+  const payload = {
+    provider: provider,
+    api_base: document.getElementById('avatar-api-base').value,
+  };
   try {
     const result = await api('/api/settings/test/avatar', { method: 'POST', body: payload });
     showTestResult('avatar-test-result', result);

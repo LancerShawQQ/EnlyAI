@@ -1916,7 +1916,8 @@
                 <label class="form-label">服务提供商</label>
                 <select class="form-select" id="avatar-provider" onchange="onAvatarProviderChange()">
                   <option value="wav2lip">Wav2Lip（本地唇形同步，CPU可跑）</option>
-                  <option value="musetalk">MuseTalk（实时口播，需GPU）</option>
+                  <option value="musetalk">MuseTalk 1.5（本地高质量，解决头部移动问题，需GPU）</option>
+                  <option value="longcat">LongCat 1.5（商用级唇形同步，需云端GPU）</option>
                   <option value="latentsync">LatentSync（高精度口型，需GPU）</option>
                   <option value="echomimic">EchoMimic（表情驱动，需GPU）</option>
                   <option value="mock">Mock 模式（占位图视频，调试用）</option>
@@ -1930,6 +1931,88 @@
             <div class="form-group" id="avatar-api-base-group">
               <label class="form-label">数字人服务地址</label>
               <input class="form-input" id="avatar-api-base" placeholder="http://localhost:8010">
+            </div>
+            <!-- LongCat 1.5 配置（provider=longcat 时显示） -->
+            <div id="avatar-longcat-group" style="display:none;padding:16px;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:12px;margin-bottom:12px">
+              <div style="font-size:13px;font-weight:600;color:var(--color-primary);margin-bottom:12px;display:flex;align-items:center;gap:6px">
+                <i data-lucide="zap" style="width:16px;height:16px"></i> LongCat-Video-Avatar 1.5（美团开源·MIT协议·商用级唇形同步）
+              </div>
+              <div class="form-row">
+                <div class="form-group" style="flex:2">
+                  <label class="form-label">云端服务器地址</label>
+                  <input class="form-input" id="longcat-server-url" placeholder="http://xxx.xxx.xxx.xxx:8000">
+                </div>
+                <div class="form-group" style="flex:1">
+                  <label class="form-label">API Key（可选）</label>
+                  <input class="form-input" id="longcat-api-key" placeholder="留空则不鉴权">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">模型版本</label>
+                  <select class="form-select" id="longcat-model-type">
+                    <option value="avatar-v1.5">Avatar 1.5（Whisper-large，推荐）</option>
+                    <option value="avatar-v1.0">Avatar 1.0（Wav2Vec2，兼容）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">分辨率</label>
+                  <select class="form-select" id="longcat-resolution">
+                    <option value="480p">480P（更快）</option>
+                    <option value="720p">720P（更清晰）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">超时（秒）</label>
+                  <input type="number" class="form-input" id="longcat-timeout" value="600" min="60" max="1800">
+                </div>
+              </div>
+              <div style="font-size:12px;color:var(--text-tertiary);margin-top:8px;line-height:1.5">
+                部署方式：将 <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px">longcat_server.py</code> 部署到 8GB+ 显存 GPU 服务器（如 RTX 3090），填入上方地址即可。本地仅需网络连接。
+              </div>
+            </div>
+            <!-- MuseTalk 配置（provider=musetalk 时显示） -->
+            <div id="avatar-musetalk-group" style="display:none;padding:16px;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:12px;margin-bottom:12px">
+              <div style="font-size:13px;font-weight:600;color:var(--color-success);margin-bottom:12px;display:flex;align-items:center;gap:6px">
+                <i data-lucide="zap" style="width:16px;height:16px"></i> MuseTalk 1.5（腾讯开源·MIT协议·解决头部移动唇形精度问题）
+              </div>
+              <div class="form-row">
+                <div class="form-group" style="flex:2">
+                  <label class="form-label">MuseTalk 服务地址</label>
+                  <input class="form-input" id="musetalk-server-url" placeholder="http://localhost:8010">
+                </div>
+                <div class="form-group" style="flex:1">
+                  <label class="form-label">API Key（可选）</label>
+                  <input class="form-input" id="musetalk-api-key" placeholder="留空则不鉴权">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">模型版本</label>
+                  <select class="form-select" id="musetalk-version">
+                    <option value="v15">v15（推荐，GAN+感知+sync loss）</option>
+                    <option value="v10">v10（基础版）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">FP16 推理</label>
+                  <select class="form-select" id="musetalk-use-float16">
+                    <option value="true">启用（降低显存，2GB必须启用）</option>
+                    <option value="false">禁用（更高质量，需6GB+显存）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">输出帧率</label>
+                  <input type="number" class="form-input" id="musetalk-fps" value="25" min="15" max="60">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">人脸框偏移</label>
+                  <input type="number" class="form-input" id="musetalk-bbox-shift" value="5" min="-20" max="20">
+                </div>
+              </div>
+              <div style="font-size:12px;color:var(--text-tertiary);margin-top:8px;line-height:1.5">
+                部署方式：安装 conda 环境（Python 3.10）→ clone MuseTalk → 安装依赖+下载权重 → 运行 <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px">musetalk_server.py</code>。官方最低 4GB 显存，2GB 需 fp16 + 优化，存在 OOM 风险。
+              </div>
             </div>
             <div class="form-row">
               <div class="form-group">

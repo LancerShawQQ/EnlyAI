@@ -64,6 +64,24 @@ class AvatarEngine(BaseModule):
         self.scene_bg_type = scene_cfg.get("background_type", "transparent")
         self.scene_bg_color = scene_cfg.get("background_color", "#1A1A2E")
         self.scene_bg_image = scene_cfg.get("background_image", "")
+        # LongCat 配置（云端高质量引擎，需 8GB+ 显存 GPU 服务器）
+        self.longcat_cfg = self.config.get("avatar.longcat", {}) or {}
+        self.longcat_server_url = self.longcat_cfg.get("server_url", "")
+        self.longcat_api_key = self.longcat_cfg.get("api_key", "")
+        self.longcat_model_type = self.longcat_cfg.get("model_type", "avatar-v1.5")
+        self.longcat_resolution = self.longcat_cfg.get("resolution", "480p")
+        self.longcat_timeout = self.longcat_cfg.get("timeout", 600)
+        # MuseTalk 配置（本地高质量引擎，视频驱动模式，解决头部移动唇形精度问题）
+        # 优势：256×256 逐帧人脸对齐，单步潜空间 inpainting，比 Wav2Lip 唇形更精准
+        # 要求：需 NVIDIA GPU（官方最低 4GB fp16），独立 Python 3.10 conda 环境
+        self.musetalk_cfg = self.config.get("avatar.musetalk", {}) or {}
+        self.musetalk_server_url = self.musetalk_cfg.get("server_url", "")
+        self.musetalk_api_key = self.musetalk_cfg.get("api_key", "")
+        self.musetalk_version = self.musetalk_cfg.get("version", "v15")
+        self.musetalk_use_float16 = self.musetalk_cfg.get("use_float16", True)
+        self.musetalk_fps = self.musetalk_cfg.get("fps", 25)
+        self.musetalk_bbox_shift = self.musetalk_cfg.get("bbox_shift", 5)
+        self.musetalk_timeout = self.musetalk_cfg.get("timeout", 600)
         # 环境检测缓存（进程内只检测一次，避免每次 run() 重复等待 torch import）
         self._env_check_result: tuple[bool, str] | None = None
 
@@ -93,6 +111,28 @@ class AvatarEngine(BaseModule):
                 )
             else:
                 self.logger.info(f"数字人模块初始化 provider={self.provider}")
+        elif self.provider == "longcat":
+            if not self.longcat_server_url:
+                self.logger.warning(
+                    "LongCat 引擎未配置 server_url，请在设置中心配置云端服务器地址"
+                )
+            else:
+                self.logger.info(
+                    f"数字人模块初始化 provider=longcat "
+                    f"server={self.longcat_server_url} "
+                    f"model={self.longcat_model_type} res={self.longcat_resolution}"
+                )
+        elif self.provider == "musetalk":
+            if not self.musetalk_server_url:
+                self.logger.warning(
+                    "MuseTalk 引擎未配置 server_url，请在设置中心配置 MuseTalk 服务地址"
+                )
+            else:
+                self.logger.info(
+                    f"数字人模块初始化 provider=musetalk "
+                    f"server={self.musetalk_server_url} "
+                    f"version={self.musetalk_version} fp16={self.musetalk_use_float16}"
+                )
         else:
             self.logger.info(f"数字人模块初始化 provider={self.provider}")
         super().setup()
@@ -267,6 +307,10 @@ class AvatarEngine(BaseModule):
                         error=f"Wav2Lip 环境未就绪: {reason}",
                     )
                 video_path = self._generate_wav2lip(ctx, avatar_id, output_path)
+            elif self.provider == "longcat":
+                video_path = self._generate_longcat(ctx, avatar_id, output_path)
+            elif self.provider == "musetalk":
+                video_path = self._generate_musetalk(ctx, avatar_id, output_path)
             elif self.provider == "mock":
                 video_path = self._generate_mock(ctx, avatar_id, output_path)
             else:
@@ -687,6 +731,154 @@ class AvatarEngine(BaseModule):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(base64.b64decode(video_b64))
         self.logger.info(f"云端数字人生成完成 video={output_path}")
+        return output_path
+
+    def _generate_longcat(
+        self, ctx: JobContext, avatar_id: str, output_path: Path
+    ) -> Path:
+        """使用 LongCat-Video-Avatar 生成唇形同步视频（云端高质量引擎）
+
+        通过 HTTP 调用云端 LongCat 服务，生成商用级唇形同步视频。
+        优势：Whisper-large-v3 音频编码器 + 全身时序稳定 + DMD 蒸馏加速。
+        要求：云端需 8GB+ 显存 GPU。
+
+        输入：音频 + 参考人物图片（可选）
+        输出：高质量唇形同步视频
+        """
+        from .longcat_avatar_engine import LongCatAvatarClient
+
+        if not self.longcat_server_url:
+            raise RuntimeError(
+                "LongCat 引擎未配置 server_url，请在设置中心配置云端服务器地址"
+            )
+
+        self.logger.info(
+            f"LongCat 数字人生成 server={self.longcat_server_url} "
+            f"avatar={avatar_id} audio={ctx.audio_path}"
+        )
+
+        # 查找参考图片（avatar 目录下的 reference.jpg）
+        ref_image = None
+        avatar_dir = self.avatars_dir / avatar_id
+        if avatar_dir.exists():
+            for name in ("reference.jpg", "reference.png", "preview.jpg"):
+                p = avatar_dir / name
+                if p.exists():
+                    ref_image = p
+                    break
+
+        # 构建 prompt（描述性提示词，越详细效果越好）
+        prompt = (
+            f"A person is speaking naturally with natural expressions, "
+            f"looking at camera, wearing casual clothes, "
+            f"sitting in a clean environment"
+        )
+
+        client = LongCatAvatarClient(
+            server_url=self.longcat_server_url,
+            api_key=self.longcat_api_key,
+            timeout=self.longcat_timeout,
+            model_type=self.longcat_model_type,
+            resolution=self.longcat_resolution,
+        )
+
+        # 根据音频时长估算段数（每段约 10s）
+        num_segments = max(1, int(ctx.audio_duration / 10) + 1)
+
+        video_bytes = client.generate(
+            audio_path=ctx.audio_path,
+            reference_image=ref_image,
+            prompt=prompt,
+            num_segments=num_segments,
+        )
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(video_bytes)
+        self.logger.info(
+            f"LongCat 数字人生成完成 video={output_path} size={len(video_bytes)} bytes"
+        )
+        return output_path
+
+    def _generate_musetalk(
+        self, ctx: JobContext, avatar_id: str, output_path: Path
+    ) -> Path:
+        """使用 MuseTalk 生成唇形同步视频（本地高质量引擎）
+
+        MuseTalk 是"视频驱动"模式，与 Wav2Lip 使用方式一致：
+        输入数字人参考视频 + TTS 音频 → 生成唇形同步视频。
+
+        优势（对比 Wav2Lip）：
+        - 256×256 标准化人脸区域单步潜空间 inpainting
+        - 逐帧重新检测+对齐人脸，解决头部移动时唇形精度下降
+        - v1.5 加 GAN+感知+sync loss，唇形质量明显更好
+
+        要求：需 NVIDIA GPU（官方最低 4GB fp16），独立 Python 3.10 conda 环境。
+        部署：将 musetalk_server.py 部署到 MuseTalk conda 环境中运行。
+        """
+        from .musetalk_avatar_engine import MuseTalkAvatarClient
+
+        if not self.musetalk_server_url:
+            raise RuntimeError(
+                "MuseTalk 引擎未配置 server_url，请在设置中心配置 MuseTalk 服务地址"
+            )
+
+        # 获取参考人脸视频（与 Wav2Lip 相同的逻辑）
+        face_path = self._get_avatar_reference(avatar_id)
+        if not face_path:
+            raise RuntimeError(
+                f"数字人 {avatar_id} 无参考照片/视频，请先上传真人照片或视频注册形象"
+            )
+
+        self.logger.info(
+            f"MuseTalk 唇形同步 avatar={avatar_id} audio={ctx.audio_path.name} "
+            f"duration={ctx.audio_duration:.1f}s face_ref={face_path.name} "
+            f"version={self.musetalk_version} fp16={self.musetalk_use_float16}"
+        )
+
+        # 准备音频（MuseTalk 需要 wav 格式）
+        audio_path = ctx.audio_path
+        if audio_path.suffix.lower() != ".wav":
+            wav_path = ctx.work_dir / "musetalk_input.wav"
+            self.ffmpeg.convert_audio(audio_path, wav_path)
+            audio_path = wav_path
+
+        # MuseTalk 需要视频文件作为输入（视频驱动模式）
+        # 如果参考是图片，需先转为视频（MuseTalk 会用图片生成静态视频帧）
+        video_path = face_path
+        if face_path.suffix.lower() in (".jpg", ".jpeg", ".png"):
+            # 图片转视频：用 ffmpeg 生成静态帧视频
+            static_video = ctx.work_dir / "musetalk_input_video.mp4"
+            if not static_video.exists():
+                import subprocess
+                duration = ctx.audio_duration or 10
+                cmd = [
+                    "ffmpeg", "-y", "-loop", "1", "-i", str(face_path),
+                    "-c:v", "libx264", "-t", str(duration),
+                    "-pix_fmt", "yuv420p", "-r", str(self.musetalk_fps),
+                    str(static_video),
+                ]
+                subprocess.run(cmd, capture_output=True, timeout=60, check=True)
+            video_path = static_video
+
+        client = MuseTalkAvatarClient(
+            server_url=self.musetalk_server_url,
+            api_key=self.musetalk_api_key,
+            timeout=self.musetalk_timeout,
+            version=self.musetalk_version,
+            use_float16=self.musetalk_use_float16,
+            fps=self.musetalk_fps,
+        )
+
+        video_bytes = client.generate(
+            audio_path=audio_path,
+            video_path=video_path,
+            output_path=output_path,
+            bbox_shift=self.musetalk_bbox_shift,
+        )
+
+        self.logger.info(
+            f"MuseTalk 数字人生成完成 video={output_path} size={len(video_bytes)} bytes"
+        )
         return output_path
 
     def _generate_mock(
