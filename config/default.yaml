@@ -466,3 +466,15 @@ gpu_runner:
   avatar_endpoint: http://localhost:8010
   # 健康检查超时
   health_check_timeout: 10
+
+# Wav2Lip 服务化配置（avatar.provider=wav2lip 时启用）
+# 将 Wav2Lip 推理从"每次启动子进程"改为"常驻 HTTP 服务"，模型加载一次复用
+# 主应用启动时自动后台拉起（参见 app.py::_start_wav2lip_service_in_background）
+# 也可通过 scripts/start_wav2lip_server.bat 独立启动用于调试
+wav2lip_service:
+  host: 127.0.0.1
+  port: 8011
+  # 服务启动超时（秒）—— 冷启动（首次加载 torch + checkpoint）约 30-60s，热启动约 7s
+  startup_timeout: 120
+  # 单次推理超时（秒）—— 默认 30 分钟（1 分钟视频 CPU 模式约 20-60 分钟）
+  generate_timeout: 1800

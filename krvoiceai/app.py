@@ -4,8 +4,10 @@
 """
 from __future__ import annotations
 
+import atexit
 import json
 import shutil
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -116,11 +118,69 @@ class EnlyAI:
         # 注册设置变更监听器：用户在 UI 修改配置后热重建组件
         get_settings_manager().add_listener(self._on_settings_changed)
 
+        # Wav2Lip 服务生命周期管理（provider=wav2lip 时后台拉起常驻服务）
+        self._wav2lip_service = None
+        self._wav2lip_thread: Optional[threading.Thread] = None
+        self._start_wav2lip_service_in_background()
+        atexit.register(self._shutdown_wav2lip_service)
+
         self.logger.info(
             f"EnlyAI 初始化完成 "
             f"gpu_available={self.gpu.is_gpu_available()} "
             f"llm_mock={self.llm.is_mock}"
         )
+
+    def _start_wav2lip_service_in_background(self) -> None:
+        """后台启动 Wav2Lip 常驻服务（仅 provider=wav2lip 时）
+
+        将模型加载从"首次提交 job 时"提前到"应用启动时"，避免用户等待。
+        后台线程执行，不阻塞主线程；失败时记录日志，不影响应用启动。
+        首次调用 generate() 时会再次 ensure_running() 兜底。
+        """
+        provider = self.config.get("avatar.provider", "mock")
+        if provider != "wav2lip":
+            return
+
+        def _start():
+            try:
+                from .core.wav2lip_service import Wav2LipService
+                service = Wav2LipService.get_instance()
+                self._wav2lip_service = service
+                if service.is_healthy():
+                    self.logger.info(
+                        "wav2lip_server 已在运行（外部启动），复用，不接管生命周期"
+                    )
+                    return
+                self.logger.info("后台启动 wav2lip_server（模型加载约 7-60s）...")
+                ok = service.start()
+                if ok:
+                    status = service.get_status()
+                    self.logger.info(
+                        f"wav2lip_server 已就绪 device={status.get('device')} "
+                        f"face_batch={status.get('face_det_batch')} "
+                        f"wav2lip_batch={status.get('wav2lip_batch')}"
+                    )
+                else:
+                    self.logger.warning(
+                        "wav2lip_server 启动失败，首次调用 generate 时会重试"
+                    )
+            except Exception as e:
+                self.logger.error(f"启动 wav2lip_server 异常: {e}")
+
+        self._wav2lip_thread = threading.Thread(
+            target=_start, daemon=True, name="wav2lip-service"
+        )
+        self._wav2lip_thread.start()
+
+    def _shutdown_wav2lip_service(self) -> None:
+        """停止 Wav2Lip 服务（进程退出时调用）"""
+        if self._wav2lip_service is None:
+            return
+        try:
+            self._wav2lip_service.stop()
+            self.logger.info("wav2lip_server 已停止")
+        except Exception as e:
+            self.logger.error(f"停止 wav2lip_server 异常: {e}")
 
     def _on_settings_changed(self, change: dict) -> None:
         """配置变更回调：重建受影响的组件"""

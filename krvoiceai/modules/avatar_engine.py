@@ -377,20 +377,11 @@ class AvatarEngine(BaseModule):
             self.ffmpeg.convert_audio(audio_path, wav_path)
             audio_path = wav_path
 
-        # 调用 Wav2Lip 推理（使用独立的 Python 3.8 环境，非主项目 3.12）
-        # 解析路径为绝对路径（配置里的相对路径基于项目根目录）
-        from ..core.config import PROJECT_ROOT
-        project_root = Path(PROJECT_ROOT)
+        # 调用 Wav2Lip 服务（常驻进程，模型加载一次复用，节省每次 ~30-50s 固定开销）
+        # 设备检测 / batch_size 选择 / 模型加载 由服务端负责，客户端只需传文件路径
+        from ..core.wav2lip_service import Wav2LipService
 
-        def _abs(p: str) -> Path:
-            path = Path(p)
-            return path if path.is_absolute() else (project_root / p).resolve()
-
-        env_python = _abs(self.wav2lip_env_python)
-        inference_script = _abs(self.wav2lip_inference_script)
-
-        # 使用绝对路径（Wav2Lip 从自身目录运行，相对路径会失效）
-        checkpoint_abs = _abs(self.wav2lip_checkpoint)
+        # 使用绝对路径（服务端通过 HTTP 接收路径，需能访问）
         face_abs = Path(face_path).resolve()
         audio_abs = Path(audio_path).resolve()
         output_abs = Path(output_path).resolve()
@@ -399,123 +390,55 @@ class AvatarEngine(BaseModule):
         # 唇形同步是核心卖点，绝不为提速牺牲精度
         auto_resize = int(self.wav2lip_config.get("resize_factor", 1))
         audio_dur = ctx.audio_duration or 0
+        pads = list(self.wav2lip_config.get("pads", [0, 20, 0, 0]))
+        nosmooth = bool(self.wav2lip_config.get("nosmooth", False))
+
         self.logger.info(
             f"Wav2Lip 推理参数: resize_factor={auto_resize}（质量优先），音频 {audio_dur:.1f}s"
         )
 
-        # 确定 Wav2Lip 运行设备
-        # 关键：必须用 wav2lip_env 的 torch.cuda.is_available() 检测，
-        # 而非主环境的 detect_cuda()——后者可能因 nvidia-smi 误报 CUDA 可用，
-        # 但 wav2lip_env 装的是 CPU 版 PyTorch，实际无法用 GPU。
-        w2l_device = "cpu"
-        if self.wav2lip_device == "cuda":
-            w2l_device = "cuda"
-        elif self.wav2lip_device == "auto":
-            try:
-                # 直接调用 wav2lip_env 的 Python 检测 torch.cuda.is_available()
-                r = subprocess.run(
-                    [str(env_python), "-c",
-                     "import torch; print('CUDA_OK' if torch.cuda.is_available() else 'NO_CUDA')"],
-                    capture_output=True, text=True, timeout=30,
-                )
-                if r.returncode == 0 and "CUDA_OK" in r.stdout:
-                    w2l_device = "cuda"
-                    self.logger.info(
-                        f"Wav2Lip 自动检测到 CUDA（wav2lip_env torch={r.stdout.strip()}），将使用 GPU 加速"
-                    )
-                else:
-                    # wav2lip_env 的 PyTorch 无 CUDA 支持，给出明确指引
-                    self.logger.warning(
-                        f"wav2lip_env 的 PyTorch 不支持 CUDA（stdout={r.stdout.strip()}, stderr={r.stderr[-150:]}）。"
-                        f"请在该环境执行: pip install torch==1.13.1+cu117 --extra-index-url "
-                        f"https://download.pytorch.org/whl/cu117"
-                    )
-            except Exception as e:
-                self.logger.warning(f"检测 wav2lip_env CUDA 异常: {e}")
+        # 获取服务单例（首次调用会触发服务启动，后续复用）
+        service = Wav2LipService.get_instance()
 
-        # batch_size 根据GPU显存动态选择（MX450 2GB用2/2最块，大显存可提升并行）
-        # 实测：MX450 2GB + batch=8/16 → 99分钟（显存压力致速度暴降）
-        #        MX450 2GB + batch=2/2  → 21分钟（配置值，历史最优）
-        _cfg_face_batch = int(self.wav2lip_config.get("face_det_batch_size", 2))
-        _cfg_wav2lip_batch = int(self.wav2lip_config.get("wav2lip_batch_size", 2))
-        if w2l_device == "cuda":
-            # 检测GPU显存，动态选择batch_size
-            gpu_vram_gb = 0
-            try:
-                r = subprocess.run(
-                    [str(env_python), "-c",
-                     "import torch; print(torch.cuda.get_device_properties(0).total_memory // (1024**3))"],
-                    capture_output=True, text=True, timeout=30,
-                )
-                if r.returncode == 0:
-                    gpu_vram_gb = int(r.stdout.strip())
-            except Exception:
-                pass
-            if gpu_vram_gb >= 8:
-                _face_batch = max(_cfg_face_batch, 8)
-                _wav2lip_batch = max(_cfg_wav2lip_batch, 16)
-            elif gpu_vram_gb >= 4:
-                _face_batch = max(_cfg_face_batch, 4)
-                _wav2lip_batch = max(_cfg_wav2lip_batch, 8)
-            else:
-                # 低显存GPU（如MX450 2GB）：用配置值2/2，避免显存压力导致速度暴降
-                _face_batch = _cfg_face_batch
-                _wav2lip_batch = _cfg_wav2lip_batch
-            self.logger.info(f"GPU显存={gpu_vram_gb}GB → face_det_batch={_face_batch}, wav2lip_batch={_wav2lip_batch}")
-        else:
-            _face_batch = _cfg_face_batch
-            _wav2lip_batch = _cfg_wav2lip_batch
-
-        # wav2lip_env 的 site-packages 在 PYTHONPATH，需保证用独立解释器
-        cmd = [
-            str(env_python), str(inference_script),
-            "--checkpoint_path", str(checkpoint_abs),
-            "--face", str(face_abs),
-            "--audio", str(audio_abs),
-            "--outfile", str(output_abs),
-            "--pads", *[str(p) for p in self.wav2lip_config.get("pads", [0, 20, 0, 0])],
-            "--face_det_batch_size", str(_face_batch),
-            "--wav2lip_batch_size", str(_wav2lip_batch),
-            "--resize_factor", str(auto_resize),
-            # 注意：原版 Wav2Lip inference.py 不支持 --device 参数，
-            # 它通过 torch.cuda.is_available() 自动检测 CUDA。
-            # 只要 wav2lip_env 安装了 CUDA 版 PyTorch，就会自动使用 GPU。
-        ]
-        if self.wav2lip_config.get("nosmooth", False):
-            cmd.append("--nosmooth")
+        # 查询服务状态，打印设备/batch 信息（一次）
+        status = service.get_status()
+        if status.get("ready"):
+            self.logger.info(
+                f"wav2lip_server 就绪: device={status.get('device')} "
+                f"face_batch={status.get('face_det_batch')} "
+                f"wav2lip_batch={status.get('wav2lip_batch')}"
+            )
 
         self.logger.info(
-            f"运行 Wav2Lip 推理 (预期设备: {w2l_device} 自动检测, env={env_python.parent.parent.name}, "
-            f"resize_factor={auto_resize}, face_det_batch={_face_batch}, wav2lip_batch={_wav2lip_batch})，"
-            f"音频 {audio_dur:.1f}s，预计耗时数分钟至数十分钟..."
+            f"调用 Wav2Lip 服务推理: face={face_abs.name} audio={audio_abs.name} "
+            f"-> {output_abs.name}，音频 {audio_dur:.1f}s，预计耗时数分钟至数十分钟..."
         )
-        # Wav2Lip 推理脚本内部加载依赖文件用相对路径，必须在 Wav2Lip 根目录运行
-        wav2lip_root = inference_script.parent
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=7200,  # 120分钟超时（与前端 maxWait 对齐）
-                cwd=str(wav2lip_root),
-            )
-        except subprocess.TimeoutExpired:
-            self.logger.error(f"Wav2Lip 推理超时（120分钟），音频时长 {audio_dur:.1f}s")
-            raise RuntimeError(
-                f"Wav2Lip 推理超时（120分钟），音频 {audio_dur:.1f}s。"
-                f"建议：1) 缩短文案 2) 在设置中将 resize_factor 调高 3) 使用 GPU"
-            )
 
-        if result.returncode != 0:
-            self.logger.error(f"Wav2Lip 推理失败: {result.stderr[-500:]}")
-            raise RuntimeError(f"Wav2Lip 推理失败: {result.stderr[-300:]}")
+        try:
+            result = service.generate(
+                face_path=face_abs,
+                audio_path=audio_abs,
+                outfile_path=output_abs,
+                pads=pads,
+                resize_factor=auto_resize,
+                nosmooth=nosmooth,
+                fps=float(self.output_fps),
+            )
+        except RuntimeError as e:
+            self.logger.error(f"Wav2Lip 服务推理失败: {e}")
+            raise RuntimeError(
+                f"Wav2Lip 推理失败: {e}。"
+                f"建议：1) 检查 workspace_data/logs/wav2lip_server.log "
+                f"2) 确认 wav2lip_env 和 checkpoint 配置正确"
+            )
 
         if not output_path.exists():
             raise RuntimeError("Wav2Lip 推理完成但输出文件不存在")
 
         self.logger.info(
             f"Wav2Lip 唇形同步完成: {output_path.name} "
-            f"({output_path.stat().st_size // 1024}KB)"
+            f"({output_path.stat().st_size // 1024}KB) "
+            f"推理耗时 {result.get('duration', 0):.1f}s"
         )
 
         # 轻量锐化后处理：Wav2Lip 输出的人脸区域（尤其嘴唇）常有轻微模糊，
