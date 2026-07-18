@@ -566,6 +566,51 @@ class AvatarEngine(BaseModule):
                 self.logger.warning(f"背景图片不存在，回退到模糊背景: {bg_image}")
                 bg_mode = "blur"
         # transparent 和其他情况保持 blur
+
+        # 性能优化：输入视频若已是竖屏，无需 boxblur+overlay 的横转竖处理
+        # 情况1: 竖屏且分辨率匹配目标 → 直接复制（0 秒）
+        # 情况2: 竖屏但分辨率不匹配 → 轻量 scale 重编码（~3 秒，不用 boxblur+overlay）
+        # 情况3: 横屏 → 走 to_portrait（boxblur+overlay，约 10 秒）
+        target_w, target_h = self.output_resolution
+        in_info = self.ffmpeg.probe_video_info(output_path)
+        if in_info and in_info.height > in_info.width:
+            # 竖屏输入
+            if in_info.width == target_w and in_info.height == target_h:
+                # 分辨率完全匹配，直接复制（最快）
+                import shutil
+                shutil.copy2(output_path, portrait_path)
+                self.logger.info(
+                    f"输入已是竖屏 {target_w}x{target_h}，跳过 to_portrait（直接复制）"
+                )
+                return portrait_path
+            else:
+                # 竖屏但分辨率不匹配，轻量 scale 重编码（不走 boxblur+overlay）
+                import subprocess as _sp
+                scale_cmd = [
+                    self.ffmpeg.ffmpeg, "-y",
+                    "-i", str(output_path),
+                    "-vf", f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,"
+                           f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:color=black,fps={self.output_fps}",
+                    "-map", "0:v", "-map", "0:a?",
+                    "-c:v", "libx264", "-preset", "fast",
+                    "-crf", "20", "-maxrate", "6M", "-bufsize", "12M",
+                    "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "192k",
+                    "-movflags", "+faststart",
+                    str(portrait_path),
+                ]
+                _r = _sp.run(scale_cmd, capture_output=True, text=True, timeout=300)
+                if _r.returncode == 0 and portrait_path.exists():
+                    self.logger.info(
+                        f"输入竖屏 {in_info.width}x{in_info.height} → {target_w}x{target_h} "
+                        f"轻量 scale（跳过 boxblur+overlay）"
+                    )
+                    return portrait_path
+                else:
+                    self.logger.warning(
+                        f"竖屏 scale 失败，回退到 to_portrait: {_r.stderr[-150:]}"
+                    )
+        # 横屏输入，走标准 to_portrait
         try:
             self.ffmpeg.to_portrait(
                 video=output_path,
