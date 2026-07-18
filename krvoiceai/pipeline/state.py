@@ -80,8 +80,13 @@ class JobStore:
             )
 
     def _conn(self) -> sqlite3.Connection:
-        c = sqlite3.connect(self.db_path)
+        # timeout=30 等同于 busy_timeout=30000ms，避免并发写时立即抛 database is locked
+        # WAL 模式允许读写并发（读不阻塞写，写不阻塞读），适合 avatar∥subtitle 并行场景
+        c = sqlite3.connect(self.db_path, timeout=30)
         c.row_factory = sqlite3.Row
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA busy_timeout=30000")
+        c.execute("PRAGMA synchronous=NORMAL")  # WAL 模式下 NORMAL 足够安全且更快
         return c
 
     def create_job(self, job_id: str, input_data: dict) -> None:

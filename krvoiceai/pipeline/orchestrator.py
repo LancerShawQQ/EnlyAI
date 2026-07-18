@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -54,6 +55,8 @@ class PipelineOrchestrator:
         self.max_retries = self.config.get("pipeline.max_retries", 3)
         self.retry_backoff = self.config.get("pipeline.retry_backoff", 5)
         self._steps: dict[str, StepDef] = {}
+        # 保护 _save_context 的文件写入，避免 avatar∥subtitle 并行时并发写 context.json
+        self._save_context_lock = threading.Lock()
 
     def register_step(self, step: StepDef) -> None:
         """注册步骤"""
@@ -169,12 +172,19 @@ class PipelineOrchestrator:
             f"开始执行任务 job={job_id} 从步骤 {start_step or '开头'} 开始"
         )
 
+        # 记录已通过并行方式执行过的步骤，避免 for 循环重复执行
+        executed_steps: set[str] = set()
+
         for step_name in PIPELINE_STEPS:
             if start_step:
                 if step_name == start_step:
                     start_step = None  # 找到起点，开始执行
                 else:
                     continue  # 跳过已完成步骤
+
+            # 跳过已通过并行方式执行的步骤
+            if step_name in executed_steps:
+                continue
 
             step_def = self._steps.get(step_name)
             if step_def is None:
@@ -197,6 +207,45 @@ class PipelineOrchestrator:
                 if progress_callback:
                     progress_callback(step_name, "skipped", {})
                 continue
+
+            # 并行优化：avatar 和 subtitle 都只依赖 tts 输出，无相互依赖
+            # 并行执行可节省较短步骤（通常是 subtitle）的耗时
+            if step_name == "avatar":
+                subtitle_def = self._steps.get("subtitle")
+                can_parallel_subtitle = (
+                    subtitle_def is not None
+                    and "subtitle" not in executed_steps
+                    and not (subtitle_def.skip_when and subtitle_def.skip_when(ctx))
+                )
+                if can_parallel_subtitle:
+                    self.logger.info("avatar 与 subtitle 无依赖，并行执行")
+                    if progress_callback:
+                        progress_callback("avatar", "running", {})
+                        progress_callback("subtitle", "running", {})
+
+                    avatar_ok, subtitle_ok = self._execute_parallel_pair(
+                        job_id, step_def, subtitle_def, ctx, progress_callback,
+                    )
+                    executed_steps.add("avatar")
+                    executed_steps.add("subtitle")
+
+                    # avatar 非可选，失败则任务失败
+                    if not avatar_ok:
+                        self.store.update_job_status(
+                            job_id, JobStatus.FAILED,
+                            error="步骤 avatar 失败",
+                        )
+                        self.logger.error(f"任务失败 job={job_id} 于步骤 avatar")
+                        return False
+                    # subtitle 失败处理（与原顺序逻辑一致）
+                    if not subtitle_ok and not subtitle_def.optional:
+                        self.store.update_job_status(
+                            job_id, JobStatus.FAILED,
+                            error="步骤 subtitle 失败",
+                        )
+                        self.logger.error(f"任务失败 job={job_id} 于步骤 subtitle")
+                        return False
+                    continue
 
             # 通知开始
             if progress_callback:
@@ -226,6 +275,49 @@ class PipelineOrchestrator:
         )
         self.logger.info(f"任务成功完成 job={job_id}")
         return True
+
+    def _execute_parallel_pair(
+        self, job_id: str, step_def_a: StepDef, step_def_b: StepDef,
+        ctx: JobContext, progress_callback: Optional[Callable] = None,
+    ) -> tuple[bool, bool]:
+        """并行执行两个无依赖的步骤（avatar + subtitle）
+
+        两个步骤都依赖 tts 输出，但相互独立。并行执行可节省较短步骤的耗时。
+        线程安全保障：
+        - JobStore 已启用 WAL + busy_timeout，支持并发写
+        - _save_context 用 threading.Lock 保护，避免并发写 context.json
+        - JobContext.metadata 的不同 key 并发写安全（CPython GIL 保护单个 dict 操作）
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        self.logger.info(
+            f"并行执行步骤: {step_def_a.name} + {step_def_b.name}"
+        )
+
+        results: dict[str, bool] = {}
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            future_to_name = {
+                pool.submit(
+                    self._execute_step_with_retry,
+                    job_id, step_def_a, ctx, progress_callback,
+                ): step_def_a.name,
+                pool.submit(
+                    self._execute_step_with_retry,
+                    job_id, step_def_b, ctx, progress_callback,
+                ): step_def_b.name,
+            }
+            for fut in as_completed(future_to_name):
+                name = future_to_name[fut]
+                try:
+                    results[name] = fut.result()
+                except Exception as e:
+                    self.logger.error(f"并行步骤 {name} 异常: {e}")
+                    results[name] = False
+
+        return (
+            results.get(step_def_a.name, False),
+            results.get(step_def_b.name, False),
+        )
 
     def _execute_step_with_retry(
         self, job_id: str, step_def: StepDef, ctx: JobContext,
@@ -308,28 +400,33 @@ class PipelineOrchestrator:
         return ctx
 
     def _save_context(self, ctx: JobContext) -> None:
-        """持久化任务上下文的关键产物（用于断点续跑）"""
+        """持久化任务上下文的关键产物（用于断点续跑）
+
+        线程安全：avatar∥subtitle 并行执行时，两个线程都会调用此方法
+        写同一个 context.json 文件，用锁保护避免文件损坏。
+        """
         import json
-        ctx_file = ctx.work_dir / "context.json"
-        data = {
-            "job_id": ctx.job_id,
-            "script_text": ctx.script_text,
-            "audio_path": str(ctx.audio_path) if ctx.audio_path else None,
-            "audio_duration": ctx.audio_duration,
-            "raw_video_path": str(ctx.raw_video_path) if ctx.raw_video_path else None,
-            "subtitle_path": str(ctx.subtitle_path) if ctx.subtitle_path else None,
-            "bgm_path": str(ctx.bgm_path) if ctx.bgm_path else None,
-            "cover_path": str(ctx.cover_path) if ctx.cover_path else None,
-            "title": ctx.title,
-            "final_video": str(ctx.final_video) if ctx.final_video else None,
-            "broll_clips": ctx.broll_clips,
-            "broll_video_path": str(ctx.broll_video_path) if ctx.broll_video_path else None,
-            "metadata": ctx.metadata,
-        }
-        ctx_file.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        with self._save_context_lock:
+            ctx_file = ctx.work_dir / "context.json"
+            data = {
+                "job_id": ctx.job_id,
+                "script_text": ctx.script_text,
+                "audio_path": str(ctx.audio_path) if ctx.audio_path else None,
+                "audio_duration": ctx.audio_duration,
+                "raw_video_path": str(ctx.raw_video_path) if ctx.raw_video_path else None,
+                "subtitle_path": str(ctx.subtitle_path) if ctx.subtitle_path else None,
+                "bgm_path": str(ctx.bgm_path) if ctx.bgm_path else None,
+                "cover_path": str(ctx.cover_path) if ctx.cover_path else None,
+                "title": ctx.title,
+                "final_video": str(ctx.final_video) if ctx.final_video else None,
+                "broll_clips": ctx.broll_clips,
+                "broll_video_path": str(ctx.broll_video_path) if ctx.broll_video_path else None,
+                "metadata": ctx.metadata,
+            }
+            ctx_file.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
 
     def _load_context(self, ctx: JobContext) -> None:
         """从持久化文件恢复中间产物
