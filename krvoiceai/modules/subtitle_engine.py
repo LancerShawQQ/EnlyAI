@@ -391,40 +391,72 @@ class SubtitleEngine(BaseModule):
         """用 TTS 时间戳补全 ASR 可能丢失的开头内容
 
         场景：whisper VAD 过滤了开头几秒音频，导致前几句字幕缺失。
-        策略：如果 ASR 第一段 start 比 TTS 第一段 start 晚超过 2 秒，
-        说明 ASR 丢失了开头内容，用 TTS 时间戳补全丢失部分。
+        策略（双重判断）：
+        1. 文本内容匹配：如果 TTS 文本开头有 ASR 第一段没有的内容，补全缺失部分
+        2. 时间差判断：如果 ASR 第一段 start 比 TTS 第一段 start 晚超过 1 秒，
+           说明 ASR 可能丢失了开头内容，用 TTS 时间戳补全
         """
+        import re
+
         tts_ts = ctx.metadata.get("tts_timestamps")
         if not tts_ts or not segments:
             return segments
 
         tts_first_start = tts_ts[0].get("start", 0)
         asr_first_start = segments[0].get("start", 0)
+        asr_first_text = (segments[0].get("text") or "").strip()
+        tts_first_text = (tts_ts[0].get("text") or "").strip()
 
-        # 容差 2 秒：ASR 和 TTS 时间戳有微小偏差是正常的
-        if asr_first_start - tts_first_start < 2.0:
+        # 去除标点后比较，避免标点差异导致匹配失败
+        _punct_chars = r"，。！？、,\.!?;；:：""''\"' "
+        _strip_punct = lambda s: re.sub(f"[{re.escape(_punct_chars)}]", "", s)
+        asr_clean = _strip_punct(asr_first_text)
+        tts_clean = _strip_punct(tts_first_text)
+
+        # 策略1：文本内容匹配 - TTS 文本开头有 ASR 没有的内容
+        # 例如 TTS="大家好，今天给大家分享..." ASR="今天给大家分享..."
+        # 说明 ASR 丢失了"大家好，"
+        missing_text = ""
+        if asr_clean and tts_clean and asr_clean in tts_clean:
+            idx = tts_clean.index(asr_clean)
+            if idx > 0:
+                # 从 TTS 原始文本中提取缺失部分（保留标点）
+                # 通过逐字符匹配原始文本，提取前 idx 个非标点字符对应的原始文本
+                missing_chars = []
+                clean_count = 0
+                for ch in tts_first_text:
+                    if ch in _punct_chars:
+                        missing_chars.append(ch)
+                    else:
+                        if clean_count < idx:
+                            missing_chars.append(ch)
+                            clean_count += 1
+                        else:
+                            break
+                missing_text = "".join(missing_chars).strip()
+
+        # 策略2：时间差判断 - ASR 第一段比 TTS 晚超过 1 秒
+        # 且文本不完全匹配（完全匹配说明 ASR 已识别完整内容，只是时间偏移）
+        time_gap = asr_first_start - tts_first_start
+        use_time_gap = time_gap >= 1.0 and asr_clean != tts_clean
+
+        # 两种策略都不触发，无需补全
+        if not missing_text and not use_time_gap:
             return segments
 
-        # ASR 丢失了开头内容，用 TTS 时间戳补全
-        # 补充 ASR 第一段之前的 TTS 段（含跨界段：start < asr_first_start < end）
+        # 补全丢失内容
         missing_segments: list[dict] = []
-        for ts in tts_ts:
-            ts_start = ts.get("start", 0)
-            ts_end = ts.get("end", 0)
-            if ts_start >= asr_first_start:
-                # 当前段已在 ASR 第一段之后，停止补全
-                break
-            # 跨界段（ts_start < asr_first_start < ts_end）：截断 end 到 asr_first_start
-            # 避免和 ASR 第一段重叠导致字幕重复
-            effective_end = min(ts_end, asr_first_start)
-            text = ts["text"]
-            if len(text) > self.max_chars:
-                # 长句切分
-                sub_segs = split_text_to_segments(text, self.max_chars)
-                dur = effective_end - ts_start
+
+        if missing_text:
+            # 策略1：文本匹配发现缺失内容，单独作为一条字幕
+            # 时间从 TTS 第一段开始到 ASR 第一段开始
+            missing_end = asr_first_start if asr_first_start > tts_first_start else tts_ts[0].get("end", 0)
+            if len(missing_text) > self.max_chars:
+                sub_segs = split_text_to_segments(missing_text, self.max_chars)
+                dur = missing_end - tts_first_start
                 for j, sub in enumerate(sub_segs):
-                    s = ts_start + j * dur / len(sub_segs)
-                    e = ts_start + (j + 1) * dur / len(sub_segs)
+                    s = tts_first_start + j * dur / len(sub_segs)
+                    e = tts_first_start + (j + 1) * dur / len(sub_segs)
                     missing_segments.append({
                         "text": sub,
                         "start": round(s, 3),
@@ -432,19 +464,47 @@ class SubtitleEngine(BaseModule):
                     })
             else:
                 missing_segments.append({
-                    "text": text,
-                    "start": round(ts_start, 3),
-                    "end": round(effective_end, 3),
+                    "text": missing_text,
+                    "start": round(tts_first_start, 3),
+                    "end": round(missing_end, 3),
                 })
-
-        if missing_segments:
             self.logger.info(
-                f"ASR 丢失开头 {asr_first_start - tts_first_start:.1f}s，"
+                f"ASR 丢失开头文本 \"{missing_text}\"，"
                 f"用 TTS 时间戳补全 {len(missing_segments)} 条字幕"
             )
-            return missing_segments + segments
+        else:
+            # 策略2：时间差补全，补充 ASR 第一段之前的 TTS 段
+            for ts in tts_ts:
+                ts_start = ts.get("start", 0)
+                ts_end = ts.get("end", 0)
+                if ts_start >= asr_first_start:
+                    break
+                effective_end = min(ts_end, asr_first_start)
+                text = ts["text"]
+                if len(text) > self.max_chars:
+                    sub_segs = split_text_to_segments(text, self.max_chars)
+                    dur = effective_end - ts_start
+                    for j, sub in enumerate(sub_segs):
+                        s = ts_start + j * dur / len(sub_segs)
+                        e = ts_start + (j + 1) * dur / len(sub_segs)
+                        missing_segments.append({
+                            "text": sub,
+                            "start": round(s, 3),
+                            "end": round(e, 3),
+                        })
+                else:
+                    missing_segments.append({
+                        "text": text,
+                        "start": round(ts_start, 3),
+                        "end": round(effective_end, 3),
+                    })
+            if missing_segments:
+                self.logger.info(
+                    f"ASR 丢失开头 {time_gap:.1f}s，"
+                    f"用 TTS 时间戳补全 {len(missing_segments)} 条字幕"
+                )
 
-        return segments
+        return missing_segments + segments if missing_segments else segments
 
     def _generate_mock(self, ctx: JobContext) -> list[dict]:
         """Mock 模式：优先复用 TTS 时间戳，否则按文本估算"""
