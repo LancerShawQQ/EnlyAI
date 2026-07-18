@@ -419,6 +419,8 @@ class SettingsManager:
                 # 文案骨架
                 "script_template": tpl.get("script_template", ""),
                 "placeholders": tpl.get("placeholders", {}),
+                # 数字人场景（保持嵌套结构，便于前端整体处理）
+                "avatar_scene": tpl.get("avatar_scene", {}) or {},
             }
         return result
 

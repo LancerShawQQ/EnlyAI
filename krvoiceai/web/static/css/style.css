@@ -2946,6 +2946,88 @@ input[type="color"]::-webkit-color-swatch {
   font-size: 12px;
 }
 
+/* ---------- 模板占位符填充表单 ---------- */
+.placeholder-form {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  animation: slideDown 0.3s ease;
+}
+
+.placeholder-form-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(168,85,247,0.08));
+  border-bottom: 1px solid var(--border-default);
+}
+
+.placeholder-form-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.placeholder-form-title i {
+  width: 14px;
+  height: 14px;
+  color: #1d1d1f;
+}
+
+.placeholder-form-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.placeholder-form-fields {
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.placeholder-form-fields .ph-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.placeholder-form-fields .ph-field label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.placeholder-form-fields .ph-field input {
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-default);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.placeholder-form-fields .ph-field input:focus {
+  border-color: #1d1d1f;
+}
+
+.placeholder-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-default);
+}
+
 /* ---------- 爆款结构分析报告 ---------- */
 .viral-analysis {
   margin-top: 16px;

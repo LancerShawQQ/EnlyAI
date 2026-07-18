@@ -607,6 +607,7 @@ let wizardState = {
   currentStep: 1,
   maxVisitedStep: 1,  // 通过下一步逐步到达过的最大步骤（跳跃点击不更新，避免前面步骤误标勾）
   selectedTemplate: null,
+  selectedTemplateObj: null,  // 当前选中的模板完整对象（含 script_template/placeholders/avatar_scene）
   selectedSubtitleStyle: 'douyin_hot',
   wizScriptTab: 'manual',
   wizScriptAction: 'polish',
@@ -1270,6 +1271,14 @@ function bindScriptToolbar() {
   if (viralCloseBtn) viralCloseBtn.addEventListener('click', () => {
     document.getElementById('wiz-viral-analysis').style.display = 'none';
   });
+  // 占位符填充表单按钮
+  const fillBtn = document.getElementById('wiz-fill-script-btn');
+  if (fillBtn) fillBtn.addEventListener('click', fillScriptTemplate);
+  const hidePhBtn = document.getElementById('wiz-hide-placeholder-btn');
+  if (hidePhBtn) hidePhBtn.addEventListener('click', () => {
+    const form = document.getElementById('wiz-placeholder-form');
+    if (form) form.style.display = 'none';
+  });
 }
 
 // 文案快速 AI 处理（工具栏）
@@ -1588,7 +1597,48 @@ async function wizardApplyTemplate() {
             if (avatarCard) avatarCard.classList.add('selected');
           }
 
-          // 文案骨架联动：填入文案输入框（用户可在此基础上修改）
+          // 数字人场景联动（位置/大小/背景）：tpl.avatar_scene → 步骤2 场景配置 UI
+          // 注意：模板字段值与向导 UI 值存在差异，需要映射
+          //   position: bottom_right→right, bottom_left→left, center→center, top_*→center
+          //   background_type: color→solid, transparent/image 保持
+          //   pose: talking 等不在向导可选值内，跳过（向导 pose 是 standing/sitting/half_body/closeup）
+          if (tpl.avatar_scene) {
+            const ascene = tpl.avatar_scene;
+            // 位置
+            if (ascene.position) {
+              const posMap = { bottom_right: 'right', bottom_left: 'left', top_right: 'center', top_left: 'center', center: 'center' };
+              const posVal = posMap[ascene.position] || ascene.position;
+              setBtnCardValue('wiz-position-grid', posVal);
+            }
+            // 大小
+            if (ascene.scale != null) {
+              const scaleEl = document.getElementById('wiz-scale');
+              const scaleValEl = document.getElementById('wiz-scale-val');
+              if (scaleEl) {
+                scaleEl.value = ascene.scale;
+                if (scaleValEl) scaleValEl.textContent = ascene.scale;
+              }
+            }
+            // 背景类型
+            if (ascene.background_type) {
+              const bgTypeMap = { color: 'solid', solid: 'solid', image: 'image', transparent: 'transparent' };
+              const bgTypeVal = bgTypeMap[ascene.background_type] || ascene.background_type;
+              setBtnCardValue('wiz-bg-type-grid', bgTypeVal);
+              const bgGroup = document.getElementById('wiz-bg-color-group');
+              const imgGroup = document.getElementById('wiz-bg-image-group');
+              if (bgGroup) bgGroup.style.display = bgTypeVal === 'solid' ? 'block' : 'none';
+              if (imgGroup) imgGroup.style.display = bgTypeVal === 'image' ? 'block' : 'none';
+            }
+            // 背景颜色
+            if (ascene.background_color) {
+              const bgColEl = document.getElementById('wiz-bg-color');
+              if (bgColEl) bgColEl.value = ascene.background_color;
+            }
+          }
+
+          // 文案骨架联动：渲染占位符填充表单 + 填入骨架原文（用户可二选一）
+          wizardState.selectedTemplateObj = tpl;  // 供 fillScriptTemplate 使用
+          renderPlaceholderForm(tpl);
           if (tpl.script_template) {
             const scriptEl = document.getElementById('wiz-script');
             if (scriptEl && !scriptEl.value.trim()) {
@@ -1611,6 +1661,85 @@ async function wizardApplyTemplate() {
     btn.disabled = false;
     setBtnIcon(btn, 'check', '应用此模板');
   }
+}
+
+// 渲染模板占位符填充表单：根据 tpl.placeholders 动态生成输入字段
+// 用户填值后点击"生成完整文案"按钮，调用 fillScriptTemplate() 替换骨架中的占位符
+function renderPlaceholderForm(tpl) {
+  const formEl = document.getElementById('wiz-placeholder-form');
+  const fieldsEl = document.getElementById('wiz-placeholder-fields');
+  if (!formEl || !fieldsEl) return;
+
+  // 清空旧字段
+  fieldsEl.innerHTML = '';
+
+  const placeholders = tpl && tpl.placeholders ? tpl.placeholders : {};
+  const keys = Object.keys(placeholders);
+  if (!tpl || !tpl.script_template || keys.length === 0) {
+    // 模板无占位符：隐藏表单
+    formEl.style.display = 'none';
+    return;
+  }
+
+  // 渲染输入字段（每个占位符一个 input）
+  keys.forEach((key) => {
+    const hint = placeholders[key] || '';
+    const wrapper = document.createElement('div');
+    wrapper.className = 'ph-field';
+    wrapper.innerHTML = `
+      <label>{${key}}</label>
+      <input type="text" data-ph-key="${key}" placeholder="${hint.replace(/"/g, '&quot;')}" />
+    `;
+    fieldsEl.appendChild(wrapper);
+  });
+
+  formEl.style.display = 'block';
+  // 重新渲染 lucide 图标
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// 根据用户填入的占位符值，替换 tpl.script_template 中的 {key}，生成完整文案
+function fillScriptTemplate() {
+  const tpl = wizardState.selectedTemplateObj;
+  if (!tpl || !tpl.script_template) {
+    toast('请先选择并应用一个模板', 'error');
+    return;
+  }
+  const fieldsEl = document.getElementById('wiz-placeholder-fields');
+  if (!fieldsEl) return;
+
+  // 收集用户填入的值
+  const inputs = fieldsEl.querySelectorAll('input[data-ph-key]');
+  const values = {};
+  let missing = 0;
+  inputs.forEach((inp) => {
+    const k = inp.dataset.phKey;
+    const v = (inp.value || '').trim();
+    values[k] = v;
+    if (!v) missing += 1;
+  });
+
+  if (missing > 0) {
+    if (!confirm(`还有 ${missing} 个占位符未填写，未填写的将保留为 {字段名}。是否继续生成？`)) return;
+  }
+
+  // 替换骨架中的 {key}（支持 key 含字母数字下划线）
+  let filled = tpl.script_template;
+  Object.keys(values).forEach((k) => {
+    if (values[k]) {
+      // 用正则替换 {key}（防止 $ 在替换串中被特殊解析）
+      filled = filled.replace(new RegExp('\\{' + k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\}', 'g'), values[k]);
+    }
+  });
+  filled = filled.trim();
+
+  // 写入文案输入框并触发统计更新
+  const scriptEl = document.getElementById('wiz-script');
+  if (scriptEl) {
+    scriptEl.value = filled;
+    if (typeof updateScriptStats === 'function') updateScriptStats(filled);
+  }
+  toast(`已生成完整文案（${filled.length} 字）`, 'success');
 }
 
 function wizardSkipTemplate() {

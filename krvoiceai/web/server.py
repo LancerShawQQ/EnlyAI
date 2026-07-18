@@ -908,68 +908,31 @@ def create_app() -> FastAPI:
 
     @app.post("/api/scene/apply")
     async def apply_scene_template(req: dict):
-        """一键应用场景模板：设置样式+BGM+滤镜+转场+情感+语速
+        """一键应用场景模板：复用 settings_manager.apply_template（5 段全应用）
+
+        与 /api/templates/apply 一致，应用 subtitle/audio/effects/avatar/scene 五段配置。
+        保留本端点以兼容首页"场景模板"卡片的前端调用（返回 applied_sections 字段名）。
 
         Body: {"template_id": "product_selling"}
         """
-        import yaml
-        from pathlib import Path as _Path
-        tpl_file = _Path("./config/presets/scene_templates.yaml")
-        if not tpl_file.exists():
-            return {"success": False, "error": "模板文件不存在"}
-        with open(tpl_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        templates = data.get("templates", {})
         template_id = req.get("template_id", "")
-        if template_id not in templates:
-            return {"success": False, "error": f"模板 {template_id} 不存在"}
-        tpl = templates[template_id]
-        style = tpl.get("style", {})
+        if not template_id:
+            return {"success": False, "error": "template_id 未填写"}
         sm = get_settings_manager()
-        applied = []
-
-        # 按配置段分组应用
-        # 1. 字幕样式段
-        sub_updates = {}
-        if "subtitle_preset" in style:
-            sub_updates["preset"] = style["subtitle_preset"]
-        if "subtitle_animation" in style:
-            sub_updates["animation"] = style["subtitle_animation"]
-        if sub_updates:
-            r = sm.update_section("subtitle", sub_updates)
-            if r.get("success"):
-                applied.append("subtitle")
-
-        # 2. 音频段（BGM+情感+语速）
-        audio_updates = {}
-        if "bgm_track" in style:
-            audio_updates["bgm"] = {"enabled": True, "track": style["bgm_track"]}
-        if "emotion" in style:
-            audio_updates["emotion"] = style["emotion"]
-        if "speech_speed" in style:
-            audio_updates["speed"] = style["speech_speed"]
-        if audio_updates:
-            r = sm.update_section("audio", audio_updates)
-            if r.get("success"):
-                applied.append("audio")
-
-        # 3. 效果段（滤镜+转场）
-        effects_updates = {}
-        if "filter" in style:
-            effects_updates["filter"] = style["filter"]
-        if "transition" in style:
-            effects_updates["transition"] = style["transition"]
-        if effects_updates:
-            r = sm.update_section("effects", effects_updates)
-            if r.get("success"):
-                applied.append("effects")
-
-        return {
-            "success": True,
+        result = sm.apply_template(template_id)
+        # 字段映射：apply_template 返回 applied(dict)，前端期望 applied_sections(list)
+        success = result.get("success", False)
+        applied_dict = result.get("applied", {}) or {}
+        resp = {
+            "success": success,
             "template_id": template_id,
-            "applied_sections": applied,
-            "template": tpl,
+            "applied_sections": list(applied_dict.keys()) if isinstance(applied_dict, dict) else (applied_dict or []),
+            "message": result.get("message", ""),
         }
+        if not success:
+            # 失败时前端读取 data.error，做兼容映射
+            resp["error"] = result.get("message", "应用失败")
+        return resp
 
     @app.get("/api/presets/avatars")
     async def get_preset_avatars():

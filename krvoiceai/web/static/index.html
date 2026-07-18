@@ -375,6 +375,18 @@
                   <button class="btn btn-sm btn-secondary" id="wiz-clear-btn" type="button">清空</button>
                 </div>
               </div>
+              <!-- 占位符填充表单：应用模板后动态渲染（仅当模板含 placeholders 时显示） -->
+              <div id="wiz-placeholder-form" class="placeholder-form" style="display:none;margin-bottom:12px">
+                <div class="placeholder-form-header">
+                  <span class="placeholder-form-title"><i data-lucide="edit-3" style="width:14px;height:14px"></i> 模板占位符填充</span>
+                  <span class="placeholder-form-hint">填写以下字段，点击"生成完整文案"自动套入骨架</span>
+                </div>
+                <div class="placeholder-form-fields" id="wiz-placeholder-fields"></div>
+                <div class="placeholder-form-actions">
+                  <button class="btn btn-sm btn-primary" id="wiz-fill-script-btn" type="button"><i data-lucide="file-text" style="width:14px;height:14px"></i> 生成完整文案</button>
+                  <button class="btn btn-sm btn-ghost" id="wiz-hide-placeholder-btn" type="button">收起</button>
+                </div>
+              </div>
               <div class="form-group">
                 <textarea class="form-textarea" id="wiz-script" style="min-height:200px" placeholder="输入口播文案，建议 150-500 字..."></textarea>
               </div>
