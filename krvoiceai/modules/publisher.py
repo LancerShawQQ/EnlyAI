@@ -218,7 +218,9 @@ class Publisher(BaseModule):
 
         try:
             import asyncio
+            import tempfile
             from bilibili_api import video_uploader, Credential
+            from bilibili_api.utils.picture import Picture
 
             cookies = json.loads(cookie_file.read_text(encoding="utf-8"))
             # 校验必要字段
@@ -226,11 +228,12 @@ class Publisher(BaseModule):
                 if not cookies.get(k):
                     raise ValueError(f"bilibili Cookie 缺少字段: {k}")
 
-            # 1. 创建凭据
+            # 1. 创建凭据（buvid3 可选但建议传）
             credential = Credential(
                 sessdata=cookies["SESSDATA"],
                 bili_jct=cookies["bili_jct"],
                 dedeuserid=cookies["DedeUserID"],
+                buvid3=cookies.get("buvid3", ""),
             )
 
             self.logger.info(f"B站发布开始: {target.title}")
@@ -242,28 +245,69 @@ class Publisher(BaseModule):
                 description=target.description,
             )
 
-            # 3. 视频元信息
-            # tid 分区：122=野生技术协会（适合口播/知识）
-            # copyright: 1=自制 2=转载
-            meta = {
-                "title": target.title,
-                "desc": target.description,
-                "tid": 122,
-                "tag": ",".join(target.tags) if target.tags else "知识,口播",
-                "copyright": 1,
-            }
+            # 3. 准备封面（关键修复：cover="" 会导致 Picture().from_file("") 报错）
+            # 策略：优先用 target.cover_path；无封面时用 ffmpeg 从视频提取一帧作为临时封面
+            cover_picture: Picture = None  # type: ignore
+            temp_cover_path = None
+            if target.cover_path and Path(target.cover_path).exists():
+                try:
+                    cover_picture = Picture().from_file(str(target.cover_path))
+                    self.logger.info(f"使用指定封面: {target.cover_path}")
+                except Exception as e:
+                    self.logger.warning(f"加载封面失败，将提取视频帧: {e}")
+                    cover_picture = None
 
-            # 4. 创建上传器（封面可选）
-            cover_path = str(target.cover_path) if target.cover_path and Path(target.cover_path).exists() else ""
+            if cover_picture is None:
+                # 用 ffmpeg 从视频第 1 秒提取一帧作为封面
+                import subprocess
+                temp_cover_path = tempfile.mktemp(suffix=".jpg")
+                try:
+                    subprocess.run(
+                        [
+                            "ffmpeg", "-y", "-ss", "00:00:01", "-i", str(target.video_path),
+                            "-vframes", "1", "-q:v", "2", temp_cover_path,
+                        ],
+                        check=True,
+                        capture_output=True,
+                        timeout=30,
+                    )
+                    cover_picture = Picture().from_file(temp_cover_path)
+                    self.logger.info(f"已从视频提取封面帧: {temp_cover_path}")
+                except Exception as e:
+                    self.logger.warning(f"ffmpeg 提取封面失败: {e}")
+                    # 兜底：用空 Picture 对象（B站 API 可能不接受，但避免初始化报错）
+                    cover_picture = Picture()
+
+            # 4. 视频元信息（用 VideoMeta 对象，避免 dict 格式的 cover 处理 bug）
+            # tid 分区：122=野生技术协会（适合口播/知识）
+            # tag: 列表格式，至少 1 个，最多 10 个
+            tags = target.tags if target.tags else ["知识", "口播"]
+            meta = video_uploader.VideoMeta(
+                tid=122,
+                title=target.title,
+                desc=target.description or target.title,
+                cover=cover_picture,
+                tags=tags,
+                original=True,  # 原创
+            )
+
+            # 5. 创建上传器
             uploader = video_uploader.VideoUploader(
                 pages=[page],
                 meta=meta,
                 credential=credential,
-                cover=cover_path,
             )
 
-            # 5. 异步执行上传
+            # 6. 异步执行上传
+            # 注意：在线程池中调用 asyncio.run() 是安全的（线程无事件循环）
             result = asyncio.run(uploader.start())
+
+            # 清理临时封面
+            if temp_cover_path:
+                try:
+                    Path(temp_cover_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
 
             # result 示例: {"bvid": "BV1xxx...", "aid": 123456}
             bvid = result.get("bvid", "") if isinstance(result, dict) else ""
@@ -994,12 +1038,24 @@ class Publisher(BaseModule):
                     "input[type='password']",
                     "[class*='qrcode']",
                     "[class*='login']",
+                    # 微信扫码登录特有的元素
+                    "[class*='qr']",
+                    "[class*='scan']",
+                    "img[src*='qrcode']",
+                    "div[class*='login-container']",
+                    "div[class*='login-content']",
                 ],
                 "success_confirm_selectors": [
                     "input[type=file]",
                     "[class*='upload']",
                     "textarea[placeholder*='描述']",
+                    "[class*='avatar']",
+                    "[class*='sidebar']",
+                    ".ant-layout-sider",
                 ],
+                # 关键修复：视频号必须检测到 input[type=file] 才认为登录成功
+                # 避免登录页的 [class*='login'] 元素消失但实际未登录的场景误判
+                "required_confirm_selectors": ["input[type=file]"],
                 "cookie_domains": [".qq.com"],
                 "name": "微信视频号",
             },
