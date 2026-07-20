@@ -898,12 +898,20 @@ class Publisher(BaseModule):
                     "input[placeholder*='密码']",
                     "[class*='login-form']",
                     "[class*='qrcode']",
+                    # 快手未登录介绍页的"立即登录"按钮
+                    "button:has-text('立即登录')",
+                    "a:has-text('立即登录')",
                 ],
                 "success_confirm_selectors": [
                     "input[type=file]",
                     "textarea[placeholder*='描述']",
                     "[class*='upload']:not([class*='uploaded'])",
                 ],
+                # 关键修复：快手必须检测到 input[type=file] 才认为登录成功
+                # 原因：快手未登录介绍页没有 input[type=tel] 等表单元素（用二维码登录），
+                # 但有 [class*='upload']（"去上传"链接），导致旧逻辑误判为已登录
+                # 要求 input[type=file] 出现才能真正确认登录成功
+                "required_confirm_selectors": ["input[type=file]"],
                 # 快手特殊：需要检查"去上传"链接是否指向 passport
                 "check_upload_link": True,
                 "cookie_domains": [".kuaishou.com", ".yximgs.com"],
@@ -1001,18 +1009,43 @@ class Publisher(BaseModule):
                             else:
                                 self.logger.info(f"未检测到确认元素，但URL和表单判断已通过")
 
+                            # 关键修复：检查必要确认元素（required_confirm_selectors）
+                            # 对于快手等平台，必须检测到 input[type=file] 才认为真正登录成功
+                            # 避免未登录介绍页（无登录表单但有"去上传"链接）被误判
+                            required_selectors = cfg.get("required_confirm_selectors", [])
+                            if required_selectors:
+                                all_required_found = True
+                                missing_required = []
+                                for sel in required_selectors:
+                                    try:
+                                        if page.locator(sel).count() == 0:
+                                            all_required_found = False
+                                            missing_required.append(sel)
+                                    except Exception:
+                                        all_required_found = False
+                                        missing_required.append(sel)
+
+                                if not all_required_found:
+                                    if time.time() - last_log_time > log_interval:
+                                        self.logger.info(f"必要确认元素未出现: {missing_required}，继续等待用户完成登录...")
+                                        last_log_time = time.time()
+                                    continue  # 必要元素未出现，继续等待
+
                             # 快手特殊检查：确认"去上传"链接不指向 passport
+                            # 注意：此检查可能因页面 DOM 缓存导致误判，改为 warning 而非 continue
+                            # 只要 URL 在创作者后台 + 无登录表单 + 有确认元素，就认为登录成功
+                            # Cookie 是否真正有效，由后续 login_check / test_video_upload 验证
                             if cfg.get("check_upload_link"):
                                 try:
                                     upload_link = page.locator("a.upload, a:has-text('去上传')").first
                                     if upload_link.count() > 0:
                                         href = upload_link.get_attribute("href") or ""
                                         if "passport" in href.lower() or "login" in href.lower():
-                                            # "去上传"指向登录页，说明未真正登录
+                                            # "去上传"指向登录页，可能是页面 DOM 缓存，记录 warning 但不阻塞
                                             if time.time() - last_log_time > log_interval:
-                                                self.logger.info(f"URL和表单判断通过，但'去上传'链接指向 passport，继续等待...")
+                                                self.logger.warning(f"URL和表单判断通过，但'去上传'链接指向 passport（可能是DOM缓存），仍尝试保存Cookie...")
                                                 last_log_time = time.time()
-                                            continue
+                                            # 不再 continue，继续走登录成功流程
                                         else:
                                             self.logger.info(f"快手'去上传'链接正常: {href}")
                                 except Exception:
