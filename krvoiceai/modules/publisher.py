@@ -343,15 +343,23 @@ class Publisher(BaseModule):
                 "name": "抖音",
             },
             "kuaishou": {
+                # 基于 2026-07-20 dump_kuaishou_dom.py 诊断的真实 DOM 结构
+                # 关键发现：
+                # 1. 快手发布页**没有标题输入框**，只有"作品描述"（contenteditable 的 DIV）
+                # 2. 描述输入框：<DIV id="work-description-edit" class="_description_17g9x_24" contenteditable="true">
+                # 3. 发布按钮不是 <button>，是 <DIV>text='发布'，在 div[class*='edit-section-btns'] 容器中
+                # 4. "立即发布"是单选选项（发布时间选择），不是发布按钮
                 "publish_url": "https://cp.kuaishou.com/article/publish/video",
                 "upload_input": "input[type=file]",
-                "title_input": "input[placeholder*='标题']",
-                "desc_input": "textarea[placeholder*='描述']",
-                "publish_btn": "button:has-text('发布')",
-                # 快手上传完成判断：标题输入框出现 + 发布按钮出现
-                # 注意：快手没有抖音那种"高清发布"初始按钮陷阱，但仍需等上传完成
-                "upload_complete_btn_selector": "button:has-text('发布')",
-                "upload_complete_title_selector": "input[placeholder*='标题']",
+                # 快手无标题字段，title_input 设为空字符串，代码会跳过填写标题
+                "title_input": "",
+                # 描述输入框：contenteditable 的 DIV（不能用 fill()，需用 type()）
+                "desc_input": "#work-description-edit, [contenteditable='true']",
+                # 发布按钮：在 div[class*='edit-section-btns'] 容器中，点击只含"发布"文本的子 div
+                "publish_btn": "div[class*='edit-section-btns'] div:has-text('发布'):not(:has-text('取消'))",
+                # 上传完成判断：发布按钮容器出现 + 描述输入框出现
+                "upload_complete_btn_selector": "div[class*='edit-section-btns']",
+                "upload_complete_title_selector": "#work-description-edit, [contenteditable='true']",
                 "upload_progress_selector": "[class*='progress'], [class*='Progress']",
                 "cookie_domain": ".kuaishou.com",
                 "name": "快手",
@@ -487,10 +495,19 @@ class Publisher(BaseModule):
                         except Exception:
                             title_count_for_complete = 0
 
-                    # 上传完成的判断：新增的"发布"按钮出现（数量超过初始值）+ 标题输入框出现
-                    if publish_btn_count > initial_publish_btn_count and title_count_for_complete > 0:
+                    # 上传完成的判断（兼容两种场景）：
+                    # 场景 1（抖音）：初始无发布按钮，上传完成后新增 → publish_btn_count > initial
+                    # 场景 2（快手草稿）：初始已有发布按钮（草稿），上传完成后仍为 1 → publish_btn_count > 0
+                    # 共同条件：标题/描述输入框出现（title_count_for_complete > 0）
+                    if title_count_for_complete > 0 and (
+                        publish_btn_count > initial_publish_btn_count
+                        or (publish_btn_count > 0 and initial_publish_btn_count > 0)
+                    ):
                         upload_completed = True
-                        self.logger.info(f"上传完成（等待 {elapsed} 秒）：新增'发布'按钮 + 标题输入框出现")
+                        self.logger.info(
+                            f"上传完成（等待 {elapsed} 秒）：发布按钮={publish_btn_count}/{initial_publish_btn_count}, "
+                            f"标题/描述框={title_count_for_complete}"
+                        )
                         break
 
                     # 每30秒输出一次进度日志
@@ -521,25 +538,62 @@ class Publisher(BaseModule):
                 # 额外等待 3 秒让页面稳定
                 time.sleep(3)
 
+                # 关闭 react-joyride 引导遮罩（快手特有，会拦截点击事件）
+                # 处理方式：直接用 JavaScript 删除 react-joyride-portal 元素
+                # 注：Escape 键和点击 Skip 按钮都不可靠，直接删除 DOM 元素最稳定
+                try:
+                    removed = page.evaluate("""() => {
+                        const portal = document.getElementById('react-joyride-portal');
+                        if (portal) {
+                            portal.remove();
+                            return true;
+                        }
+                        return false;
+                    }""")
+                    if removed:
+                        self.logger.info("已用 JS 删除 react-joyride 引导遮罩")
+                    time.sleep(0.5)
+                except Exception as e:
+                    self.logger.debug(f"关闭 react-joyride 遮罩时异常（可忽略）: {e}")
+
                 # 2. 填写标题
-                title_sel = page.locator(cfg["title_input"]).first
-                if title_sel.count() > 0:
-                    try:
-                        title_sel.click()
-                        title_sel.fill(target.title)
-                        self.logger.info(f"已填写标题: {target.title}")
-                    except Exception as e:
-                        self.logger.warning(f"填写标题失败: {e}")
+                # 快手无标题字段（title_input 为空字符串），跳过填写标题
+                # 其他平台（抖音/视频号）正常填写
+                if cfg.get("title_input"):
+                    title_sel = page.locator(cfg["title_input"]).first
+                    if title_sel.count() > 0:
+                        try:
+                            # 检测 contenteditable（富文本编辑器不能用 fill）
+                            is_ce = title_sel.evaluate("el => el.getAttribute('contenteditable') === 'true'")
+                            title_sel.click()
+                            if is_ce:
+                                title_sel.press("Control+a")
+                                title_sel.press("Delete")
+                                title_sel.type(target.title, delay=30)
+                            else:
+                                title_sel.fill(target.title)
+                            self.logger.info(f"已填写标题: {target.title}")
+                        except Exception as e:
+                            self.logger.warning(f"填写标题失败: {e}")
+                    else:
+                        self.logger.warning(f"未找到标题输入框: {cfg['title_input']}")
                 else:
-                    self.logger.warning(f"未找到标题输入框: {cfg['title_input']}")
+                    self.logger.info(f"{cfg['name']}无标题字段，跳过填写标题")
 
                 # 3. 填写描述
                 if target.description:
                     desc_sel = page.locator(cfg["desc_input"]).first
                     if desc_sel.count() > 0:
                         try:
+                            # 检测 contenteditable（富文本编辑器不能用 fill）
+                            is_ce = desc_sel.evaluate("el => el.getAttribute('contenteditable') === 'true'")
                             desc_sel.click()
-                            desc_sel.fill(target.description)
+                            if is_ce:
+                                desc_sel.press("Control+a")
+                                desc_sel.press("Delete")
+                                desc_sel.type(target.description, delay=30)
+                            else:
+                                desc_sel.fill(target.description)
                             self.logger.info(f"已填写描述")
                         except Exception as e:
                             self.logger.warning(f"填写描述失败: {e}")
@@ -549,10 +603,25 @@ class Publisher(BaseModule):
 
                 # 5. 点击发布
                 # 关键修复：点击上传完成后出现的"发布"按钮（不是初始的"高清发布"）
+                # 关键修复 2：快手 react-joyride 遮罩会拦截点击，用 force=True 强制点击
                 publish_btn = page.locator(cfg["publish_btn"]).first
                 if publish_btn.count() > 0:
-                    publish_btn.click()
-                    self.logger.info(f"已点击发布按钮: {publish_btn.inner_text()}")
+                    # 再次删除 react-joyride 遮罩（可能在填写过程中被重新创建）
+                    try:
+                        page.evaluate("""() => {
+                            const portal = document.getElementById('react-joyride-portal');
+                            if (portal) portal.remove();
+                        }""")
+                    except Exception:
+                        pass
+                    # force=True 绕过遮罩拦截，直接点击元素
+                    # 注意：点击前获取 inner_text，因为点击后页面可能跳转导致元素失效
+                    try:
+                        btn_text = publish_btn.inner_text()
+                    except Exception:
+                        btn_text = "(无法获取文本)"
+                    publish_btn.click(force=True)
+                    self.logger.info(f"已点击发布按钮: {btn_text}")
                     # 等待发布完成（检测跳转或成功提示）
                     for _ in range(30):
                         time.sleep(2)
@@ -975,6 +1044,18 @@ class Publisher(BaseModule):
                         and "passport" not in url_lower
                     )
 
+                    # 关键修复：即使 URL 仍在 passport，也检测 input[type=file] 是否出现
+                    # 原因：快手登录成功后，URL 可能短暂停留在 passport，但页面已经跳转
+                    # 或者：用户扫码后页面跳转到了创作者后台，但 page.url 更新有延迟
+                    # 如果检测到 input[type=file]，强制认为已登录成功
+                    if not url_ok:
+                        try:
+                            if page.locator("input[type=file]").count() > 0:
+                                self.logger.info(f"URL 仍在 {current_url[:60]}，但检测到 input[type=file]，强制认为已登录")
+                                url_ok = True
+                        except Exception:
+                            pass
+
                     if url_ok:
                         # 等待 SPA 渲染
                         time.sleep(3)
@@ -1139,14 +1220,16 @@ class Publisher(BaseModule):
             "method": "playwright",
         },
         "kuaishou": {
+            # 与 platform_publish_cfg 的快手配置保持一致
+            # 基于 2026-07-20 dump_kuaishou_dom.py 诊断的真实 DOM 结构
             "publish_url": "https://cp.kuaishou.com/article/publish/video",
             "check_url": "https://cp.kuaishou.com/article/publish/video",
             "upload_input": "input[type=file]",
-            "title_input": "input[placeholder*='标题']",
-            "desc_input": "textarea[placeholder*='描述']",
-            "publish_btn": "button:has-text('发布')",
-            "upload_complete_btn_selector": "button:has-text('发布')",
-            "upload_complete_title_selector": "input[placeholder*='标题']",
+            "title_input": "",
+            "desc_input": "#work-description-edit, [contenteditable='true']",
+            "publish_btn": "div[class*='edit-section-btns'] div:has-text('发布'):not(:has-text('取消'))",
+            "upload_complete_btn_selector": "div[class*='edit-section-btns']",
+            "upload_complete_title_selector": "#work-description-edit, [contenteditable='true']",
             "upload_progress_selector": "[class*='progress'], [class*='Progress']",
             "cookie_domain": ".kuaishou.com",
             "name": "快手",
@@ -1426,13 +1509,22 @@ class Publisher(BaseModule):
 
                 selectors_to_test = {
                     "upload_input": cfg["upload_input"],
-                    "title_input": cfg["title_input"],
+                    "title_input": cfg.get("title_input", ""),
                     "desc_input": cfg["desc_input"],
                     "publish_btn": cfg["publish_btn"],
                 }
 
                 selector_results = {}
                 for name, selector in selectors_to_test.items():
+                    # 快手 title_input 为空字符串（无标题字段），直接标记为 skipped
+                    if not selector:
+                        selector_results[name] = {
+                            "selector": "",
+                            "found": True,
+                            "count": 0,
+                            "note": "该平台无此字段（如快手无标题）",
+                        }
+                        continue
                     try:
                         count = page.locator(selector).count()
                         selector_results[name] = {
@@ -1606,10 +1698,19 @@ class Publisher(BaseModule):
                         except Exception:
                             title_count_for_complete = 0
 
-                    # 上传完成的判断：新增的"发布"按钮出现 + 标题输入框出现
-                    if publish_btn_count > initial_publish_btn_count and title_count_for_complete > 0:
+                    # 上传完成的判断（兼容两种场景）：
+                    # 场景 1（抖音）：初始无发布按钮，上传完成后新增 → publish_btn_count > initial
+                    # 场景 2（快手草稿）：初始已有发布按钮（草稿），上传完成后仍为 1 → publish_btn_count > 0
+                    # 共同条件：标题/描述输入框出现（title_count_for_complete > 0）
+                    if title_count_for_complete > 0 and (
+                        publish_btn_count > initial_publish_btn_count
+                        or (publish_btn_count > 0 and initial_publish_btn_count > 0)
+                    ):
                         upload_complete = True
-                        self.logger.info(f"[测试] 上传完成（等待 {elapsed} 秒）：新增'发布'按钮 + 标题输入框出现")
+                        self.logger.info(
+                            f"[测试] 上传完成（等待 {elapsed} 秒）：发布按钮={publish_btn_count}/{initial_publish_btn_count}, "
+                            f"标题/描述框={title_count_for_complete}"
+                        )
                         break
 
                     # 每30秒输出一次进度日志
@@ -1622,9 +1723,23 @@ class Publisher(BaseModule):
                                     progress_text = progress_el.inner_text()[:80]
                             except Exception:
                                 pass
+                        # 关键诊断：打印页面 URL 和前 3 行文本，找出页面卡在哪里
+                        try:
+                            diag_url = page.url
+                            diag_text = page.locator("body").inner_text()[:120].replace("\n", " | ")
+                        except Exception as e:
+                            diag_url = f"ERR: {e}"
+                            diag_text = ""
+                        # 关键诊断：列出所有标签页
+                        try:
+                            pages = page.context.pages
+                            pages_info = " | ".join([f"#{i}: {p.url[:60]}" for i, p in enumerate(pages)])
+                        except Exception:
+                            pages_info = ""
                         self.logger.info(
                             f"[测试] 上传中（{elapsed}秒）：发布按钮={publish_btn_count}/{initial_publish_btn_count}, "
-                            f"标题框={title_count_for_complete}, 进度={progress_text!r}"
+                            f"标题框={title_count_for_complete}, 进度={progress_text!r}, "
+                            f"URL={diag_url[:80]}, 文本={diag_text[:80]}, 标签页=[{pages_info}]"
                         )
                         last_progress_log = elapsed
 
@@ -1639,13 +1754,37 @@ class Publisher(BaseModule):
                 # 额外等待 3 秒让页面稳定
                 time.sleep(3)
 
+                # 关闭 react-joyride 引导遮罩（快手特有，会拦截点击事件）
+                # 直接用 JavaScript 删除 react-joyride-portal 元素
+                try:
+                    removed = page.evaluate("""() => {
+                        const portal = document.getElementById('react-joyride-portal');
+                        if (portal) {
+                            portal.remove();
+                            return true;
+                        }
+                        return false;
+                    }""")
+                    if removed:
+                        self.logger.info("[测试] 已用 JS 删除 react-joyride 引导遮罩")
+                    time.sleep(0.5)
+                except Exception as e:
+                    self.logger.debug(f"[测试] 关闭 react-joyride 遮罩时异常（可忽略）: {e}")
+
                 # 填写标题
-                if title:
+                # 快手无标题字段（title_input 为空字符串），跳过填写标题
+                if title and cfg.get("title_input"):
                     title_sel = page.locator(cfg["title_input"]).first
                     if title_sel.count() > 0:
                         try:
+                            is_ce = title_sel.evaluate("el => el.getAttribute('contenteditable') === 'true'")
                             title_sel.click()
-                            title_sel.fill(title)
+                            if is_ce:
+                                title_sel.press("Control+a")
+                                title_sel.press("Delete")
+                                title_sel.type(title, delay=30)
+                            else:
+                                title_sel.fill(title)
                             self.logger.info(f"[测试] 已填写标题: {title}")
                         except Exception as e:
                             self.logger.warning(f"[测试] 填写标题失败: {e}")
@@ -1655,8 +1794,14 @@ class Publisher(BaseModule):
                     desc_sel = page.locator(cfg["desc_input"]).first
                     if desc_sel.count() > 0:
                         try:
+                            is_ce = desc_sel.evaluate("el => el.getAttribute('contenteditable') === 'true'")
                             desc_sel.click()
-                            desc_sel.fill(description)
+                            if is_ce:
+                                desc_sel.press("Control+a")
+                                desc_sel.press("Delete")
+                                desc_sel.type(description, delay=30)
+                            else:
+                                desc_sel.fill(description)
                             self.logger.info(f"[测试] 已填写描述")
                         except Exception as e:
                             self.logger.warning(f"[测试] 填写描述失败: {e}")
@@ -1675,6 +1820,7 @@ class Publisher(BaseModule):
                     }
                 else:
                     # 关键修复：点击上传完成后出现的"发布"按钮（不是初始的"高清发布"）
+                    # 关键修复 2：快手 react-joyride 遮罩会拦截点击，用 force=True 强制点击
                     publish_btn = page.locator(cfg["publish_btn"]).first
                     if publish_btn.count() == 0:
                         browser.close()
@@ -1683,8 +1829,22 @@ class Publisher(BaseModule):
                             "platform": platform,
                             "error": f"未找到发布按钮（选择器: {cfg['publish_btn']}），视频已上传但未发布",
                         }
-                    publish_btn.click()
-                    self.logger.info(f"[测试] 已点击发布按钮: {publish_btn.inner_text()}")
+                    # 再次删除 react-joyride 遮罩（可能在填写过程中被重新创建）
+                    try:
+                        page.evaluate("""() => {
+                            const portal = document.getElementById('react-joyride-portal');
+                            if (portal) portal.remove();
+                        }""")
+                    except Exception:
+                        pass
+                    # force=True 绕过遮罩拦截，直接点击元素
+                    # 注意：点击前获取 inner_text，因为点击后页面可能跳转导致元素失效
+                    try:
+                        btn_text = publish_btn.inner_text()
+                    except Exception:
+                        btn_text = "(无法获取文本)"
+                    publish_btn.click(force=True)
+                    self.logger.info(f"[测试] 已点击发布按钮: {btn_text}")
                     # 等待发布完成（检测跳转或成功提示）
                     for _ in range(30):
                         time.sleep(2)
