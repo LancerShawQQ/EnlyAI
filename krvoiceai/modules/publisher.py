@@ -314,17 +314,31 @@ class Publisher(BaseModule):
             return {"status": "skipped", "error": target.error}
 
         # 各平台发布页和选择器配置
-        # 注意：选择器基于 2026-07-20 实际诊断抖音上传页 DOM 结构
-        # 抖音发布按钮文本是"高清发布"（不是"发布"），class 含 douyin-creator-master-button-primary
+        # 注意：选择器基于 2026-07-20 实际诊断抖音上传页 DOM 结构（test_douyin_publish_real.py 验证）
+        # 关键发现（抖音上传页真实 DOM）：
+        # 1. "高清发布"按钮初始就存在（class=douyin-creator-master-button-primary），不是上传完成的标志
+        # 2. 真正的发布按钮是上传完成后新增的"发布"按钮（class=button-dhlUZE primary-cECiOJ）
+        # 3. 标题输入框是 input[type=text][placeholder='填写作品标题，为作品获得更多流量']（不是 ql-editor）
+        # 4. 上传完成标志：新增"发布"按钮 + "暂存离开"按钮 + 标题输入框出现
+        # 5. "上传过程中请不要删除"文本在抖音页面根本不存在（旧逻辑误用此选择器导致 uploading_count 永远=0）
+        # 6. 上传完成后的"检测中"进度条 class=progressing-QnBExK（内容审核进度，不是上传进度）
         platform_publish_cfg = {
             "douyin": {
                 "publish_url": "https://creator.douyin.com/creator-micro/content/upload",
                 "upload_input": "input[type=file]",
-                # 标题输入框：抖音用 contenteditable 的 ql-editor，placeholder 含"标题"
-                "title_input": ".ql-editor[data-placeholder*='标题'], .ql-editor[data-placeholder='动人标题']",
-                "desc_input": ".ql-editor[data-placeholder*='描述'], .ql-editor:not([data-placeholder*='标题'])",
-                # 发布按钮：实际文本是"高清发布"
-                "publish_btn": "button:has-text('高清发布'), button:has-text('发布'), .douyin-creator-master-button-primary",
+                # 标题输入框：抖音用 input[type=text]，placeholder 含"填写作品标题"
+                "title_input": "input[placeholder*='填写作品标题'], input[placeholder*='标题']",
+                # 描述输入框：抖音用 textarea，placeholder 含"描述"
+                "desc_input": "textarea[placeholder*='描述'], .ql-editor[data-placeholder*='描述']",
+                # 真正的发布按钮：上传完成后新增的"发布"按钮（class=button-dhlUZE primary-cECiOJ）
+                # 注意：初始页面的"高清发布"按钮 class=douyin-creator-master-button-primary，不能匹配
+                "publish_btn": "button.button-dhlUZE:has-text('发布'), button.primary-cECiOJ:has-text('发布')",
+                # 上传完成标志：新增的"发布"按钮（最可靠）
+                "upload_complete_btn_selector": "button.button-dhlUZE:has-text('发布'), button.primary-cECiOJ:has-text('发布')",
+                # 上传完成辅助标志：标题输入框
+                "upload_complete_title_selector": "input[placeholder*='填写作品标题']",
+                # 内容审核进度条（"检测中2%"等，class=progressing-*）
+                "upload_progress_selector": "[class*='progressing']",
                 "cookie_domain": ".douyin.com",
                 "name": "抖音",
             },
@@ -369,10 +383,16 @@ class Publisher(BaseModule):
         import time
         with sync_playwright() as p:
             # 非无头，用户可见流程，可手动干预
-            browser = p.chromium.launch(headless=False)
+            # 关键：UA 必须完整，否则抖音会识别为非法客户端，拦截上传
+            # viewport 要足够大（1440×900），否则部分元素可能不渲染
+            browser = p.chromium.launch(headless=False, args=["--start-maximized"])
             context = browser.new_context(
-                viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                viewport={"width": 1440, "height": 900},
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
             )
             # 加载Cookie
             context.add_cookies(playwright_cookies)
@@ -419,31 +439,77 @@ class Publisher(BaseModule):
                 upload_input.set_input_files(str(target.video_path))
                 self.logger.info(f"已选择视频文件，等待上传...")
                 # 等待上传完成（最长5分钟）
-                # 关键改进：检测上传完成的标志是"高清发布"按钮可用且不 disabled
+                # 关键改进：基于 2026-07-20 真实 DOM 诊断的正确判断逻辑
+                # 抖音页面：
+                #   - 初始状态："高清发布"按钮存在（class=douyin-creator-master-button-primary）
+                #   - 上传完成后：新增"发布"按钮（class=button-dhlUZE primary-cECiOJ）+ "暂存离开"按钮 + 标题输入框
+                #   - "上传过程中请不要删除"文本在抖音页面根本不存在（旧代码误用导致 uploading_count 永远=0）
+                # 上传完成判断（任一条件满足即可）：
+                #   1. 主要：上传完成后新增的"发布"按钮出现（最可靠）
+                #   2. 辅助：标题输入框出现（上传完成后才渲染）
                 upload_completed = False
-                for i in range(150):
+                last_progress_log = 0
+                # 记录初始"发布"按钮数量（初始状态为 0，上传完成后变 1）
+                try:
+                    initial_publish_btn_count = page.locator(cfg["upload_complete_btn_selector"]).count()
+                except Exception:
+                    initial_publish_btn_count = 0
+                self.logger.info(f"初始'发布'按钮数量: {initial_publish_btn_count}（应为0，因为初始只有'高清发布'）")
+
+                for i in range(150):  # 150 * 2 = 300 秒 = 5 分钟
                     time.sleep(2)
-                    try:
-                        # 检测发布按钮是否存在且未 disabled
-                        publish_btn = page.locator(cfg["publish_btn"]).first
-                        if publish_btn.count() > 0:
-                            # 额外检查按钮是否可点击（未 disabled）
-                            is_disabled = publish_btn.evaluate("""el => el.disabled || el.classList.contains('disabled') || getComputedStyle(el).pointerEvents === 'none'""")
-                            if not is_disabled:
-                                upload_completed = True
-                                self.logger.info(f"上传完成（等待 {i*2} 秒），发布按钮可用")
-                                break
-                    except Exception:
-                        pass
+                    elapsed = (i + 1) * 2
+
+                    # 主要标志：上传完成后新增的"发布"按钮出现
+                    upload_complete_btn_sel = cfg.get("upload_complete_btn_selector")
+                    publish_btn_count = 0
+                    if upload_complete_btn_sel:
+                        try:
+                            publish_btn_count = page.locator(upload_complete_btn_sel).count()
+                        except Exception:
+                            publish_btn_count = 0
+
+                    # 辅助标志：标题输入框出现
+                    upload_complete_title_sel = cfg.get("upload_complete_title_selector")
+                    title_count_for_complete = 0
+                    if upload_complete_title_sel:
+                        try:
+                            title_count_for_complete = page.locator(upload_complete_title_sel).count()
+                        except Exception:
+                            title_count_for_complete = 0
+
+                    # 上传完成的判断：新增的"发布"按钮出现（数量超过初始值）+ 标题输入框出现
+                    if publish_btn_count > initial_publish_btn_count and title_count_for_complete > 0:
+                        upload_completed = True
+                        self.logger.info(f"上传完成（等待 {elapsed} 秒）：新增'发布'按钮 + 标题输入框出现")
+                        break
+
+                    # 每30秒输出一次进度日志
+                    if elapsed - last_progress_log >= 30:
+                        # 尝试读取进度文本（如"检测中2%"）
+                        progress_text = ""
+                        progress_sel = cfg.get("upload_progress_selector")
+                        if progress_sel:
+                            try:
+                                progress_el = page.locator(progress_sel).first
+                                if progress_el.count() > 0:
+                                    progress_text = progress_el.inner_text()[:80]
+                            except Exception:
+                                pass
+                        self.logger.info(
+                            f"上传中（{elapsed}秒）：发布按钮={publish_btn_count}/{initial_publish_btn_count}, "
+                            f"标题框={title_count_for_complete}, 进度={progress_text!r}"
+                        )
+                        last_progress_log = elapsed
 
                 if not upload_completed:
                     browser.close()
                     target.status = "failed"
-                    target.error = f"{cfg['name']}视频上传超时（5分钟内发布按钮未变为可用状态）"
+                    target.error = f"{cfg['name']}视频上传超时（5分钟内未检测到上传完成标志：新增'发布'按钮 + 标题输入框）"
                     self.logger.error(target.error)
                     return {"status": "failed", "error": target.error}
 
-                # 额外等待 3 秒让标题/描述输入框渲染
+                # 额外等待 3 秒让页面稳定
                 time.sleep(3)
 
                 # 2. 填写标题
@@ -454,14 +520,7 @@ class Publisher(BaseModule):
                         title_sel.fill(target.title)
                         self.logger.info(f"已填写标题: {target.title}")
                     except Exception as e:
-                        self.logger.warning(f"填写标题失败（可能用 contenteditable）: {e}")
-                        # 尝试 contenteditable 方式
-                        try:
-                            title_sel.click()
-                            page.keyboard.type(target.title)
-                            self.logger.info(f"已通过 keyboard 填写标题")
-                        except Exception as e2:
-                            self.logger.warning(f"keyboard 填写标题也失败: {e2}")
+                        self.logger.warning(f"填写标题失败: {e}")
                 else:
                     self.logger.warning(f"未找到标题输入框: {cfg['title_input']}")
 
@@ -473,39 +532,34 @@ class Publisher(BaseModule):
                             desc_sel.click()
                             desc_sel.fill(target.description)
                             self.logger.info(f"已填写描述")
-                        except Exception:
-                            try:
-                                desc_sel.click()
-                                page.keyboard.type(target.description)
-                            except Exception:
-                                pass
+                        except Exception as e:
+                            self.logger.warning(f"填写描述失败: {e}")
 
                 # 4. 等待用户确认（半自动模式：给用户3秒检查时间）
                 time.sleep(3)
 
                 # 5. 点击发布
+                # 关键修复：点击上传完成后出现的"发布"按钮（不是初始的"高清发布"）
                 publish_btn = page.locator(cfg["publish_btn"]).first
                 if publish_btn.count() > 0:
                     publish_btn.click()
-                    self.logger.info(f"已点击发布按钮")
+                    self.logger.info(f"已点击发布按钮: {publish_btn.inner_text()}")
                     # 等待发布完成（检测跳转或成功提示）
                     for _ in range(30):
                         time.sleep(2)
-                        # 检测发布成功标志：URL 跳转或成功提示
                         current_url = page.url
                         if "content/manage" in current_url or "success" in current_url.lower():
                             self.logger.info(f"检测到发布成功跳转: {current_url}")
                             break
-                        # 检测页面是否有成功提示
                         try:
-                            if page.locator("text='发布成功'").count() > 0 or page.locator("[class*='success']").count() > 0:
+                            if page.locator("text='发布成功'").count() > 0:
                                 self.logger.info(f"检测到发布成功提示")
                                 break
                         except Exception:
                             pass
-                    time.sleep(5)  # 额外等待确保发布完成
+                    time.sleep(5)
                 else:
-                    # 关键修复：发布按钮找不到时标记为 failed（不再静默返回 success）
+                    # 发布按钮找不到时标记为 failed
                     browser.close()
                     target.status = "failed"
                     target.error = f"{cfg['name']}未找到发布按钮（选择器: {cfg['publish_btn']}），视频已上传但未发布"
@@ -1021,12 +1075,23 @@ class Publisher(BaseModule):
             "method": "api",
         },
         "douyin": {
+            # 与 _publish_playwright 的 platform_publish_cfg 保持一致
+            # 基于 2026-07-20 实际 DOM 诊断（test_douyin_publish_real.py 验证）
             "publish_url": "https://creator.douyin.com/creator-micro/content/upload",
             "check_url": "https://creator.douyin.com/creator-micro/home",
             "upload_input": "input[type=file]",
-            "title_input": ".ql-editor[data-placeholder='动人标题']",
-            "desc_input": ".ql-editor",
-            "publish_btn": ".button--1ERwt[data-e2e='publish_article_button']",
+            # 标题输入框：抖音用 input[type=text]，placeholder 含"填写作品标题"
+            "title_input": "input[placeholder*='填写作品标题'], input[placeholder*='标题']",
+            # 描述输入框：抖音用 textarea，placeholder 含"描述"
+            "desc_input": "textarea[placeholder*='描述'], .ql-editor[data-placeholder*='描述']",
+            # 真正的发布按钮：上传完成后新增的"发布"按钮（class=button-dhlUZE primary-cECiOJ）
+            "publish_btn": "button.button-dhlUZE:has-text('发布'), button.primary-cECiOJ:has-text('发布')",
+            # 上传完成标志：新增的"发布"按钮（最可靠）
+            "upload_complete_btn_selector": "button.button-dhlUZE:has-text('发布'), button.primary-cECiOJ:has-text('发布')",
+            # 上传完成辅助标志：标题输入框
+            "upload_complete_title_selector": "input[placeholder*='填写作品标题']",
+            # 内容审核进度条（"检测中2%"等，class=progressing-*）
+            "upload_progress_selector": "[class*='progressing']",
             "cookie_domain": ".douyin.com",
             "name": "抖音",
             "method": "playwright",
@@ -1412,17 +1477,22 @@ class Publisher(BaseModule):
 
         import time
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=False)
+            browser = p.chromium.launch(headless=False, args=["--start-maximized"])
             context = browser.new_context(
-                viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                viewport={"width": 1440, "height": 900},
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
             )
             context.add_cookies(playwright_cookies)
             page = context.new_page()
 
             try:
                 page.goto(cfg["publish_url"], wait_until="domcontentloaded", timeout=30000)
-                time.sleep(3)
+                # SPA 需要充分渲染（3秒不够，改为 8 秒，与诊断脚本一致）
+                time.sleep(8)
 
                 current_url = page.url
                 if "login" in current_url.lower() or "passport" in current_url.lower():
@@ -1435,37 +1505,113 @@ class Publisher(BaseModule):
                     }
 
                 # 上传视频文件
+                # 关键：等待 input[type=file] 真正可交互（attached 状态），否则 set_input_files 可能无效
                 upload_input = page.locator(cfg["upload_input"]).first
+                try:
+                    upload_input.wait_for(state="attached", timeout=10000)
+                except Exception as e:
+                    browser.close()
+                    return {
+                        "success": False,
+                        "platform": platform,
+                        "error": f"未找到上传入口（{cfg['upload_input']}），页面可能未渲染: {e}",
+                    }
                 upload_input.set_input_files(str(video_p))
                 self.logger.info(f"[测试] 已选择视频文件: {video_p.name}")
 
                 # 等待上传完成（最长 5 分钟）
+                # 关键改进：基于 2026-07-20 真实 DOM 诊断的正确判断逻辑
+                # 抖音页面：
+                #   - 初始状态："高清发布"按钮存在（class=douyin-creator-master-button-primary）
+                #   - 上传完成后：新增"发布"按钮（class=button-dhlUZE primary-cECiOJ）+ 标题输入框
+                #   - "上传过程中请不要删除"文本在抖音页面根本不存在（旧逻辑误用导致 uploading_count 永远=0）
+                # 上传完成判断：新增"发布"按钮出现 + 标题输入框出现
                 upload_complete = False
-                for i in range(150):
+                last_progress_log = 0
+                # 记录初始"发布"按钮数量
+                upload_complete_btn_sel = cfg.get("upload_complete_btn_selector")
+                upload_complete_title_sel = cfg.get("upload_complete_title_selector")
+                progress_sel = cfg.get("upload_progress_selector")
+                try:
+                    initial_publish_btn_count = page.locator(upload_complete_btn_sel).count() if upload_complete_btn_sel else 0
+                except Exception:
+                    initial_publish_btn_count = 0
+                self.logger.info(f"[测试] 初始'发布'按钮数量: {initial_publish_btn_count}")
+
+                for i in range(150):  # 150 * 2 = 300 秒 = 5 分钟
                     time.sleep(2)
-                    if page.locator(cfg["publish_btn"]).count() > 0:
+                    elapsed = (i + 1) * 2
+
+                    # 主要标志：上传完成后新增的"发布"按钮出现
+                    publish_btn_count = 0
+                    if upload_complete_btn_sel:
+                        try:
+                            publish_btn_count = page.locator(upload_complete_btn_sel).count()
+                        except Exception:
+                            publish_btn_count = 0
+
+                    # 辅助标志：标题输入框出现
+                    title_count_for_complete = 0
+                    if upload_complete_title_sel:
+                        try:
+                            title_count_for_complete = page.locator(upload_complete_title_sel).count()
+                        except Exception:
+                            title_count_for_complete = 0
+
+                    # 上传完成的判断：新增的"发布"按钮出现 + 标题输入框出现
+                    if publish_btn_count > initial_publish_btn_count and title_count_for_complete > 0:
                         upload_complete = True
+                        self.logger.info(f"[测试] 上传完成（等待 {elapsed} 秒）：新增'发布'按钮 + 标题输入框出现")
                         break
+
+                    # 每30秒输出一次进度日志
+                    if elapsed - last_progress_log >= 30:
+                        progress_text = ""
+                        if progress_sel:
+                            try:
+                                progress_el = page.locator(progress_sel).first
+                                if progress_el.count() > 0:
+                                    progress_text = progress_el.inner_text()[:80]
+                            except Exception:
+                                pass
+                        self.logger.info(
+                            f"[测试] 上传中（{elapsed}秒）：发布按钮={publish_btn_count}/{initial_publish_btn_count}, "
+                            f"标题框={title_count_for_complete}, 进度={progress_text!r}"
+                        )
+                        last_progress_log = elapsed
 
                 if not upload_complete:
                     browser.close()
                     return {
                         "success": False,
                         "platform": platform,
-                        "error": "上传超时（5分钟内未出现发布按钮）",
+                        "error": "上传超时（5分钟内未检测到上传完成标志：新增'发布'按钮 + 标题输入框）",
                     }
+
+                # 额外等待 3 秒让页面稳定
+                time.sleep(3)
 
                 # 填写标题
                 if title:
                     title_sel = page.locator(cfg["title_input"]).first
                     if title_sel.count() > 0:
-                        title_sel.fill(title)
+                        try:
+                            title_sel.click()
+                            title_sel.fill(title)
+                            self.logger.info(f"[测试] 已填写标题: {title}")
+                        except Exception as e:
+                            self.logger.warning(f"[测试] 填写标题失败: {e}")
 
                 # 填写描述
                 if description:
                     desc_sel = page.locator(cfg["desc_input"]).first
                     if desc_sel.count() > 0:
-                        desc_sel.fill(description)
+                        try:
+                            desc_sel.click()
+                            desc_sel.fill(description)
+                            self.logger.info(f"[测试] 已填写描述")
+                        except Exception as e:
+                            self.logger.warning(f"[测试] 填写描述失败: {e}")
 
                 if dry_run:
                     time.sleep(5)  # 等待用户观察
@@ -1480,10 +1626,31 @@ class Publisher(BaseModule):
                         "message": f"{cfg['name']} 视频已上传成功（dry-run 模式，未点击发布按钮）",
                     }
                 else:
+                    # 关键修复：点击上传完成后出现的"发布"按钮（不是初始的"高清发布"）
                     publish_btn = page.locator(cfg["publish_btn"]).first
+                    if publish_btn.count() == 0:
+                        browser.close()
+                        return {
+                            "success": False,
+                            "platform": platform,
+                            "error": f"未找到发布按钮（选择器: {cfg['publish_btn']}），视频已上传但未发布",
+                        }
                     publish_btn.click()
-                    self.logger.info(f"[测试] 已点击发布按钮")
-                    time.sleep(10)
+                    self.logger.info(f"[测试] 已点击发布按钮: {publish_btn.inner_text()}")
+                    # 等待发布完成（检测跳转或成功提示）
+                    for _ in range(30):
+                        time.sleep(2)
+                        current_url = page.url
+                        if "content/manage" in current_url or "success" in current_url.lower():
+                            self.logger.info(f"[测试] 检测到发布成功跳转: {current_url}")
+                            break
+                        try:
+                            if page.locator("text='发布成功'").count() > 0:
+                                self.logger.info(f"[测试] 检测到发布成功提示")
+                                break
+                        except Exception:
+                            pass
+                    time.sleep(5)
                     final_url = page.url
                     browser.close()
                     return {
