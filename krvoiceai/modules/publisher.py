@@ -259,12 +259,21 @@ class Publisher(BaseModule):
 
             if cover_picture is None:
                 # 用 ffmpeg 从视频第 1 秒提取一帧作为封面
+                # 关键：系统 PATH 中的 ffmpeg 可能是精简版（禁用了图片编码器），
+                # 优先用 imageio-ffmpeg 自带的完整 ffmpeg
                 import subprocess
                 temp_cover_path = tempfile.mktemp(suffix=".jpg")
+                ffmpeg_cmd = "ffmpeg"
+                try:
+                    import imageio_ffmpeg
+                    ffmpeg_cmd = imageio_ffmpeg.get_ffmpeg_exe()
+                    self.logger.debug(f"使用 imageio-ffmpeg: {ffmpeg_cmd}")
+                except ImportError:
+                    pass
                 try:
                     subprocess.run(
                         [
-                            "ffmpeg", "-y", "-ss", "00:00:01", "-i", str(target.video_path),
+                            ffmpeg_cmd, "-y", "-ss", "00:00:01", "-i", str(target.video_path),
                             "-vframes", "1", "-q:v", "2", temp_cover_path,
                         ],
                         check=True,
