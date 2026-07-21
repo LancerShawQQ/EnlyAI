@@ -1061,7 +1061,7 @@ async function loadAccountsStatus() {
       const configured = c.configured;
       const loginBtnLabel = configured ? '重新登录' : (key === 'bilibili' ? '扫码登录' : '浏览器登录');
       const loginBtn = key === 'bilibili'
-        ? `<button class="btn btn-sm btn-primary" onclick="loginBilibiliQrcode()" id="bilibili-login-btn">${loginBtnLabel}</button>`
+        ? `<button class="btn btn-sm btn-primary bilibili-login-btn" onclick="loginBilibiliQrcode()">${loginBtnLabel}</button>`
         : `<button class="btn btn-sm btn-primary" onclick="loginBrowserPlatform('${key}')">${loginBtnLabel}</button>`;
       // 已配置的先显示"校验中..."，未配置的显示"未登录"
       const statusBadge = configured
@@ -1171,7 +1171,7 @@ async function loadCookieManager() {
       const enabled = c.enabled;
       // B站支持扫码登录，其他平台用浏览器自动登录
       const loginBtn = key === 'bilibili'
-        ? `<button class="btn btn-sm btn-primary" onclick="loginBilibiliQrcode()" id="bilibili-login-btn">扫码登录</button>`
+        ? `<button class="btn btn-sm btn-primary bilibili-login-btn" onclick="loginBilibiliQrcode()">扫码登录</button>`
         : `<button class="btn btn-sm btn-primary" onclick="loginBrowserPlatform('${key}')">浏览器登录</button>`;
       return `
         <div class="cookie-mgr-card" data-platform="${key}" style="padding:12px;border:1px solid var(--border-default);border-radius:var(--radius-md);background:var(--bg-elevated)">
@@ -1195,7 +1195,7 @@ async function loadCookieManager() {
             <textarea class="form-textarea" id="cookie-input-${key}" style="min-height:50px;font-size:11px;margin-top:6px" placeholder='粘贴 ${info.name} 的 Cookie（JSON 格式或 raw 字符串）'></textarea>
             <button class="btn btn-sm btn-secondary" style="margin-top:6px" onclick="saveCookie('${key}')">保存 Cookie</button>
           </details>
-          ${key === 'bilibili' ? '<div id="bilibili-qrcode-area" style="text-align:center;margin-top:8px"></div>' : ''}
+          ${key === 'bilibili' ? '<div class="bilibili-qrcode-hint" style="text-align:center;margin-top:8px;font-size:11px;color:var(--text-secondary)">点击"扫码登录"按钮，弹出二维码窗口</div>' : ''}
         </div>
       `;
     }).join('');
@@ -1207,39 +1207,73 @@ async function loadCookieManager() {
 // B站扫码登录
 let _bilibiliLoginPolling = false;
 async function loginBilibiliQrcode() {
-  const btn = document.getElementById('bilibili-login-btn');
-  const qrcodeArea = document.getElementById('bilibili-qrcode-area');
-  if (!btn) return;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> 获取二维码...';
-  if (qrcodeArea) qrcodeArea.innerHTML = '';
+  // 禁用所有 B站登录按钮（用 class 选择，避免 id 重复问题）
+  const btns = document.querySelectorAll('.bilibili-login-btn');
+  btns.forEach(b => { b.disabled = true; b.innerHTML = '<span class="spinner"></span> 获取二维码...'; });
+  // 弹出模态弹窗显示二维码（统一入口，避免二维码渲染到不可见区域）
+  _showBilibiliQrcodeModal('正在获取二维码...', null);
   try {
     const result = await api('/api/publish/login/bilibili/qrcode', { method: 'POST' });
-    if (!result.qrcode_url && !result.qrcode_image) throw new Error('未获取到二维码');
-    // 显示二维码
-    if (result.qrcode_image) {
-      // base64 图片
-      if (qrcodeArea) qrcodeArea.innerHTML = `
-        <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:6px">请用哔哩哔哩APP扫描二维码登录</div>
-        <img src="data:image/png;base64,${result.qrcode_image}" style="max-width:200px;border:1px solid var(--border-default);border-radius:8px" />
-        <div style="font-size:11px;color:var(--color-text-secondary);margin-top:4px">等待扫码确认...</div>
-      `;
-    } else if (result.qrcode_url) {
-      if (qrcodeArea) qrcodeArea.innerHTML = `
-        <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:6px">请用哔哩哔哩APP扫描二维码登录</div>
-        <img src="${result.qrcode_url}" style="max-width:200px;border:1px solid var(--border-default);border-radius:8px" />
-        <div style="font-size:11px;color:var(--color-text-secondary);margin-top:4px">等待扫码确认...</div>
-      `;
-    }
-    btn.innerHTML = '等待扫码...';
+    if (!result.qrcode_image && !result.qrcode_url) throw new Error('未获取到二维码');
+    // 渲染二维码到弹窗
+    const imgSrc = result.qrcode_image
+      ? `data:image/png;base64,${result.qrcode_image}`
+      : result.qrcode_url;
+    _showBilibiliQrcodeModal('请用哔哩哔哩APP扫描二维码登录', imgSrc);
+    btns.forEach(b => { b.disabled = false; b.innerHTML = '等待扫码...'; b.disabled = true; });
     // 轮询检查扫码状态
     _bilibiliLoginPolling = true;
     _pollBilibiliLogin();
   } catch (e) {
     toast(`B站扫码登录失败: ${e.message}`, 'error');
-    btn.disabled = false;
-    btn.innerHTML = '扫码登录';
+    _hideBilibiliQrcodeModal();
+    btns.forEach(b => { b.disabled = false; b.innerHTML = '扫码登录'; });
   }
+}
+
+function _showBilibiliQrcodeModal(hintText, imgSrc) {
+  let modal = document.getElementById('bilibili-qrcode-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'bilibili-qrcode-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(8px);z-index:9999;display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = `
+      <div style="background:var(--bg-surface,#fff);border-radius:12px;padding:24px;width:360px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.18);position:relative">
+        <button type="button" id="bilibili-qrcode-close" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.1);border:none;font-size:18px;color:var(--text-primary);cursor:pointer;padding:4px 10px;line-height:1;border-radius:6px">✕</button>
+        <h3 style="font-size:16px;font-weight:600;margin:0 0 16px 0;text-align:center">哔哩哔哩扫码登录</h3>
+        <div id="bilibili-qrcode-modal-hint" style="font-size:13px;color:var(--text-secondary);text-align:center;margin-bottom:12px"></div>
+        <div id="bilibili-qrcode-modal-img" style="text-align:center"></div>
+        <div id="bilibili-qrcode-modal-status" style="font-size:11px;color:var(--text-secondary);text-align:center;margin-top:8px">等待扫码确认...</div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('#bilibili-qrcode-close').addEventListener('click', () => {
+      _bilibiliLoginPolling = false;
+      _hideBilibiliQrcodeModal();
+      const btns = document.querySelectorAll('.bilibili-login-btn');
+      btns.forEach(b => { b.disabled = false; b.innerHTML = '扫码登录'; });
+    });
+  }
+  modal.style.display = 'flex';
+  modal.querySelector('#bilibili-qrcode-modal-hint').textContent = hintText;
+  const imgContainer = modal.querySelector('#bilibili-qrcode-modal-img');
+  if (imgSrc) {
+    imgContainer.innerHTML = `<img src="${imgSrc}" style="max-width:240px;border:1px solid var(--border-default);border-radius:8px" />`;
+  } else {
+    imgContainer.innerHTML = '<div style="padding:40px"><span class="spinner" style="margin:0 auto"></span></div>';
+  }
+}
+
+function _hideBilibiliQrcodeModal() {
+  const modal = document.getElementById('bilibili-qrcode-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function _updateBilibiliQrcodeModalStatus(text, isSuccess, isError) {
+  const statusEl = document.querySelector('#bilibili-qrcode-modal-status');
+  if (!statusEl) return;
+  statusEl.textContent = text;
+  statusEl.style.color = isSuccess ? 'var(--color-success)' : (isError ? 'var(--color-error)' : 'var(--text-secondary)');
 }
 
 async function _pollBilibiliLogin() {
@@ -1248,11 +1282,12 @@ async function _pollBilibiliLogin() {
     const result = await api('/api/publish/login/bilibili/check');
     if (result.status === 'success' || result.success) {
       _bilibiliLoginPolling = false;
-      const btn = document.getElementById('bilibili-login-btn');
-      const qrcodeArea = document.getElementById('bilibili-qrcode-area');
-      if (btn) { btn.disabled = false; btn.innerHTML = '扫码登录'; }
-      if (qrcodeArea) qrcodeArea.innerHTML = '<div style="color:var(--color-success);font-size:13px;padding:8px">✓ 登录成功，Cookie已自动保存</div>';
+      _updateBilibiliQrcodeModalStatus('✓ 登录成功，Cookie已自动保存', true, false);
       toast('B站登录成功！Cookie已自动保存', 'success');
+      // 2秒后关闭弹窗
+      setTimeout(() => _hideBilibiliQrcodeModal(), 2000);
+      const btns = document.querySelectorAll('.bilibili-login-btn');
+      btns.forEach(b => { b.disabled = false; b.innerHTML = '重新登录'; });
       // 清空该平台的登录态缓存，触发重新校验
       delete _platformLoginStatus['bilibili'];
       loadCookieManager();
@@ -1262,19 +1297,19 @@ async function _pollBilibiliLogin() {
     }
     if (result.status === 'expired' || result.status === 'failed') {
       _bilibiliLoginPolling = false;
-      const btn = document.getElementById('bilibili-login-btn');
-      const qrcodeArea = document.getElementById('bilibili-qrcode-area');
-      if (btn) { btn.disabled = false; btn.innerHTML = '扫码登录'; }
-      if (qrcodeArea) qrcodeArea.innerHTML = '<div style="color:var(--color-error);font-size:13px;padding:8px">二维码已过期，请重新扫码</div>';
+      _updateBilibiliQrcodeModalStatus('二维码已过期，请关闭后重新扫码', false, true);
       toast('二维码已过期，请重新扫码', 'error');
+      const btns = document.querySelectorAll('.bilibili-login-btn');
+      btns.forEach(b => { b.disabled = false; b.innerHTML = '扫码登录'; });
       return;
     }
     // 继续轮询（每2秒）
     setTimeout(_pollBilibiliLogin, 2000);
   } catch (e) {
     _bilibiliLoginPolling = false;
-    const btn = document.getElementById('bilibili-login-btn');
-    if (btn) { btn.disabled = false; btn.innerHTML = '扫码登录'; }
+    _updateBilibiliQrcodeModalStatus(`检查扫码状态失败: ${e.message}`, false, true);
+    const btns = document.querySelectorAll('.bilibili-login-btn');
+    btns.forEach(b => { b.disabled = false; b.innerHTML = '扫码登录'; });
     toast(`检查扫码状态失败: ${e.message}`, 'error');
   }
 }
