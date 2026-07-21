@@ -283,9 +283,12 @@ class Publisher(BaseModule):
                     cover_picture = Picture().from_file(temp_cover_path)
                     self.logger.info(f"已从视频提取封面帧: {temp_cover_path}")
                 except Exception as e:
-                    self.logger.warning(f"ffmpeg 提取封面失败: {e}")
-                    # 兜底：用空 Picture 对象（B站 API 可能不接受，但避免初始化报错）
-                    cover_picture = Picture()
+                    # 关键：bilibili-api 的 VideoMeta 强制要求 cover 是 str 或 Picture
+                    # 不能传 None（会 AttributeError）也不能传空 Picture()（会 PIL 错误）
+                    # ffmpeg 提取失败通常意味着视频文件损坏，此时直接抛错让上层处理
+                    raise RuntimeError(
+                        f"ffmpeg 提取封面失败且无指定封面，无法上传B站: {e}"
+                    )
 
             # 4. 视频元信息（用 VideoMeta 对象，避免 dict 格式的 cover 处理 bug）
             # tid 分区：122=野生技术协会（适合口播/知识）
@@ -334,10 +337,29 @@ class Publisher(BaseModule):
             target.error = "bilibili-api-python 未安装（pip install bilibili-api-python）"
             return {"status": "skipped", "error": target.error}
         except Exception as e:
+            # 增强错误日志：捕获 NetworkException 等异常的详细信息
+            err_detail = str(e)
+            try:
+                from bilibili_api.exceptions import NetworkException
+                if isinstance(e, NetworkException):
+                    # NetworkException(code, msg) - code 是 HTTP 状态码
+                    err_detail = (
+                        f"NetworkException(code={e.code}, msg={e.msg!r}); "
+                        f"原响应: {getattr(e, 'headers', None)}"
+                    )
+            except Exception:
+                pass
+            # 捕获响应体（如果异常对象上有 response 属性）
+            resp = getattr(e, "response", None)
+            if resp is not None:
+                try:
+                    err_detail += f"; response body: {resp.text[:500] if hasattr(resp, 'text') else resp}"
+                except Exception:
+                    pass
             target.status = "failed"
-            target.error = str(e)
-            self.logger.error(f"B站发布失败: {e}")
-            return {"status": "failed", "error": str(e)}
+            target.error = err_detail
+            self.logger.error(f"B站发布失败: {err_detail}")
+            return {"status": "failed", "error": err_detail}
 
     def _publish_playwright(self, target: PublishTarget) -> dict:
         """Playwright 浏览器自动化发布（抖音/快手/视频号）
