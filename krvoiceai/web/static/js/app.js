@@ -211,7 +211,7 @@ function statusBadge(status) {
 // ========== 页面导航 ==========
 
 const PAGES = [
-  'dashboard', 'wizard', 'generate', 'script', 'step-by-step', 'batch', 'timeline',
+  'dashboard', 'wizard', 'podcast', 'generate', 'script', 'step-by-step', 'batch', 'timeline',
   'avatars', 'voices', 'templates', 'jobs',
   'settings-models', 'settings-video', 'settings-scene', 'settings-publish',
   'health',
@@ -273,6 +273,7 @@ function navigate(page) {
   if (page === 'voices') loadVoices();
   if (page === 'health') loadHealth();
   if (page === 'wizard') initWizard();
+  if (page === 'podcast') initPodcast();
   if (page === 'templates') { loadTemplatesCenter(); loadSceneTemplates(); loadPresetAvatars(); loadPresetVoices(); }
   if (page === 'generate') { loadAvatarsForSelect(); loadVoicesForSelect(); }
   if (page === 'step-by-step') { loadAvatarsForSelect2(); loadVoicesForSelect2(); }
@@ -4100,6 +4101,612 @@ async function loadHealth() {
   } catch (e) {
     toast(`健康检查失败: ${e.message}`, 'error');
   }
+}
+
+// ========== 语音博客向导 ==========
+
+// 播客向导状态
+let podcastState = {
+  currentStep: 1,
+  maxVisitedStep: 1,
+  source: 'manual',         // manual | url | file | topic
+  content: '',               // 提取/输入的原始内容
+  script: '',                // 改写后的剧本
+  voiceMap: {},              // {角色名: 音色ID}
+  voiceList: [],             // 可用音色列表
+  jobId: null,               // 当前生成任务 ID
+  result: null,              // 生成结果
+  pollTimer: null,           // 轮询定时器
+  initialized: false,
+};
+
+// 初始化播客向导
+function initPodcast() {
+  if (!podcastState.initialized) {
+    podcastState.initialized = true;
+    bindPodcastEvents();
+    // 异步加载音色列表（不阻塞 UI）
+    loadPodcastVoices();
+  }
+  renderPodcastStepper();
+}
+
+// 加载可用音色列表
+async function loadPodcastVoices() {
+  try {
+    const data = await api('/api/podcast/voices');
+    podcastState.voiceList = data.voices || [];
+  } catch (e) {
+    console.warn('加载播客音色列表失败:', e.message);
+    podcastState.voiceList = [];
+  }
+}
+
+// 绑定播客向导所有事件
+function bindPodcastEvents() {
+  // 内容来源 tab 切换
+  document.querySelectorAll('[data-pod-source]').forEach(tab => {
+    tab.addEventListener('click', () => {
+      podcastState.source = tab.dataset.podSource;
+      document.querySelectorAll('[data-pod-source]').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.querySelectorAll('.sub-page').forEach(p => {
+        if (p.id && p.id.startsWith('pod-source-')) p.classList.remove('active');
+      });
+      const target = document.getElementById(`pod-source-${tab.dataset.podSource}`);
+      if (target) target.classList.add('active');
+    });
+  });
+
+  // 文章输入字数统计
+  const manualText = document.getElementById('pod-manual-text');
+  if (manualText) {
+    manualText.addEventListener('input', () => {
+      document.getElementById('pod-manual-count').textContent = manualText.value.length;
+    });
+  }
+
+  // URL 提取
+  document.getElementById('pod-extract-btn')?.addEventListener('click', podExtractContent);
+
+  // 文件上传
+  const fileUpload = document.getElementById('pod-file-upload');
+  const fileInput = document.getElementById('pod-file-input');
+  if (fileUpload && fileInput) {
+    fileUpload.addEventListener('click', () => fileInput.click());
+    fileUpload.addEventListener('dragover', (e) => { e.preventDefault(); fileUpload.classList.add('drag-over'); });
+    fileUpload.addEventListener('dragleave', () => fileUpload.classList.remove('drag-over'));
+    fileUpload.addEventListener('drop', (e) => {
+      e.preventDefault();
+      fileUpload.classList.remove('drag-over');
+      if (e.dataTransfer.files.length > 0) handlePodcastFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length > 0) handlePodcastFile(fileInput.files[0]);
+    });
+  }
+
+  // AI 改写剧本
+  document.getElementById('pod-rewrite-btn')?.addEventListener('click', podRewriteScript);
+
+  // 剧本编辑器字数/角色统计
+  const scriptEditor = document.getElementById('pod-script-editor');
+  if (scriptEditor) {
+    scriptEditor.addEventListener('input', () => updatePodcastScriptStats());
+  }
+
+  // 自动匹配音色
+  document.getElementById('pod-auto-voice-btn')?.addEventListener('click', podSuggestVoices);
+
+  // 生成设置滑块实时显示
+  const sliders = [
+    ['pod-switch-pause', 'pod-switch-pause-val', 's'],
+    ['pod-same-pause', 'pod-same-pause-val', 's'],
+    ['pod-speed', 'pod-speed-val', 'x'],
+  ];
+  sliders.forEach(([id, valId, suffix]) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', () => {
+        document.getElementById(valId).textContent = parseFloat(el.value).toFixed(2) + suffix;
+      });
+    }
+  });
+
+  // 生成播客
+  document.getElementById('pod-generate-btn')?.addEventListener('click', podGenerate);
+
+  // 重新生成
+  document.getElementById('pod-regenerate')?.addEventListener('click', () => {
+    document.getElementById('pod-result-section').style.display = 'none';
+    document.getElementById('pod-generate-section').style.display = 'block';
+    podcastState.result = null;
+  });
+
+  // 下载剧本
+  document.getElementById('pod-download-script')?.addEventListener('click', () => {
+    if (!podcastState.result) return;
+    downloadPodcastFile(podcastState.result.script_path, 'podcast_script.txt');
+  });
+
+  // 下载字幕
+  document.getElementById('pod-download-srt')?.addEventListener('click', () => {
+    if (!podcastState.result) return;
+    downloadPodcastFile(podcastState.result.srt_path, 'podcast_subtitle.srt');
+  });
+
+  // 打开目录
+  document.getElementById('pod-open-folder')?.addEventListener('click', () => {
+    if (!podcastState.jobId) return;
+    api(`/api/podcast/jobs/${podcastState.jobId}/open-folder`, { method: 'POST' })
+      .then(() => toast('已打开输出目录', 'success'))
+      .catch(e => toast(`打开目录失败: ${e.message}`, 'error'));
+  });
+
+  // 步骤导航
+  document.getElementById('pod-prev-btn')?.addEventListener('click', () => podcastGoToStep(podcastState.currentStep - 1));
+  document.getElementById('pod-next-btn')?.addEventListener('click', podcastNext);
+}
+
+// 渲染步骤指示器
+function renderPodcastStepper() {
+  const steps = document.querySelectorAll('#podcast-stepper .wizard-step');
+  const lines = document.querySelectorAll('#podcast-stepper .wizard-step-line');
+  steps.forEach(step => {
+    const stepNum = parseInt(step.dataset.step);
+    step.classList.remove('active', 'completed');
+    if (stepNum < podcastState.currentStep) {
+      step.classList.add('completed');
+    } else if (stepNum === podcastState.currentStep) {
+      step.classList.add('active');
+    }
+  });
+  lines.forEach((line, idx) => {
+    line.classList.toggle('completed', idx + 1 < podcastState.currentStep);
+  });
+  // 显示当前面板
+  document.querySelectorAll('[id^="podcast-panel-"]').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById(`podcast-panel-${podcastState.currentStep}`);
+  if (panel) panel.classList.add('active');
+  // 更新导航
+  document.getElementById('pod-progress-text-nav').textContent = `第 ${podcastState.currentStep} / 5 步`;
+  document.getElementById('pod-prev-btn').disabled = podcastState.currentStep === 1;
+  const nextBtn = document.getElementById('pod-next-btn');
+  if (podcastState.currentStep === 5) {
+    nextBtn.innerHTML = '<i data-lucide="rotate-ccw"></i> 重新开始';
+  } else {
+    nextBtn.innerHTML = '下一步 <i data-lucide="arrow-right"></i>';
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+// 步骤跳转
+function podcastGoToStep(step) {
+  if (step < 1 || step > 5) return;
+  podcastState.currentStep = step;
+  renderPodcastStepper();
+}
+
+// 下一步（含校验）
+function podcastNext() {
+  if (podcastState.currentStep >= 5) {
+    // 重新开始：重置状态
+    podcastState.currentStep = 1;
+    podcastState.maxVisitedStep = 1;
+    podcastState.content = '';
+    podcastState.script = '';
+    podcastState.voiceMap = {};
+    podcastState.result = null;
+    podcastState.jobId = null;
+    // 清空表单
+    document.getElementById('pod-manual-text').value = '';
+    document.getElementById('pod-manual-count').textContent = '0';
+    document.getElementById('pod-url-input').value = '';
+    document.getElementById('pod-extract-preview').innerHTML = '';
+    document.getElementById('pod-file-preview').innerHTML = '';
+    document.getElementById('pod-topic-input').value = '';
+    document.getElementById('pod-script-editor').value = '';
+    updatePodcastScriptStats();
+    document.getElementById('pod-voice-list').innerHTML = '';
+    document.getElementById('pod-result-section').style.display = 'none';
+    document.getElementById('pod-progress-section').style.display = 'none';
+    document.getElementById('pod-generate-section').style.display = 'block';
+    renderPodcastStepper();
+    return;
+  }
+
+  // 步骤 1 校验：必须有内容
+  if (podcastState.currentStep === 1) {
+    const content = collectPodcastContent();
+    if (!content) {
+      toast('请输入或提取内容后再继续', 'error');
+      return;
+    }
+    podcastState.content = content;
+  }
+
+  // 步骤 2 校验：必须有剧本
+  if (podcastState.currentStep === 2) {
+    const script = (document.getElementById('pod-script-editor')?.value || '').trim();
+    if (!script) {
+      toast('请先生成或粘贴剧本后再继续', 'error');
+      return;
+    }
+    podcastState.script = script;
+    // 进入步骤 3 时自动渲染音色列表
+    setTimeout(() => renderPodcastVoiceList(), 100);
+  }
+
+  // 步骤 3 校验：每个角色必须有音色
+  if (podcastState.currentStep === 3) {
+    const roles = parsePodcastRoles(podcastState.script);
+    const missing = roles.filter(r => !podcastState.voiceMap[r]);
+    if (missing.length > 0) {
+      toast(`以下角色未分配音色：${missing.join('、')}`, 'error');
+      return;
+    }
+  }
+
+  podcastState.currentStep++;
+  podcastState.maxVisitedStep = Math.max(podcastState.maxVisitedStep, podcastState.currentStep);
+  renderPodcastStepper();
+}
+
+// 收集步骤 1 的内容
+function collectPodcastContent() {
+  switch (podcastState.source) {
+    case 'manual':
+      return (document.getElementById('pod-manual-text')?.value || '').trim();
+    case 'url':
+      return podcastState.content; // 已在提取时保存
+    case 'file':
+      return podcastState.content; // 已在文件读取时保存
+    case 'topic':
+      return (document.getElementById('pod-topic-input')?.value || '').trim();
+    default:
+      return '';
+  }
+}
+
+// 从网络链接提取内容
+async function podExtractContent() {
+  const url = (document.getElementById('pod-url-input')?.value || '').trim();
+  if (!url) {
+    toast('请输入链接', 'error');
+    return;
+  }
+  const btn = document.getElementById('pod-extract-btn');
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> 提取中...';
+  if (window.lucide) lucide.createIcons();
+  const preview = document.getElementById('pod-extract-preview');
+  preview.innerHTML = '<div class="hint" style="text-align:center;padding:16px"><i data-lucide="loader-2" class="spin"></i> 正在提取内容，视频链接可能需要 1-3 分钟...</div>';
+  if (window.lucide) lucide.createIcons();
+  try {
+    const data = await api('/api/podcast/extract', { method: 'POST', body: { url } });
+    podcastState.content = data.text;
+    preview.innerHTML = `
+      <div class="card" style="background:var(--bg-secondary);padding:12px">
+        <div class="hint" style="margin-bottom:8px">提取成功 · ${data.char_count} 字</div>
+        <div style="max-height:200px;overflow-y:auto;font-size:13px;line-height:1.6;white-space:pre-wrap">${escapeHtml(data.text.substring(0, 2000))}${data.text.length > 2000 ? '\n...(已截断预览)' : ''}</div>
+      </div>`;
+    if (window.lucide) lucide.createIcons();
+    toast(`提取成功，共 ${data.char_count} 字`, 'success');
+  } catch (e) {
+    preview.innerHTML = `<div class="hint" style="color:var(--color-error)">提取失败：${escapeHtml(e.message)}</div>`;
+    toast(`提取失败: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+// 处理文件上传
+function handlePodcastFile(file) {
+  if (!file) return;
+  if (!/\.(txt|md)$/i.test(file.name)) {
+    toast('仅支持 .txt / .md 格式', 'error');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = e.target.result;
+    podcastState.content = text;
+    const preview = document.getElementById('pod-file-preview');
+    preview.innerHTML = `
+      <div class="card" style="background:var(--bg-secondary);padding:12px">
+        <div class="hint" style="margin-bottom:4px"><i data-lucide="file-text"></i> ${escapeHtml(file.name)} · ${text.length} 字</div>
+        <div style="max-height:150px;overflow-y:auto;font-size:13px;line-height:1.6;white-space:pre-wrap">${escapeHtml(text.substring(0, 1000))}${text.length > 1000 ? '\n...' : ''}</div>
+      </div>`;
+    if (window.lucide) lucide.createIcons();
+    toast(`文件已加载，共 ${text.length} 字`, 'success');
+  };
+  reader.onerror = () => toast('文件读取失败', 'error');
+  reader.readAsText(file, 'utf-8');
+}
+
+// AI 改写剧本
+async function podRewriteScript() {
+  // 获取内容（如果步骤1未提取，尝试实时收集）
+  let content = podcastState.content;
+  if (!content) {
+    content = collectPodcastContent();
+    if (!content) {
+      toast('请先在步骤 1 输入或提取内容', 'error');
+      return;
+    }
+    podcastState.content = content;
+  }
+
+  const roleCount = parseInt(document.getElementById('pod-role-count').value);
+  const duration = parseInt(document.getElementById('pod-duration').value);
+  const style = document.getElementById('pod-rewrite-style').value;
+  const roleDesc = (document.getElementById('pod-role-desc')?.value || '').trim();
+  // 判断模式：topic 为 AI 生成，其他为改写
+  const mode = podcastState.source === 'topic' ? 'generate' : 'rewrite';
+
+  const btn = document.getElementById('pod-rewrite-btn');
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> AI 改写中...';
+  if (window.lucide) lucide.createIcons();
+  try {
+    const data = await api('/api/podcast/rewrite', {
+      method: 'POST',
+      body: { content, mode, role_count: roleCount, style, duration_minutes: duration, role_desc: roleDesc },
+    });
+    document.getElementById('pod-script-editor').value = data.script;
+    podcastState.script = data.script;
+    updatePodcastScriptStats();
+    toast(`剧本生成成功，共 ${data.char_count} 字`, 'success');
+  } catch (e) {
+    toast(`改写失败: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+// 更新剧本统计
+function updatePodcastScriptStats() {
+  const script = document.getElementById('pod-script-editor')?.value || '';
+  document.getElementById('pod-script-count').textContent = script.length;
+  const roles = parsePodcastRoles(script);
+  document.getElementById('pod-role-count-display').textContent = roles.length;
+}
+
+// 解析剧本中的角色列表（按首次出现顺序）
+function parsePodcastRoles(script) {
+  if (!script) return [];
+  const roles = [];
+  const seen = new Set();
+  const lines = script.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//')) continue;
+    const match = trimmed.match(/^([^:：]+)[:：]/);
+    if (match) {
+      const role = match[1].trim();
+      if (role && !seen.has(role)) {
+        roles.push(role);
+        seen.add(role);
+      }
+    }
+  }
+  return roles;
+}
+
+// 渲染音色分配列表
+function renderPodcastVoiceList() {
+  const roles = parsePodcastRoles(podcastState.script || document.getElementById('pod-script-editor')?.value || '');
+  const container = document.getElementById('pod-voice-list');
+  if (!container) return;
+  if (roles.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon"><i data-lucide="users"></i></div><div>请先生成剧本</div></div>';
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+  // 如果音色列表为空，尝试加载
+  if (podcastState.voiceList.length === 0) {
+    container.innerHTML = '<div class="hint" style="text-align:center;padding:16px"><i data-lucide="loader-2" class="spin"></i> 正在加载音色列表...</div>';
+    if (window.lucide) lucide.createIcons();
+    loadPodcastVoices().then(() => renderPodcastVoiceList());
+    return;
+  }
+  container.innerHTML = roles.map((role, idx) => {
+    const currentVoice = podcastState.voiceMap[role] || '';
+    const options = podcastState.voiceList.map(v => {
+      const voiceId = v.id || v.voice_id || v.name;
+      const label = v.label || v.name || voiceId;
+      const gender = v.gender ? `（${v.gender}）` : '';
+      return `<option value="${escapeHtml(voiceId)}" ${currentVoice === voiceId ? 'selected' : ''}>${escapeHtml(label)}${gender}</option>`;
+    }).join('');
+    return `
+      <div class="voice-assign-row" style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border-light)">
+        <div style="width:40px;height:40px;border-radius:50%;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-weight:600;color:var(--primary)">
+          ${escapeHtml(role.substring(0, 2))}
+        </div>
+        <div style="flex:1">
+          <div style="font-weight:600">${escapeHtml(role)}</div>
+          <div class="hint">角色 ${idx + 1}</div>
+        </div>
+        <select class="form-input pod-voice-select" data-role="${escapeHtml(role)}" style="width:200px">
+          <option value="">请选择音色</option>
+          ${options}
+        </select>
+      </div>`;
+  }).join('');
+  // 绑定音色选择
+  container.querySelectorAll('.pod-voice-select').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const role = sel.dataset.role;
+      if (sel.value) {
+        podcastState.voiceMap[role] = sel.value;
+      } else {
+        delete podcastState.voiceMap[role];
+      }
+    });
+  });
+}
+
+// 自动匹配音色
+async function podSuggestVoices() {
+  const script = document.getElementById('pod-script-editor')?.value || podcastState.script || '';
+  if (!script.trim()) {
+    toast('请先生成剧本', 'error');
+    return;
+  }
+  const btn = document.getElementById('pod-auto-voice-btn');
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> 匹配中...';
+  if (window.lucide) lucide.createIcons();
+  try {
+    const data = await api('/api/podcast/suggest-voices', { method: 'POST', body: { script } });
+    // data.voice_map: {role: {voice_id, gender, label}}
+    const voiceMap = data.voice_map || {};
+    podcastState.voiceMap = {};
+    Object.entries(voiceMap).forEach(([role, info]) => {
+      podcastState.voiceMap[role] = info.voice_id;
+    });
+    // 重新渲染列表
+    renderPodcastVoiceList();
+    // 重新设置选中值
+    setTimeout(() => {
+      document.querySelectorAll('.pod-voice-select').forEach(sel => {
+        const role = sel.dataset.role;
+        if (podcastState.voiceMap[role]) {
+          sel.value = podcastState.voiceMap[role];
+        }
+      });
+    }, 50);
+    toast('音色已自动匹配', 'success');
+  } catch (e) {
+    toast(`匹配失败: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+// 生成播客
+async function podGenerate() {
+  const script = document.getElementById('pod-script-editor')?.value || podcastState.script || '';
+  if (!script.trim()) {
+    toast('剧本不能为空', 'error');
+    return;
+  }
+  // 重新收集音色映射（防止用户在步骤3修改后未触发 change）
+  document.querySelectorAll('.pod-voice-select').forEach(sel => {
+    const role = sel.dataset.role;
+    if (sel.value) podcastState.voiceMap[role] = sel.value;
+  });
+  if (Object.keys(podcastState.voiceMap).length === 0) {
+    toast('请先分配音色', 'error');
+    return;
+  }
+
+  const outputName = (document.getElementById('pod-output-name')?.value || '').trim();
+
+  const btn = document.getElementById('pod-generate-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> 提交中...';
+  if (window.lucide) lucide.createIcons();
+  document.getElementById('pod-generate-section').style.display = 'none';
+  document.getElementById('pod-progress-section').style.display = 'block';
+  document.getElementById('pod-progress-bar').style.width = '0%';
+  document.getElementById('pod-progress-text').textContent = '正在提交任务...';
+
+  try {
+    const data = await api('/api/podcast/generate', {
+      method: 'POST',
+      body: { script, voice_map: podcastState.voiceMap, output_name: outputName },
+    });
+    podcastState.jobId = data.job_id;
+    // 开始轮询
+    pollPodcastJob(data.job_id);
+  } catch (e) {
+    toast(`提交失败: ${e.message}`, 'error');
+    document.getElementById('pod-generate-section').style.display = 'block';
+    document.getElementById('pod-progress-section').style.display = 'none';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="rocket"></i> 开始生成播客';
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+// 轮询播客任务状态
+function pollPodcastJob(jobId) {
+  if (podcastState.pollTimer) clearInterval(podcastState.pollTimer);
+  podcastState.pollTimer = setInterval(async () => {
+    try {
+      const job = await api(`/api/podcast/jobs/${jobId}`);
+      if (job.status === 'running' && job.progress) {
+        const pct = job.progress.total > 0 ? (job.progress.current / job.progress.total * 100) : 0;
+        document.getElementById('pod-progress-bar').style.width = pct + '%';
+        document.getElementById('pod-progress-text').textContent = job.progress.message || `进度 ${job.progress.current}/${job.progress.total}`;
+      } else if (job.status === 'success') {
+        clearInterval(podcastState.pollTimer);
+        podcastState.pollTimer = null;
+        podcastState.result = job.result;
+        document.getElementById('pod-progress-bar').style.width = '100%';
+        document.getElementById('pod-progress-text').textContent = '生成完成！';
+        setTimeout(() => showPodcastResult(job.result), 500);
+      } else if (job.status === 'failed') {
+        clearInterval(podcastState.pollTimer);
+        podcastState.pollTimer = null;
+        toast(`生成失败: ${job.error}`, 'error');
+        document.getElementById('pod-progress-section').style.display = 'none';
+        document.getElementById('pod-generate-section').style.display = 'block';
+      }
+    } catch (e) {
+      console.warn('轮询播客任务失败:', e.message);
+    }
+  }, 2000);
+}
+
+// 显示生成结果
+function showPodcastResult(result) {
+  document.getElementById('pod-progress-section').style.display = 'none';
+  document.getElementById('pod-result-section').style.display = 'block';
+  // 音频播放器
+  const audioPath = result.audio_path || '';
+  const audioUrl = `/api/files?path=${encodeURIComponent(audioPath)}`;
+  document.getElementById('pod-audio-player').src = audioUrl;
+  // 统计
+  document.getElementById('pod-result-duration').textContent = formatPodcastDuration(result.total_duration);
+  document.getElementById('pod-result-segments').textContent = result.segment_count || 0;
+  document.getElementById('pod-result-roles').textContent = Object.keys(podcastState.voiceMap).length;
+  if (window.lucide) lucide.createIcons();
+  toast('播客生成完成！', 'success');
+}
+
+// 格式化时长
+function formatPodcastDuration(seconds) {
+  if (!seconds) return '0s';
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return m > 0 ? `${m}分${s}秒` : `${s}秒`;
+}
+
+// 下载播客文件
+function downloadPodcastFile(filePath, filename) {
+  if (!filePath) {
+    toast('文件路径不存在', 'error');
+    return;
+  }
+  const url = `/api/files?path=${encodeURIComponent(filePath)}`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 // ========== 文案工作台页面 ==========

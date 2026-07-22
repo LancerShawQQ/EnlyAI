@@ -66,6 +66,23 @@ tts:
     # 实时流式解码（更快）
     realtime_streaming: true
 
+# 语音博客配置
+podcast:
+  # 默认角色切换停顿（秒）
+  role_switch_pause: 0.4
+  # 同角色连续说话停顿（秒）
+  same_role_pause: 0.12
+  # 片段前引导静音（秒）
+  lead_in_silence: 0.10
+  # 默认风格
+  default_style: "轻松对话"
+  # 默认角色数量
+  default_role_count: 3
+  # 默认时长（分钟）
+  default_duration_minutes: 5
+  # 输出采样率
+  output_sample_rate: 24000
+
 # 数字人配置（口播生成）
 avatar:
   provider: wav2lip  # wav2lip / musetalk / latentsync / echomimic / mock

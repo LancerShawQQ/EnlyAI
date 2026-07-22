@@ -24,6 +24,7 @@ from .modules.avatar_engine import AvatarEngine
 from .modules.broll_engine import BRollEngine
 from .modules.cover_generator import CoverGenerator
 from .modules.originality_checker import OriginalityChecker
+from .modules.podcast_engine import PodcastEngine
 from .modules.publisher import Publisher
 from .modules.script_extractor import ScriptExtractor
 from .modules.script_writer import ScriptWriter
@@ -221,6 +222,7 @@ class EnlyAI:
             "title": TitleGenerator(llm_client=llm),
             "cover": CoverGenerator(ffmpeg=ff),
             "publish": Publisher(),
+            "podcast": PodcastEngine(config=self.config, tts_engine=TTSEngine(gpu_runner=gpu), llm_client=llm),
         }
 
         for name, module in self.modules.items():
@@ -719,6 +721,83 @@ class EnlyAI:
         shutil.rmtree(target)
         self.logger.info(f"已删除音色: {voice_id}")
         return True
+
+    # ============ 语音博客 ============
+
+    def get_podcast_engine(self) -> PodcastEngine:
+        """获取播客引擎实例（懒加载 TTS/LLM）"""
+        engine = self.modules.get("podcast")
+        if engine is None:
+            engine = PodcastEngine(
+                config=self.config,
+                tts_engine=TTSEngine(gpu_runner=self.gpu, config=self.config),
+                llm_client=self.llm,
+            )
+            self.modules["podcast"] = engine
+        return engine
+
+    def podcast_rewrite(
+        self,
+        content: str,
+        mode: str = "rewrite",
+        role_count: int = 3,
+        style: str = "轻松对话",
+        duration_minutes: int = 5,
+        role_desc: str = "",
+    ) -> str:
+        """AI 将内容/主题改写为播客剧本"""
+        engine = self.get_podcast_engine()
+        return engine.rewrite_script(
+            content=content,
+            mode=mode,
+            role_count=role_count,
+            style=style,
+            duration_minutes=duration_minutes,
+            role_desc=role_desc,
+        )
+
+    def podcast_suggest_voices(self, script_text: str) -> dict:
+        """根据剧本自动建议音色分配"""
+        engine = self.get_podcast_engine()
+        return engine.suggest_voice_map(script_text)
+
+    def podcast_generate(
+        self,
+        script_text: str,
+        voice_map: dict[str, str],
+        output_name: str = "",
+        progress_callback: Optional[Callable[[str, str, dict], None]] = None,
+    ) -> dict:
+        """生成播客音频（同步）
+
+        Returns:
+            含 audio_path/srt_path/timestamps_path/script_path/total_duration 等
+        """
+        engine = self.get_podcast_engine()
+
+        # 输出目录：放在 workspace_data/podcasts 下，供 /api/files 访问（安全检查仅允许 workspace_data）
+        output_root = Path(self.config.get("project.work_root", "./workspace_data")) / "podcasts"
+        output_root.mkdir(parents=True, exist_ok=True)
+        if not output_name:
+            output_name = f"podcast_{time.strftime('%Y%m%d_%H%M%S')}"
+        output_dir = output_root / output_name
+
+        def _progress(current, total, message):
+            if progress_callback:
+                progress_callback("podcast", "running", {
+                    "current": current,
+                    "total": total,
+                    "message": message,
+                })
+
+        result = engine.generate(
+            script_text=script_text,
+            voice_map=voice_map,
+            output_dir=output_dir,
+            progress_callback=_progress,
+        )
+        result["output_dir"] = str(output_dir)
+        return result
 
     # ============ 健康检查 ============
 

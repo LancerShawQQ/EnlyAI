@@ -8,6 +8,7 @@ import asyncio
 import json
 import shutil
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -128,6 +129,30 @@ class BatchGenerateRequest(BaseModel):
 
 class TemplateApplyRequest(BaseModel):
     template_id: str
+
+
+# ============ 语音博客请求模型 ============
+
+class PodcastRewriteRequest(BaseModel):
+    """播客剧本改写请求"""
+    content: str = ""                  # 原始内容（文章文本）或主题描述
+    mode: str = "rewrite"              # rewrite（改写已有内容）| generate（根据主题生成）
+    role_count: int = 3                # 角色数量（2-5）
+    style: str = "轻松对话"            # 风格
+    duration_minutes: int = 5          # 目标时长（分钟）
+    role_desc: str = ""                # 角色描述
+
+
+class PodcastSuggestVoicesRequest(BaseModel):
+    """播客音色建议请求"""
+    script: str = ""
+
+
+class PodcastGenerateRequest(BaseModel):
+    """播客生成请求"""
+    script: str = ""                   # 播客剧本文本
+    voice_map: dict[str, str] = {}     # {角色名: 音色ID}
+    output_name: str = ""              # 输出目录名（可选）
 
 
 # ============ FastAPI 应用 ============
@@ -1333,6 +1358,158 @@ def create_app() -> FastAPI:
             },
         }
 
+    # ============ 语音博客 API ============
+
+    # 模块级播客任务进度存储（重启后丢失，适合轻量级场景）
+    _podcast_jobs: dict[str, dict[str, Any]] = {}
+
+    @app.post("/api/podcast/rewrite")
+    async def podcast_rewrite(req: PodcastRewriteRequest):
+        """AI 将文章/主题改写为播客剧本"""
+        if not req.content.strip():
+            return JSONResponse({"error": "内容不能为空"}, status_code=400)
+        try:
+            script = _get_app().podcast_rewrite(
+                content=req.content,
+                mode=req.mode,
+                role_count=max(2, min(5, req.role_count)),
+                style=req.style,
+                duration_minutes=max(1, min(30, req.duration_minutes)),
+                role_desc=req.role_desc,
+            )
+            return {"script": script, "char_count": len(script)}
+        except Exception as e:
+            logger.exception(f"播客剧本改写失败: {e}")
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    @app.post("/api/podcast/suggest-voices")
+    async def podcast_suggest_voices(req: PodcastSuggestVoicesRequest):
+        """根据剧本自动建议音色分配"""
+        if not req.script.strip():
+            return JSONResponse({"error": "剧本不能为空"}, status_code=400)
+        try:
+            suggestion = _get_app().podcast_suggest_voices(req.script)
+            return {"voice_map": suggestion}
+        except Exception as e:
+            logger.exception(f"音色建议失败: {e}")
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    @app.post("/api/podcast/generate")
+    async def podcast_generate(req: PodcastGenerateRequest):
+        """生成播客音频（异步，返回 job_id 供轮询）"""
+        if not req.script.strip():
+            return JSONResponse({"error": "剧本不能为空"}, status_code=400)
+        if not req.voice_map:
+            return JSONResponse({"error": "音色映射不能为空"}, status_code=400)
+
+        import threading
+        import uuid
+
+        job_id = f"pod_{uuid.uuid4().hex[:10]}"
+        app_obj = _get_app()
+
+        # 初始化进度存储
+        _podcast_jobs[job_id] = {
+            "status": "pending",
+            "progress": None,
+            "result": None,
+            "error": None,
+            "created_at": time.time(),
+        }
+
+        def _run():
+            _podcast_jobs[job_id]["status"] = "running"
+            try:
+                def _progress_cb(step, status, data):
+                    _podcast_jobs[job_id]["progress"] = data
+
+                result = app_obj.podcast_generate(
+                    script_text=req.script,
+                    voice_map=req.voice_map,
+                    output_name=req.output_name or job_id,
+                    progress_callback=_progress_cb,
+                )
+                _podcast_jobs[job_id]["status"] = "success"
+                _podcast_jobs[job_id]["result"] = result
+            except Exception as e:
+                _podcast_jobs[job_id]["status"] = "failed"
+                _podcast_jobs[job_id]["error"] = str(e)
+                logger.exception(f"播客生成失败 job={job_id}: {e}")
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+
+        return {"job_id": job_id, "status": "pending"}
+
+    @app.get("/api/podcast/jobs/{job_id}")
+    async def podcast_job_status(job_id: str):
+        """查询播客生成任务状态"""
+        job = _podcast_jobs.get(job_id)
+        if job is None:
+            return JSONResponse({"error": "任务不存在"}, status_code=404)
+        return job
+
+    @app.get("/api/podcast/voices")
+    async def podcast_voices():
+        """获取可用于播客的音色列表（MOSS 内置 + 克隆音色）"""
+        try:
+            voices = _get_app().list_voices()
+            # 过滤出 MOSS 内置音色和克隆音色（播客主要用这些）
+            podcast_voices = [v for v in voices if v.get("type") in ("preset", "custom", "provider_default")]
+            return {"voices": podcast_voices}
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    @app.post("/api/podcast/extract")
+    async def podcast_extract(req: dict):
+        """从网络链接提取文本内容（文章/视频文案），用于播客内容来源
+
+        Body: {"url": "https://..."}
+        复用 ScriptExtractor.extract()，支持抖音/快手/B站/YouTube 视频文案 + 文章正文提取。
+        """
+        url = (req.get("url") or "").strip()
+        if not url:
+            return JSONResponse({"error": "链接不能为空"}, status_code=400)
+        try:
+            loop = asyncio.get_event_loop()
+            extractor = ScriptExtractor(ffmpeg=_get_app().ffmpeg)
+            text = await loop.run_in_executor(None, lambda: extractor.extract(url))
+            char_count = len(text)
+            return {"text": text, "char_count": char_count}
+        except Exception as e:
+            logger.exception(f"播客内容提取失败: {e}")
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    @app.post("/api/podcast/jobs/{job_id}/open-folder")
+    async def podcast_open_folder(job_id: str):
+        """打开播客任务输出目录"""
+        import os
+        import sys
+        from ..core.config import PROJECT_ROOT
+
+        job = _podcast_jobs.get(job_id)
+        if not job or not job.get("result"):
+            raise HTTPException(404, "任务或结果不存在")
+        output_dir = job["result"].get("output_dir")
+        if not output_dir:
+            raise HTTPException(404, "输出目录不存在")
+        out_path = Path(output_dir)
+        if not out_path.exists():
+            raise HTTPException(404, f"目录不存在: {output_dir}")
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(out_path))
+            elif sys.platform == "darwin":
+                import subprocess
+                subprocess.Popen(["open", str(out_path)])
+            else:
+                import subprocess
+                subprocess.Popen(["xdg-open", str(out_path)])
+            return {"success": True, "path": str(out_path)}
+        except Exception as e:
+            logger.error(f"打开播客目录失败: {e}")
+            raise HTTPException(500, f"打开目录失败: {e}")
+
     # ============ 多平台一键分发 API（对标蝉妈妈/新榜矩阵分发） ============
 
     @app.post("/api/publish")
@@ -1483,6 +1660,17 @@ def create_app() -> FastAPI:
         4. 扫码确认后Cookie自动保存
         """
         from ..modules.publisher import Publisher
+        # 清除旧的 publisher 实例（如果有），避免残留状态干扰新二维码
+        old_publisher = getattr(app.state, "bilibili_publisher", None)
+        if old_publisher is not None:
+            try:
+                old_publisher._bilibili_qr_login = None
+                old_publisher._bilibili_qr_done = False
+                old_publisher._bilibili_qr_cookie = None
+            except Exception:
+                pass
+            app.state.bilibili_publisher = None
+
         publisher = Publisher()
         result = publisher.login_bilibili_qrcode()
         if not result.get("success"):
@@ -1493,13 +1681,22 @@ def create_app() -> FastAPI:
 
     @app.get("/api/publish/login/bilibili/check")
     async def bilibili_login_check():
-        """检查B站扫码登录状态（配合 /api/publish/login/bilibili/qrcode 使用）"""
+        """检查B站扫码登录状态（配合 /api/publish/login/bilibili/qrcode 使用）
+
+        注意：成功后不立即清除 publisher，避免前端轮询竞态条件：
+        - 前端 setTimeout 已调度下一次请求，但 app.state.bilibili_publisher 已被清除
+        - 会导致下一次请求返回 400 "请先调用..." 错误
+        - publisher 会在以下情况下被清除：
+          1. 生成新二维码时（覆盖旧实例）
+          2. 二维码过期时（check_bilibili_login 内部清除）
+          3. 服务重启时（内存状态丢失）
+        """
         publisher = getattr(app.state, "bilibili_publisher", None)
         if not publisher:
             raise HTTPException(400, "请先调用 /api/publish/login/bilibili/qrcode 生成二维码")
         result = publisher.check_bilibili_login()
-        if result.get("status") == "success":
-            app.state.bilibili_publisher = None
+        # 不再立即清除 publisher，让 check_bilibili_login 内部通过 _bilibili_qr_done 缓存成功状态
+        # 这样即使前端轮询有竞态条件，后续 check 也会返回缓存的成功状态
         return result
 
     @app.post("/api/publish/login/{platform}")

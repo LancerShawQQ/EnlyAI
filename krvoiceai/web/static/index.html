@@ -103,6 +103,9 @@
         <button class="nav-item active" id="nav-wizard">
           <span class="nav-icon"><i data-lucide="wand-2"></i></span><span>创作向导</span>
         </button>
+        <button class="nav-item" id="nav-podcast">
+          <span class="nav-icon"><i data-lucide="podcast"></i></span><span>语音博客</span>
+        </button>
         <button class="nav-item" id="nav-resources">
           <span class="nav-icon"><i data-lucide="folder-open"></i></span><span>资源中心</span>
         </button>
@@ -1484,6 +1487,277 @@
               <button class="btn btn-primary" id="qe-confirm-btn" onclick="confirmQuickEdit()">应用</button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面: 语音博客 ===== -->
+      <div class="page" id="page-podcast">
+        <!-- 步骤指示器 -->
+        <div class="wizard-stepper" id="podcast-stepper">
+          <div class="wizard-step active" data-step="1">
+            <div class="wizard-step-circle">1</div>
+            <div class="wizard-step-label">内容来源</div>
+            <div class="wizard-step-line"></div>
+          </div>
+          <div class="wizard-step" data-step="2">
+            <div class="wizard-step-circle">2</div>
+            <div class="wizard-step-label">剧本改写</div>
+            <div class="wizard-step-line"></div>
+          </div>
+          <div class="wizard-step" data-step="3">
+            <div class="wizard-step-circle">3</div>
+            <div class="wizard-step-label">角色音色</div>
+            <div class="wizard-step-line"></div>
+          </div>
+          <div class="wizard-step" data-step="4">
+            <div class="wizard-step-circle">4</div>
+            <div class="wizard-step-label">生成设置</div>
+            <div class="wizard-step-line"></div>
+          </div>
+          <div class="wizard-step" data-step="5">
+            <div class="wizard-step-circle">5</div>
+            <div class="wizard-step-label">生成结果</div>
+          </div>
+        </div>
+
+        <!-- Step 1: 内容来源 -->
+        <div class="wizard-panel active" id="podcast-panel-1">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="file-text"></i></span> 内容来源</div>
+              <span class="hint">选择内容来源方式</span>
+            </div>
+            <div class="sub-tabs">
+              <button class="sub-tab active" data-pod-source="manual" type="button">文章输入</button>
+              <button class="sub-tab" data-pod-source="url" type="button">网络链接</button>
+              <button class="sub-tab" data-pod-source="file" type="button">本地文档</button>
+              <button class="sub-tab" data-pod-source="topic" type="button">AI 生成</button>
+            </div>
+
+            <!-- 文章输入 -->
+            <div class="sub-page active" id="pod-source-manual">
+              <textarea class="form-input" id="pod-manual-text" rows="8" placeholder="粘贴或输入文章内容...&#10;支持任意文章，AI 将自动改写为播客剧本"></textarea>
+              <div class="script-stats">
+                <span><i data-lucide="type"></i> <span id="pod-manual-count">0</span> 字</span>
+              </div>
+            </div>
+
+            <!-- 网络链接 -->
+            <div class="sub-page" id="pod-source-url">
+              <textarea class="form-input" id="pod-url-input" rows="4" placeholder="粘贴视频/文章链接或分享文本...&#10;支持抖音/快手/B站/YouTube/微信公众号等"></textarea>
+              <div class="form-row" style="margin-top:12px">
+                <button class="btn btn-primary" id="pod-extract-btn" type="button">
+                  <i data-lucide="download"></i> 提取内容
+                </button>
+              </div>
+              <div id="pod-extract-preview" style="margin-top:12px"></div>
+            </div>
+
+            <!-- 本地文档 -->
+            <div class="sub-page" id="pod-source-file">
+              <div class="upload-area" id="pod-file-upload">
+                <i data-lucide="upload-cloud" style="width:32px;height:32px"></i>
+                <p>点击或拖拽文件到此处</p>
+                <span class="hint">支持 .txt / .md 格式</span>
+                <input type="file" id="pod-file-input" accept=".txt,.md" style="display:none">
+              </div>
+              <div id="pod-file-preview" style="margin-top:12px"></div>
+            </div>
+
+            <!-- AI 生成 -->
+            <div class="sub-page" id="pod-source-topic">
+              <textarea class="form-input" id="pod-topic-input" rows="3" placeholder="输入主题描述，如：&#10;AI 对未来职场的影响&#10;三个人讨论，分别从技术、商业、用户角度"></textarea>
+              <div class="form-row" style="margin-top:12px;align-items:center">
+                <label class="form-label">风格：</label>
+                <select class="form-input" id="pod-topic-style" style="flex:1">
+                  <option value="轻松对话">轻松对话</option>
+                  <option value="深度访谈">深度访谈</option>
+                  <option value="专业讨论">专业讨论</option>
+                  <option value="趣味科普">趣味科普</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: 剧本改写 -->
+        <div class="wizard-panel" id="podcast-panel-2">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="edit-3"></i></span> 剧本改写</div>
+              <span class="hint">AI 将内容改写为口语化播客剧本</span>
+            </div>
+
+            <div class="form-row" style="margin-bottom:16px">
+              <div style="flex:1">
+                <label class="form-label">角色数量</label>
+                <select class="form-input" id="pod-role-count">
+                  <option value="2">2 人</option>
+                  <option value="3" selected>3 人</option>
+                  <option value="4">4 人</option>
+                  <option value="5">5 人</option>
+                </select>
+              </div>
+              <div style="flex:1">
+                <label class="form-label">目标时长</label>
+                <select class="form-input" id="pod-duration">
+                  <option value="3">3 分钟</option>
+                  <option value="5" selected>5 分钟</option>
+                  <option value="10">10 分钟</option>
+                  <option value="15">15 分钟</option>
+                  <option value="20">20 分钟</option>
+                </select>
+              </div>
+              <div style="flex:1">
+                <label class="form-label">改写风格</label>
+                <select class="form-input" id="pod-rewrite-style">
+                  <option value="轻松对话">轻松对话</option>
+                  <option value="深度访谈">深度访谈</option>
+                  <option value="专业讨论">专业讨论</option>
+                  <option value="趣味科普">趣味科普</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="margin-bottom:12px">
+              <label class="form-label">角色描述（可选）</label>
+              <input type="text" class="form-input" id="pod-role-desc" placeholder="如：主持人、行业专家、普通用户">
+            </div>
+
+            <button class="btn btn-primary" id="pod-rewrite-btn" type="button" style="margin-bottom:16px">
+              <i data-lucide="sparkles"></i> AI 改写剧本
+            </button>
+
+            <div class="form-label">剧本预览（可编辑）</div>
+            <textarea class="form-input" id="pod-script-editor" rows="14" placeholder="点击「AI 改写剧本」生成，或直接粘贴剧本...&#10;&#10;格式：&#10;# 张三（男）&#10;张三: 大家好，欢迎收听本期播客。&#10;李四: 大家好，我是李四。"></textarea>
+            <div class="script-stats">
+              <span><i data-lucide="type"></i> <span id="pod-script-count">0</span> 字</span>
+              <span><i data-lucide="users"></i> <span id="pod-role-count-display">0</span> 个角色</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: 角色音色 -->
+        <div class="wizard-panel" id="podcast-panel-3">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="users"></i></span> 角色与音色</div>
+              <div>
+                <button class="btn btn-secondary btn-sm" id="pod-auto-voice-btn" type="button">
+                  <i data-lucide="wand-2"></i> 自动匹配
+                </button>
+              </div>
+            </div>
+            <div id="pod-voice-list"></div>
+          </div>
+        </div>
+
+        <!-- Step 4: 生成设置 -->
+        <div class="wizard-panel" id="podcast-panel-4">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="settings-2"></i></span> 生成设置</div>
+            </div>
+
+            <div class="form-row" style="margin-bottom:16px">
+              <div style="flex:1">
+                <label class="form-label">角色切换停顿（秒）</label>
+                <input type="range" class="form-range" id="pod-switch-pause" min="0.2" max="1.0" step="0.1" value="0.4">
+                <span class="hint" id="pod-switch-pause-val">0.4s</span>
+              </div>
+              <div style="flex:1">
+                <label class="form-label">同角色停顿（秒）</label>
+                <input type="range" class="form-range" id="pod-same-pause" min="0.05" max="0.5" step="0.01" value="0.12">
+                <span class="hint" id="pod-same-pause-val">0.12s</span>
+              </div>
+            </div>
+
+            <div class="form-row" style="margin-bottom:16px">
+              <div style="flex:1">
+                <label class="form-label">语速</label>
+                <input type="range" class="form-range" id="pod-speed" min="0.5" max="2.0" step="0.1" value="1.0">
+                <span class="hint" id="pod-speed-val">1.0x</span>
+              </div>
+              <div style="flex:1">
+                <label class="form-label">输出名称（可选）</label>
+                <input type="text" class="form-input" id="pod-output-name" placeholder="留空则自动生成">
+              </div>
+            </div>
+
+            <div style="margin-bottom:16px">
+              <label class="form-label">生成内容</label>
+              <div class="form-row">
+                <label class="checkbox-label"><input type="checkbox" id="pod-gen-srt" checked> 字幕文件（SRT）</label>
+                <label class="checkbox-label"><input type="checkbox" id="pod-gen-json" checked> 时间戳（JSON）</label>
+                <label class="checkbox-label"><input type="checkbox" id="pod-gen-script" checked> 剧本文件</label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 5: 生成结果 -->
+        <div class="wizard-panel" id="podcast-panel-5">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="play-circle"></i></span> 生成结果</div>
+            </div>
+
+            <div id="pod-generate-section">
+              <button class="btn btn-primary btn-lg" id="pod-generate-btn" type="button" style="width:100%;margin-bottom:16px">
+                <i data-lucide="rocket"></i> 开始生成播客
+              </button>
+            </div>
+
+            <div id="pod-progress-section" style="display:none">
+              <div class="progress-apple" style="margin-bottom:12px">
+                <div class="progress-bar" id="pod-progress-bar" style="width:0%"></div>
+              </div>
+              <div class="hint" id="pod-progress-text" style="text-align:center">准备中...</div>
+            </div>
+
+            <div id="pod-result-section" style="display:none">
+              <div style="margin-bottom:16px">
+                <audio id="pod-audio-player" controls style="width:100%"></audio>
+              </div>
+
+              <div class="form-row" style="margin-bottom:16px">
+                <div class="result-stat">
+                  <div class="result-stat-value" id="pod-result-duration">0s</div>
+                  <div class="result-stat-label">总时长</div>
+                </div>
+                <div class="result-stat">
+                  <div class="result-stat-value" id="pod-result-segments">0</div>
+                  <div class="result-stat-label">片段数</div>
+                </div>
+                <div class="result-stat">
+                  <div class="result-stat-value" id="pod-result-roles">0</div>
+                  <div class="result-stat-label">角色数</div>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <button class="btn btn-secondary" id="pod-download-script" type="button">
+                  <i data-lucide="download"></i> 下载剧本
+                </button>
+                <button class="btn btn-secondary" id="pod-download-srt" type="button">
+                  <i data-lucide="captions"></i> 下载字幕
+                </button>
+                <button class="btn btn-secondary" id="pod-open-folder" type="button">
+                  <i data-lucide="folder-open"></i> 打开目录
+                </button>
+                <button class="btn btn-primary" id="pod-regenerate" type="button">
+                  <i data-lucide="refresh-cw"></i> 重新生成
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部导航 -->
+        <div class="wizard-footer">
+          <button class="btn btn-secondary" id="pod-prev-btn"><i data-lucide="arrow-left"></i> 上一步</button>
+          <span class="wizard-progress-text" id="pod-progress-text-nav">第 1 / 5 步</span>
+          <button class="btn btn-primary" id="pod-next-btn">下一步 <i data-lucide="arrow-right"></i></button>
         </div>
       </div>
 
