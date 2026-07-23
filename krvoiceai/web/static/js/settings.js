@@ -1206,6 +1206,7 @@ async function loadCookieManager() {
 
 // B站扫码登录
 let _bilibiliLoginPolling = false;
+let _bilibiliLoginPollingTimer = null;
 async function loginBilibiliQrcode() {
   // 禁用所有 B站登录按钮（用 class 选择，避免 id 重复问题）
   const btns = document.querySelectorAll('.bilibili-login-btn');
@@ -1231,6 +1232,15 @@ async function loginBilibiliQrcode() {
   }
 }
 
+// 停止 B站登录轮询并清理 timer
+function _stopBilibiliLoginPolling() {
+  _bilibiliLoginPolling = false;
+  if (_bilibiliLoginPollingTimer) {
+    clearTimeout(_bilibiliLoginPollingTimer);
+    _bilibiliLoginPollingTimer = null;
+  }
+}
+
 function _showBilibiliQrcodeModal(hintText, imgSrc) {
   let modal = document.getElementById('bilibili-qrcode-modal');
   if (!modal) {
@@ -1248,7 +1258,7 @@ function _showBilibiliQrcodeModal(hintText, imgSrc) {
     `;
     document.body.appendChild(modal);
     modal.querySelector('#bilibili-qrcode-close').addEventListener('click', () => {
-      _bilibiliLoginPolling = false;
+      _stopBilibiliLoginPolling();
       _hideBilibiliQrcodeModal();
       const btns = document.querySelectorAll('.bilibili-login-btn');
       btns.forEach(b => { b.disabled = false; b.innerHTML = '扫码登录'; });
@@ -1281,7 +1291,7 @@ async function _pollBilibiliLogin() {
   try {
     const result = await api('/api/publish/login/bilibili/check');
     if (result.status === 'success' || result.success) {
-      _bilibiliLoginPolling = false;
+      _stopBilibiliLoginPolling();
       _updateBilibiliQrcodeModalStatus('✓ 登录成功，Cookie已自动保存', true, false);
       toast('B站登录成功！Cookie已自动保存', 'success');
       // 2秒后关闭弹窗
@@ -1296,21 +1306,29 @@ async function _pollBilibiliLogin() {
       return;
     }
     if (result.status === 'expired' || result.status === 'failed') {
-      _bilibiliLoginPolling = false;
+      _stopBilibiliLoginPolling();
       _updateBilibiliQrcodeModalStatus('二维码已过期，请关闭后重新扫码', false, true);
       toast('二维码已过期，请重新扫码', 'error');
       const btns = document.querySelectorAll('.bilibili-login-btn');
       btns.forEach(b => { b.disabled = false; b.innerHTML = '扫码登录'; });
       return;
     }
-    // 继续轮询（每2秒）
-    setTimeout(_pollBilibiliLogin, 2000);
+    // 继续轮询（每2秒）—— 用 timer ID 保存，便于在 success/error 时取消
+    _bilibiliLoginPollingTimer = setTimeout(_pollBilibiliLogin, 2000);
   } catch (e) {
-    _bilibiliLoginPolling = false;
-    _updateBilibiliQrcodeModalStatus(`检查扫码状态失败: ${e.message}`, false, true);
+    _stopBilibiliLoginPolling();
+    const errMsg = String(e.message || e);
+    // 如果是 "请先调用..." 错误，说明后端会话已结束（可能是服务重启或生成新二维码）
+    // 此时静默处理，不显示刺眼的错误 toast，只更新弹窗状态
+    if (errMsg.includes('请先调用') || errMsg.includes('生成二维码')) {
+      _updateBilibiliQrcodeModalStatus('登录会话已结束，请关闭后重新扫码', false, true);
+      // 不弹 toast，避免用户已成功登录后还看到错误提示
+    } else {
+      _updateBilibiliQrcodeModalStatus(`检查扫码状态失败: ${errMsg}`, false, true);
+      toast(`检查扫码状态失败: ${errMsg}`, 'error');
+    }
     const btns = document.querySelectorAll('.bilibili-login-btn');
     btns.forEach(b => { b.disabled = false; b.innerHTML = '扫码登录'; });
-    toast(`检查扫码状态失败: ${e.message}`, 'error');
   }
 }
 

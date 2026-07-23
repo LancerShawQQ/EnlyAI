@@ -68,11 +68,17 @@ config/cookies/
 
 # 音色/形象样本（用户私有数据）
 config/voices/*/sample.*
-config/avatars/*/reference.*
+config/avatars/*/reference*
 config/avatars/*/meta.json
 
 # B-roll 素材库（用户上传的画中画素材）
 config/broll_assets/
+
+# 临时输出目录（预览音频/封面等，不入库）
+output/
+
+# 提取缓存（yt-dlp/ASR 等中间产物）
+.extract_cache/
 
 # 临时文件
 *.tmp

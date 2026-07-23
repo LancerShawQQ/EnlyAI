@@ -939,8 +939,23 @@ class Publisher(BaseModule):
         """检查B站扫码登录状态（配合 login_bilibili_qrcode 使用）
 
         Returns:
-            {"status": "waiting"|"success"|"failed", "cookie": {...}}
+            {"status": "waiting"|"success"|"failed"|"expired", "cookie": {...}}
+
+        说明：
+        - 异常时不清除 _bilibili_qr_login，返回 waiting 让前端继续轮询
+          （可能是网络抖动、asyncio 环境冲突等临时问题）
+        - 成功后用 _bilibili_qr_done 标记并缓存 cookie，后续 check 直接返回 success
+          （避免前端轮询竞态条件导致 "请先调用..." 错误）
+        - 只有明确检测到 EXPIRED 状态才清除并返回 expired
         """
+        # 已经成功过：直接返回缓存的成功状态（避免竞态条件导致后续轮询失败）
+        if getattr(self, "_bilibili_qr_done", False):
+            return {
+                "status": "success",
+                "cookie": getattr(self, "_bilibili_qr_cookie", {}),
+                "message": "B站登录成功，Cookie已自动保存",
+            }
+
         if not getattr(self, "_bilibili_qr_login", None):
             return {"status": "failed", "error": "请先调用 login_bilibili_qrcode 生成二维码"}
 
@@ -961,6 +976,18 @@ class Publisher(BaseModule):
             except RuntimeError:
                 state = asyncio.run(self._bilibili_qr_login.check_state())
             # state 可能是 QrCodeLoginEvents.WAITING / DONE / EXPIRED
+            # 明确检测到二维码过期：清除状态，让前端引导用户重新生成
+            try:
+                if state == login_v2.QrCodeLoginEvents.EXPIRED:
+                    self._bilibili_qr_login = None
+                    return {"status": "expired", "message": "二维码已过期，请重新生成"}
+            except (AttributeError, TypeError):
+                # 不同版本枚举名可能不同，按字符串值兜底判断
+                state_str = str(state).upper()
+                if "EXPIRE" in state_str:
+                    self._bilibili_qr_login = None
+                    return {"status": "expired", "message": "二维码已过期，请重新生成"}
+
             if self._bilibili_qr_login.has_done():
                 # 获取 Credential
                 credential = self._bilibili_qr_login.get_credential()
@@ -972,7 +999,10 @@ class Publisher(BaseModule):
                 }
                 # 自动保存
                 self.save_cookie("bilibili", cookie_data)
-                self._bilibili_qr_login = None
+                # 标记为已完成（保留 _bilibili_qr_login 以便后续 check 返回缓存状态）
+                # 避免前端轮询竞态条件：success 响应到达前，setTimeout 可能已调度下一次请求
+                self._bilibili_qr_done = True
+                self._bilibili_qr_cookie = cookie_data
                 return {
                     "status": "success",
                     "cookie": cookie_data,
@@ -981,9 +1011,10 @@ class Publisher(BaseModule):
             else:
                 return {"status": "waiting", "message": "等待扫码确认中..."}
         except Exception as e:
-            # 超时或失败
-            self._bilibili_qr_login = None
-            return {"status": "failed", "error": str(e)}
+            # 异常时不清除状态，让前端继续轮询（可能是网络抖动等临时问题）
+            # 之前这里是 self._bilibili_qr_login = None，导致一次网络抖动就永久失败
+            self.logger.warning(f"B站扫码状态检查异常（保留状态继续轮询）: {e}")
+            return {"status": "waiting", "message": f"检查中...（{e}）"}
 
     def login_browser_platform(self, platform: str) -> dict:
         """抖音/快手/视频号浏览器登录 - 弹出浏览器让用户登录，登录后自动提取Cookie
