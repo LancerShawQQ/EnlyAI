@@ -1749,6 +1749,15 @@
                 <div class="progress-bar" id="pod-progress-bar" style="width:0%"></div>
               </div>
               <div class="hint" id="pod-progress-text" style="text-align:center">准备中...</div>
+              <div id="pod-stuck-warning" style="display:none;margin-top:12px;padding:12px 16px;background:#FFF3CD;border:1px solid #FFEEBA;border-radius:10px;">
+                <div style="font-size:13px;color:#856404;line-height:1.6">
+                  <strong>任务似乎卡住了</strong> — 如果进度长时间未更新，可能是 TTS 引擎在处理某些文本时遇到困难。<br>
+                  你可以等待自动恢复（超时后会用静音填充继续），或点击下方按钮取消后重试。
+                </div>
+                <button class="btn btn-secondary btn-sm" id="pod-cancel-btn" type="button" style="margin-top:8px">
+                  <i data-lucide="x-circle"></i> 取消任务
+                </button>
+              </div>
             </div>
 
             <div id="pod-result-section" style="display:none">

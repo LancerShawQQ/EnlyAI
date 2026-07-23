@@ -4298,6 +4298,9 @@ function bindPodcastEvents() {
   // 生成播客
   document.getElementById('pod-generate-btn')?.addEventListener('click', podGenerate);
 
+  // 取消播客任务
+  document.getElementById('pod-cancel-btn')?.addEventListener('click', cancelPodcastJob);
+
   // 重新生成
   document.getElementById('pod-regenerate')?.addEventListener('click', () => {
     document.getElementById('pod-result-section').style.display = 'none';
@@ -4981,19 +4984,36 @@ async function podGenerate() {
 // 轮询播客任务状态
 function pollPodcastJob(jobId) {
   if (podcastState.pollTimer) clearInterval(podcastState.pollTimer);
+  // 卡住检测：记录上次进度文本和更新时间
+  let lastProgressMsg = '';
+  let lastProgressTime = Date.now();
+  const STUCK_THRESHOLD = 120000; // 120 秒进度无变化视为卡住
+
   podcastState.pollTimer = setInterval(async () => {
     try {
       const job = await api(`/api/podcast/jobs/${jobId}`);
       if (job.status === 'running' && job.progress) {
         const pct = job.progress.total > 0 ? (job.progress.current / job.progress.total * 100) : 0;
         document.getElementById('pod-progress-bar').style.width = pct + '%';
-        document.getElementById('pod-progress-text').textContent = job.progress.message || `进度 ${job.progress.current}/${job.progress.total}`;
+        const msg = job.progress.message || `进度 ${job.progress.current}/${job.progress.total}`;
+        document.getElementById('pod-progress-text').textContent = msg;
+
+        // 卡住检测：进度文本变化时重置计时器
+        if (msg !== lastProgressMsg) {
+          lastProgressMsg = msg;
+          lastProgressTime = Date.now();
+          document.getElementById('pod-stuck-warning').style.display = 'none';
+        } else if (Date.now() - lastProgressTime > STUCK_THRESHOLD) {
+          // 进度超过 120 秒没变化，显示卡住警告
+          document.getElementById('pod-stuck-warning').style.display = 'block';
+        }
       } else if (job.status === 'success') {
         clearInterval(podcastState.pollTimer);
         podcastState.pollTimer = null;
         podcastState.result = job.result;
         document.getElementById('pod-progress-bar').style.width = '100%';
         document.getElementById('pod-progress-text').textContent = '生成完成！';
+        document.getElementById('pod-stuck-warning').style.display = 'none';
         setTimeout(() => showPodcastResult(job.result), 500);
       } else if (job.status === 'failed') {
         clearInterval(podcastState.pollTimer);
@@ -5001,11 +5021,28 @@ function pollPodcastJob(jobId) {
         toast(`生成失败: ${job.error}`, 'error');
         document.getElementById('pod-progress-section').style.display = 'none';
         document.getElementById('pod-generate-section').style.display = 'block';
+      } else if (job.status === 'cancelled') {
+        clearInterval(podcastState.pollTimer);
+        podcastState.pollTimer = null;
+        toast('任务已取消', 'info');
+        document.getElementById('pod-progress-section').style.display = 'none';
+        document.getElementById('pod-generate-section').style.display = 'block';
       }
     } catch (e) {
       console.warn('轮询播客任务失败:', e.message);
     }
   }, 2000);
+}
+
+// 取消播客任务
+async function cancelPodcastJob() {
+  if (!podcastState.jobId) return;
+  try {
+    await api(`/api/podcast/jobs/${podcastState.jobId}/cancel`, { method: 'POST' });
+    toast('正在取消任务...', 'info');
+  } catch (e) {
+    toast(`取消失败: ${e.message}`, 'error');
+  }
 }
 
 // 显示生成结果

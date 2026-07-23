@@ -595,23 +595,31 @@ class PodcastEngine(BaseModule):
                 duration = len(seg_audio) / sample_rate
                 self.logger.info(f"第 {i} 句缓存命中: {role} voice={voice_id} duration={duration:.1f}s")
             else:
-                # TTS 合成，带超时保护（线程池 + future.result timeout）
+                # TTS 合成，带超时保护
+                # 注意：不用 with 语句！ThreadPoolExecutor.__exit__ 会调用 shutdown(wait=True)，
+                # 如果 worker 线程卡在 ONNX 推理中，主线程会永远阻塞在 with 退出处。
+                # 改为手动管理 executor，超时后 shutdown(wait=False) 不等待 worker 线程。
                 import concurrent.futures
                 tmp_path = Path(tempfile.mktemp(suffix=".wav", dir=str(self._cache_dir.parent / "tmp")))
                 tmp_path.parent.mkdir(parents=True, exist_ok=True)
+                synth_timeout = False
                 try:
                     def _do_synth():
                         return self.tts.synthesize(
                             text=text, voice_id=voice_id, output_path=tmp_path,
                         )
 
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(_do_synth)
-                        try:
-                            audio_path, duration, _ = future.result(timeout=tts_timeout)
-                        except concurrent.futures.TimeoutError:
-                            self.logger.warning(f"第 {i} 句 TTS 超时({tts_timeout}s)，跳过用静音填充")
-                            raise TimeoutError(f"TTS 合成超时({tts_timeout}s)")
+                    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                    future = executor.submit(_do_synth)
+                    try:
+                        audio_path, duration, _ = future.result(timeout=tts_timeout)
+                    except concurrent.futures.TimeoutError:
+                        self.logger.warning(f"第 {i} 句 TTS 超时({tts_timeout}s)，跳过用静音填充")
+                        synth_timeout = True
+                        executor.shutdown(wait=False)  # 关键：不等待卡死的 worker 线程
+                        raise TimeoutError(f"TTS 合成超时({tts_timeout}s)")
+                    else:
+                        executor.shutdown(wait=False)
 
                     # 读取到内存
                     seg_audio, sr = sf.read(str(tmp_path), dtype="float32")
