@@ -870,13 +870,28 @@ def create_app() -> FastAPI:
         自定义克隆音色无预生成样本，回退到实时 TTS（约30-60s）。
         """
         from pathlib import Path as _Path
+
+        def _detect_media_type(file_path: _Path) -> str:
+            """根据文件头 magic bytes 判断音频格式（避免 mp3 被误标为 wav）"""
+            try:
+                with open(file_path, "rb") as f:
+                    header = f.read(12)
+                if header[:4] == b"RIFF" and header[8:12] == b"WAVE":
+                    return "audio/wav"
+                if header[:3] == b"ID3" or (len(header) >= 2 and header[0] == 0xFF and (header[1] & 0xE0) == 0xE0):
+                    return "audio/mpeg"
+            except Exception:
+                pass
+            # 回退：按扩展名判断
+            return "audio/mpeg" if file_path.suffix.lower() == ".mp3" else "audio/wav"
+
         # 1. 检查预生成样本
         samples_dir = _Path("./config/voices/samples")
         for ext in (".wav", ".mp3"):
             sample = samples_dir / f"{voice_id}{ext}"
             if sample.exists():
                 return FileResponse(
-                    str(sample), media_type="audio/wav",
+                    str(sample), media_type=_detect_media_type(sample),
                     headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=86400"},
                 )
         # 2. 无预生成样本 → 实时合成（回退，自定义克隆音色走此路径）
@@ -888,8 +903,9 @@ def create_app() -> FastAPI:
             ),
         )
         if result.get("success") and result.get("audio_path"):
+            audio_p = _Path(result["audio_path"])
             return FileResponse(
-                result["audio_path"], media_type="audio/wav",
+                result["audio_path"], media_type=_detect_media_type(audio_p),
                 headers={"Accept-Ranges": "bytes"},
             )
         return JSONResponse(

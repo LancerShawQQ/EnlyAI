@@ -3350,10 +3350,18 @@ async function loadPresetVoices() {
           <div class="preset-voice-name">${info.label}</div>
           <div class="preset-voice-desc">${info.description || ''}</div>
           <div class="preset-voice-scenes">适合: ${scenes}</div>
-          <button class="btn btn-sm btn-primary btn-block" onclick="usePresetVoice('${vid}')">使用此音色</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-secondary preset-voice-preview-btn" data-voice="${vid}" type="button" title="试听" style="flex:0 0 auto"><i data-lucide="play" style="width:14px;height:14px"></i></button>
+            <button class="btn btn-sm btn-primary" onclick="usePresetVoice('${vid}')" style="flex:1">使用此音色</button>
+          </div>
         </div>
       `;
     }).join('');
+    // 绑定试听按钮（复用统一的 playVoicePreview）
+    grid.querySelectorAll('.preset-voice-preview-btn').forEach(btn => {
+      btn.addEventListener('click', () => playVoicePreview(btn.dataset.voice, btn));
+    });
+    if (window.lucide) lucide.createIcons();
   } catch (e) {
     toast(`加载预制音色失败: ${e.message}`, 'error');
   }
@@ -4642,7 +4650,7 @@ function renderPodcastVoiceList() {
           ${options}
         </select>
         <button class="btn btn-secondary btn-sm pod-voice-preview-btn" data-role="${escapeHtml(role)}" type="button" style="white-space:nowrap" title="试听当前音色">
-          <i data-lucide="volume-2"></i>
+          <i data-lucide="play" style="width:14px;height:14px"></i>
         </button>
       </div>`;
   }).join('');
@@ -4664,9 +4672,7 @@ function renderPodcastVoiceList() {
   if (window.lucide) lucide.createIcons();
 }
 
-// 音色试听（复用 /api/voice/preview/{voice_id}）
-let _podcastVoiceAudio = null;
-let _podcastVoicePreviewRole = null;
+// 音色试听（复用统一的 playVoicePreview，与设置中心/预制音色库/创作向导行为一致）
 function previewPodcastVoice(role) {
   // 获取当前角色选中的音色
   const sel = document.querySelector(`.pod-voice-select[data-role="${role}"]`);
@@ -4675,60 +4681,10 @@ function previewPodcastVoice(role) {
     toast('请先为该角色选择音色', 'error');
     return;
   }
-
-  // 如果正在试听同一角色，停止播放
-  if (_podcastVoicePreviewRole === role && _podcastVoiceAudio && !_podcastVoiceAudio.paused) {
-    _podcastVoiceAudio.pause();
-    _podcastVoiceAudio.currentTime = 0;
-    _resetVoicePreviewBtn(role);
-    return;
-  }
-
-  // 停止上一个试听
-  if (_podcastVoiceAudio) {
-    _podcastVoiceAudio.pause();
-    if (_podcastVoicePreviewRole) _resetVoicePreviewBtn(_podcastVoicePreviewRole);
-  }
-
-  // 开始试听
   const btn = document.querySelector(`.pod-voice-preview-btn[data-role="${role}"]`);
-  if (btn) {
-    btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i>';
-    if (window.lucide) lucide.createIcons();
-  }
-
-  if (!_podcastVoiceAudio) {
-    _podcastVoiceAudio = new Audio();
-  }
-  _podcastVoiceAudio.src = `/api/voice/preview/${encodeURIComponent(voiceId)}`;
-  _podcastVoicePreviewRole = role;
-
-  _podcastVoiceAudio.play().then(() => {
-    if (btn) {
-      btn.innerHTML = '<i data-lucide="square"></i>';
-      if (window.lucide) lucide.createIcons();
-    }
-  }).catch(e => {
-    toast(`试听失败: ${e.message}`, 'error');
-    _resetVoicePreviewBtn(role);
-  });
-
-  _podcastVoiceAudio.onended = () => _resetVoicePreviewBtn(role);
-  _podcastVoiceAudio.onerror = () => {
-    _resetVoicePreviewBtn(role);
-    toast('音色试听加载失败', 'error');
-  };
-}
-
-function _resetVoicePreviewBtn(role) {
-  const btn = document.querySelector(`.pod-voice-preview-btn[data-role="${role}"]`);
-  if (btn) {
-    btn.innerHTML = '<i data-lucide="volume-2"></i>';
-    if (window.lucide) lucide.createIcons();
-  }
-  if (_podcastVoicePreviewRole === role) {
-    _podcastVoicePreviewRole = null;
-  }
+  if (!btn) return;
+  // 复用统一的 playVoicePreview（内部处理 play/pause 切换、loading、错误）
+  playVoicePreview(voiceId, btn);
 }
 
 // 克隆新音色（弹窗上传）
@@ -5564,6 +5520,16 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('refresh-scene-templates-btn')?.addEventListener('click', loadSceneTemplates);
   document.getElementById('refresh-preset-avatars-btn')?.addEventListener('click', loadPresetAvatars);
   document.getElementById('refresh-preset-voices-btn')?.addEventListener('click', loadPresetVoices);
+
+  // 设置中心 TTS 音色试听按钮（复用统一的 playVoicePreview）
+  document.getElementById('tts-edge-preview-btn')?.addEventListener('click', (e) => {
+    const voiceId = document.getElementById('tts-edge-voice')?.value;
+    if (voiceId) playVoicePreview(voiceId, e.currentTarget);
+  });
+  document.getElementById('tts-moss-preview-btn')?.addEventListener('click', (e) => {
+    const voiceId = document.getElementById('tts-moss-voice')?.value;
+    if (voiceId) playVoicePreview(voiceId, e.currentTarget);
+  });
 
   // 首页仪表盘按钮
   document.getElementById('dash-new-video-btn')?.addEventListener('click', () => navigate('wizard'));

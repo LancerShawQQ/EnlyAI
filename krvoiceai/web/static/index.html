@@ -2115,8 +2115,8 @@
               <div class="form-group">
                 <label class="form-label">服务提供商</label>
                 <select class="form-select" id="tts-provider" onchange="onTTSProviderChange()">
-                  <option value="moss_nano">MOSS NANO（本地声音克隆，6内置音色）</option>
-                  <option value="edge_tts">Edge TTS（微软标准音色，免费，10音色）</option>
+                  <option value="moss_nano">MOSS NANO（本地声音克隆，11内置音色）</option>
+                  <option value="edge_tts">Edge TTS（微软标准音色，免费，7音色）</option>
                   <option value="mimo">MiMo TTS（小米云端，需API凭证）</option>
                   <option value="gpt_sovits">GPT-SoVITS 云端（声音克隆）</option>
                   <option value="mock">Mock 模式（静音音频，调试用）</option>
@@ -2124,26 +2124,37 @@
               </div>
               <div class="form-group" id="tts-edge-voice-group" style="display:none">
                 <label class="form-label">Edge 音色</label>
-                <select class="form-select" id="tts-edge-voice">
-                  <option value="zh-CN-XiaoxiaoNeural">晓晓 (女·温柔)</option>
-                  <option value="zh-CN-YunxiNeural">云希 (男·阳光)</option>
-                  <option value="zh-CN-YunjianNeural">云健 (男·浑厚)</option>
-                  <option value="zh-CN-XiaoyiNeural">晓伊 (女·活泼)</option>
-                  <option value="zh-CN-YunyangNeural">云扬 (男·专业)</option>
-                  <option value="zh-CN-XiaoxuanNeural">晓萱 (女·知性)</option>
-                  <option value="zh-CN-YunxiaNeural">云夏 (男·少年)</option>
-                </select>
+                <div style="display:flex;gap:8px">
+                  <select class="form-select" id="tts-edge-voice" style="flex:1">
+                    <option value="zh-CN-XiaoxiaoNeural">晓晓 (女·温柔)</option>
+                    <option value="zh-CN-YunxiNeural">云希 (男·阳光)</option>
+                    <option value="zh-CN-YunjianNeural">云健 (男·浑厚)</option>
+                    <option value="zh-CN-XiaoyiNeural">晓伊 (女·活泼)</option>
+                    <option value="zh-CN-YunyangNeural">云扬 (男·专业)</option>
+                    <option value="zh-CN-XiaoxuanNeural">晓萱 (女·知性)</option>
+                    <option value="zh-CN-YunxiaNeural">云夏 (男·少年)</option>
+                  </select>
+                  <button class="btn btn-secondary" id="tts-edge-preview-btn" type="button" title="试听当前音色"><i data-lucide="play" style="width:14px;height:14px"></i></button>
+                </div>
               </div>
               <div class="form-group" id="tts-moss-voice-group" style="display:none">
                 <label class="form-label">MOSS NANO 内置音色</label>
-                <select class="form-select" id="tts-moss-voice">
-                  <option value="Junhao">君浩（男·中文）</option>
-                  <option value="Trump">特朗普（男·英文）</option>
-                  <option value="Ava">Ava（女·英文）</option>
-                  <option value="Bella">Bella（女·中文）</option>
-                  <option value="Adam">Adam（男·英文）</option>
-                  <option value="Nathan">Nathan（男·英文）</option>
-                </select>
+                <div style="display:flex;gap:8px">
+                  <select class="form-select" id="tts-moss-voice" style="flex:1">
+                    <option value="Junhao">君浩（男·中文）</option>
+                    <option value="Zhiming">志明（男·中文）</option>
+                    <option value="Weiguo">卫国（男·中文）</option>
+                    <option value="Xiaoyu">小雨（女·中文）</option>
+                    <option value="Yuewen">悦文（女·中文）</option>
+                    <option value="Lingyu">灵语（女·中文）</option>
+                    <option value="Trump">Trump（男·英文）</option>
+                    <option value="Ava">Ava（女·英文）</option>
+                    <option value="Bella">Bella（女·英文）</option>
+                    <option value="Adam">Adam（男·英文）</option>
+                    <option value="Nathan">Nathan（男·英文）</option>
+                  </select>
+                  <button class="btn btn-secondary" id="tts-moss-preview-btn" type="button" title="试听当前音色"><i data-lucide="play" style="width:14px;height:14px"></i></button>
+                </div>
               </div>
             </div>
             <div class="form-group" id="tts-api-base-group">
