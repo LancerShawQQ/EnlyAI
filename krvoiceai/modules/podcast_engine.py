@@ -789,14 +789,23 @@ class PodcastEngine(BaseModule):
                         actual_audio = tmp_path
 
                     # 统一转 wav（edge_tts 可能返回 mp3，soundfile 无法直接读取 mp3）
+                    # 关键：系统 ffmpeg 可能是极简编译版（无 mp3 解码器），
+                    #   必须用 imageio-ffmpeg 自带的完整版 ffmpeg，否则转换静默失败
                     if actual_audio.suffix.lower() == ".mp3":
                         wav_path = actual_audio.with_suffix(".wav")
                         import subprocess as _sp
+                        import imageio_ffmpeg
+                        _ffmpeg_cmd = imageio_ffmpeg.get_ffmpeg_exe()
                         _sp.run(
-                            ["ffmpeg", "-y", "-i", str(actual_audio),
+                            [_ffmpeg_cmd, "-y", "-i", str(actual_audio),
                              "-acodec", "pcm_s16le", "-ar", "24000", "-ac", "1", str(wav_path)],
                             capture_output=True, timeout=30,
                         )
+                        if not wav_path.exists() or wav_path.stat().st_size < 1000:
+                            self.logger.warning(
+                                f"edge_tts mp3 转 wav 失败（imageio_ffmpeg），跳过此段"
+                            )
+                            continue
                         actual_audio.unlink(missing_ok=True)  # 删除临时 mp3
                         actual_audio = wav_path
 

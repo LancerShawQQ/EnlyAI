@@ -756,11 +756,15 @@ class TTSEngine(BaseModule):
         asyncio.run(_synth_with_retry())
 
         # 用 ffmpeg 将 mp3 转为 wav（与 MiMo 分支保持一致）
+        # 关键：系统 ffmpeg 可能是极简编译版（--disable-everything，无 mp3 解码器），
+        #   必须用 imageio-ffmpeg 自带的完整版 ffmpeg，否则 mp3 转换静默失败
         final_path = mp3_path
         try:
             import subprocess
+            import imageio_ffmpeg
+            ffmpeg_cmd = imageio_ffmpeg.get_ffmpeg_exe()
             result = subprocess.run(
-                ["ffmpeg", "-y", "-i", str(mp3_path), "-acodec", "pcm_s16le",
+                [ffmpeg_cmd, "-y", "-i", str(mp3_path), "-acodec", "pcm_s16le",
                  "-ar", "16000", "-ac", "1", str(output_path)],
                 capture_output=True, timeout=30,
             )
