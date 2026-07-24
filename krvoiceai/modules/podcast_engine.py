@@ -705,7 +705,6 @@ class PodcastEngine(BaseModule):
         all_audio_chunks: list[np.ndarray] = []  # 内存中收集所有音频片段
         cursor = 0.0  # 当前时间游标
         prev_role: Optional[str] = None
-        tts_timeout = self.config.get("tts.timeout", 180)
 
         # 预热 MOSS 运行时（避免首次合成时 60 秒模型加载导致 TTS 超时）
         # 根因：MOSS-TTS-Nano 首次加载需要约 60 秒，加上克隆合成时间，
@@ -770,33 +769,18 @@ class PodcastEngine(BaseModule):
                 duration = len(seg_audio) / sample_rate
                 self.logger.info(f"第 {i} 句缓存命中: {role} voice={voice_id} duration={duration:.1f}s")
             else:
-                # TTS 合成，带超时保护
-                # 注意：不用 with 语句！ThreadPoolExecutor.__exit__ 会调用 shutdown(wait=True)，
-                # 如果 worker 线程卡在 ONNX 推理中，主线程会永远阻塞在 with 退出处。
-                # 改为手动管理 executor，超时后 shutdown(wait=False) 不等待 worker 线程。
-                import concurrent.futures
+                # TTS 合成（直接同步调用）
+                # 原线程池方案已移除：ThreadPoolExecutor 子线程中 ONNX 推理性能严重下降
+                # （同步75秒完成的克隆合成，在线程池中>180秒仍未完成），且超时后 worker
+                # 线程无法停止，残留线程干扰后续合成。同步调用经独立测试验证稳定可靠。
                 tmp_path = Path(tempfile.mktemp(suffix=".wav", dir=str(self._cache_dir.parent / "tmp")))
                 tmp_path.parent.mkdir(parents=True, exist_ok=True)
-                synth_timeout = False
                 try:
-                    def _do_synth():
-                        # 根据音色ID自动路由到对应 provider 的引擎
-                        tts_engine = self._get_tts_for_voice(voice_id)
-                        return tts_engine.synthesize(
-                            text=text, voice_id=voice_id, output_path=tmp_path,
-                        )
-
-                    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-                    future = executor.submit(_do_synth)
-                    try:
-                        audio_path, duration, _ = future.result(timeout=tts_timeout)
-                    except concurrent.futures.TimeoutError:
-                        self.logger.warning(f"第 {i} 句 TTS 超时({tts_timeout}s)，跳过用静音填充")
-                        synth_timeout = True
-                        executor.shutdown(wait=False)  # 关键：不等待卡死的 worker 线程
-                        raise TimeoutError(f"TTS 合成超时({tts_timeout}s)")
-                    else:
-                        executor.shutdown(wait=False)
+                    # 根据音色ID自动路由到对应 provider 的引擎
+                    tts_engine = self._get_tts_for_voice(voice_id)
+                    audio_path, duration, _ = tts_engine.synthesize(
+                        text=text, voice_id=voice_id, output_path=tmp_path,
+                    )
 
                     # 读取到内存
                     seg_audio, sr = sf.read(str(tmp_path), dtype="float32")
