@@ -453,15 +453,19 @@ class TTSEngine(BaseModule):
 
         audio_path = Path(result["audio_path"])
         # MOSS 输出 48kHz 立体声 wav；转 16kHz 单声道供 Wav2Lip 使用
+        # 关键：系统 ffmpeg 是极简编译版（--disable-everything，无音频编解码器），
+        #   必须用 imageio-ffmpeg 自带的完整版 ffmpeg，否则转换静默失败
         final_path = audio_path
         try:
             import subprocess
+            import imageio_ffmpeg
+            ffmpeg_cmd = imageio_ffmpeg.get_ffmpeg_exe()
             mono_path = output_path.parent / f"{output_path.stem}_16k.wav"
             subprocess.run(
-                ["ffmpeg", "-y", "-i", str(audio_path),
+                [ffmpeg_cmd, "-y", "-i", str(audio_path),
                  "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
                  str(mono_path)],
-                capture_output=True, timeout=30,
+                check=True, capture_output=True, timeout=30,
             )
             if mono_path.exists():
                 # 替换为 16k 单声道版本
@@ -470,9 +474,10 @@ class TTSEngine(BaseModule):
                 final_path = output_path
         except Exception as e:
             self.logger.warning(f"MOSS 音频转 16k 失败，使用原始输出: {e}")
-            if audio_path != output_path and audio_path.exists():
+            # 转换失败时确保原始音频落到 output_path（resolve 比较，避免绝对/相对路径误判）
+            if audio_path.resolve() != output_path.resolve() and audio_path.exists():
                 audio_path.rename(output_path)
-                final_path = output_path
+            final_path = output_path
 
         duration = get_wav_duration(final_path)
 

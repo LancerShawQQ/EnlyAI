@@ -136,8 +136,8 @@ class TemplateApplyRequest(BaseModel):
 class PodcastRewriteRequest(BaseModel):
     """播客剧本改写请求"""
     content: str = ""                  # 原始内容（文章文本）或主题描述
-    mode: str = "rewrite"              # rewrite（改写已有内容）| generate（根据主题生成）
-    role_count: int = 3                # 角色数量（2-5）
+    mode: str = "polish"               # polish（口语润色）| expand（丰富扩展）| condense（精简提炼）| generate（AI创作）
+    role_count: int = 3                # 角色数量（0=自动，1-10）
     style: str = "轻松对话"            # 风格
     duration_minutes: int = 5          # 目标时长（分钟）
     role_desc: str = ""                # 角色描述
@@ -702,7 +702,11 @@ def create_app() -> FastAPI:
             shutil.copyfileobj(file.file, f)
         ok = _get_app().register_voice(voice_id, tmp)
         tmp.unlink(missing_ok=True)
-        return {"success": ok, "voice_id": voice_id}
+        return {
+            "success": ok,
+            "voice_id": voice_id,
+            "message": "音色已注册，试听样本正在后台生成中（约1-2分钟），稍后即可即时试听" if ok else "注册失败",
+        }
 
     @app.delete("/api/avatars/{avatar_id}")
     async def delete_avatar(avatar_id: str):
@@ -1375,7 +1379,7 @@ def create_app() -> FastAPI:
             script = _get_app().podcast_rewrite(
                 content=req.content,
                 mode=req.mode,
-                role_count=max(2, min(5, req.role_count)),
+                role_count=max(0, min(10, req.role_count)),
                 style=req.style,
                 duration_minutes=max(1, min(30, req.duration_minutes)),
                 role_desc=req.role_desc,

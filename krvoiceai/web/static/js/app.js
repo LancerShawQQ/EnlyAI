@@ -3930,7 +3930,7 @@ async function handleRegisterVoice() {
   try {
     const resp = await fetch('/api/voices/register', { method: 'POST', body: formData });
     const result = await resp.json();
-    toast(result.success ? '音色注册成功' : '注册失败', result.success ? 'success' : 'error');
+    toast(result.success ? (result.message || '音色注册成功') : '注册失败', result.success ? 'success' : 'error');
     if (result.success) {
       document.getElementById('voice-id').value = '';
       fileInput.value = '';
@@ -3971,8 +3971,8 @@ async function onWizardVoiceClone(fileInput) {
     const resp = await fetch('/api/voices/register', { method: 'POST', body: formData });
     const result = await resp.json();
     if (result.success) {
-      if (statusEl) statusEl.textContent = '✓ 克隆成功！音色已添加到列表';
-      toast('声音克隆成功，已添加到音色列表', 'success');
+      if (statusEl) statusEl.textContent = '✓ 克隆成功！试听样本后台生成中（约1-2分钟）';
+      toast('声音克隆成功，试听样本后台生成中', 'success');
       // 刷新向导音色列表
       const voices = await api('/api/voices').catch(() => []);
       renderWizardVoiceGrid(voices);
@@ -4228,8 +4228,10 @@ function bindPodcastEvents() {
     });
   }
 
-  // AI 改写剧本
-  document.getElementById('pod-rewrite-btn')?.addEventListener('click', podRewriteScript);
+  // AI 改写剧本（4 种模式按钮）
+  document.querySelectorAll('[data-pod-rewrite-mode]').forEach(btn => {
+    btn.addEventListener('click', () => podRewriteScript(btn.dataset.podRewriteMode, btn));
+  });
 
   // 剧本编辑器字数/角色统计
   const scriptEditor = document.getElementById('pod-script-editor');
@@ -4354,10 +4356,10 @@ function renderPodcastStepper() {
   const panel = document.getElementById(`podcast-panel-${podcastState.currentStep}`);
   if (panel) panel.classList.add('active');
   // 更新导航
-  document.getElementById('pod-progress-text-nav').textContent = `第 ${podcastState.currentStep} / 5 步`;
+  document.getElementById('pod-progress-text-nav').textContent = `第 ${podcastState.currentStep} / 4 步`;
   document.getElementById('pod-prev-btn').disabled = podcastState.currentStep === 1;
   const nextBtn = document.getElementById('pod-next-btn');
-  if (podcastState.currentStep === 5) {
+  if (podcastState.currentStep === 4) {
     nextBtn.innerHTML = '<i data-lucide="rotate-ccw"></i> 重新开始';
   } else {
     nextBtn.innerHTML = '下一步 <i data-lucide="arrow-right"></i>';
@@ -4367,14 +4369,14 @@ function renderPodcastStepper() {
 
 // 步骤跳转
 function podcastGoToStep(step) {
-  if (step < 1 || step > 5) return;
+  if (step < 1 || step > 4) return;
   podcastState.currentStep = step;
   renderPodcastStepper();
 }
 
 // 下一步（含校验）
 function podcastNext() {
-  if (podcastState.currentStep >= 5) {
+  if (podcastState.currentStep >= 4) {
     // 重新开始：重置状态
     podcastState.currentStep = 1;
     podcastState.maxVisitedStep = 1;
@@ -4400,30 +4402,24 @@ function podcastNext() {
     return;
   }
 
-  // 步骤 1 校验：必须有内容
+  // 步骤 1 校验：内容与剧本（合并步骤）—— 必须有剧本（可来自改写或直接粘贴）
   if (podcastState.currentStep === 1) {
+    // 先尝试收集内容（用户可能未点"提取内容"就直接改写了）
     const content = collectPodcastContent();
-    if (!content) {
-      toast('请输入或提取内容后再继续', 'error');
-      return;
-    }
-    podcastState.content = content;
-  }
-
-  // 步骤 2 校验：必须有剧本
-  if (podcastState.currentStep === 2) {
+    if (content) podcastState.content = content;
+    // 校验剧本
     const script = (document.getElementById('pod-script-editor')?.value || '').trim();
     if (!script) {
       toast('请先生成或粘贴剧本后再继续', 'error');
       return;
     }
     podcastState.script = script;
-    // 进入步骤 3 时自动渲染音色列表
+    // 进入步骤 2（角色音色）时自动渲染音色列表
     setTimeout(() => renderPodcastVoiceList(), 100);
   }
 
-  // 步骤 3 校验：每个角色必须有音色
-  if (podcastState.currentStep === 3) {
+  // 步骤 2 校验：每个角色必须有音色
+  if (podcastState.currentStep === 2) {
     const roles = parsePodcastRoles(podcastState.script);
     const missing = roles.filter(r => !podcastState.voiceMap[r]);
     if (missing.length > 0) {
@@ -4513,13 +4509,13 @@ function handlePodcastFile(file) {
 }
 
 // AI 改写剧本
-async function podRewriteScript() {
+async function podRewriteScript(mode = 'polish', btn = null) {
   // 获取内容（如果步骤1未提取，尝试实时收集）
   let content = podcastState.content;
   if (!content) {
     content = collectPodcastContent();
     if (!content) {
-      toast('请先在步骤 1 输入或提取内容', 'error');
+      toast('请先输入或提取内容', 'error');
       return;
     }
     podcastState.content = content;
@@ -4529,14 +4525,19 @@ async function podRewriteScript() {
   const duration = parseInt(document.getElementById('pod-duration').value);
   const style = document.getElementById('pod-rewrite-style').value;
   const roleDesc = (document.getElementById('pod-role-desc')?.value || '').trim();
-  // 判断模式：topic 为 AI 生成，其他为改写
-  const mode = podcastState.source === 'topic' ? 'generate' : 'rewrite';
 
-  const btn = document.getElementById('pod-rewrite-btn');
-  const originalHtml = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> AI 改写中...';
+  // 按钮状态切换：禁用所有改写按钮，高亮当前按钮
+  const allBtns = document.querySelectorAll('[data-pod-rewrite-mode]');
+  const origHtmlMap = new Map();
+  allBtns.forEach(b => {
+    origHtmlMap.set(b, b.innerHTML);
+    b.disabled = true;
+  });
+  if (btn) {
+    btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> 改写中...';
+  }
   if (window.lucide) lucide.createIcons();
+
   try {
     const data = await api('/api/podcast/rewrite', {
       method: 'POST',
@@ -4549,8 +4550,10 @@ async function podRewriteScript() {
   } catch (e) {
     toast(`改写失败: ${e.message}`, 'error');
   } finally {
-    btn.disabled = false;
-    btn.innerHTML = originalHtml;
+    allBtns.forEach(b => {
+      b.disabled = false;
+      b.innerHTML = origHtmlMap.get(b);
+    });
     if (window.lucide) lucide.createIcons();
   }
 }
@@ -4807,8 +4810,8 @@ async function podCloneVoice() {
       const result = await resp.json();
       if (result.success) {
         statusEl.style.color = '#30d158';
-        statusEl.textContent = '✓ 克隆成功！正在刷新音色列表...';
-        toast('声音克隆成功', 'success');
+        statusEl.textContent = '✓ 克隆成功！试听样本后台生成中（约1-2分钟）';
+        toast('声音克隆成功，试听样本后台生成中', 'success');
         // 刷新播客音色列表
         await loadPodcastVoices();
         renderPodcastVoiceList();

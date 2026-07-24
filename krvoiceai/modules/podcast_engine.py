@@ -34,7 +34,19 @@ MOSS_BUILTIN_VOICES = {
 }
 
 # 音色池分组（按语言+性别）
+# 优先使用 edge-tts 音色（合成快约3-5秒），MOSS 作为补充
+# edge-tts 中文男声
+ZH_MALE_VOICES_EDGE = ["zh-CN-YunxiNeural", "zh-CN-YunjianNeural", "zh-CN-YunyangNeural",
+                        "zh-CN-YunzeNeural", "zh-CN-YunfengNeural", "zh-CN-YunhaoNeural",
+                        "zh-CN-YunxiaNeural"]
+# edge-tts 中文女声
+ZH_FEMALE_VOICES_EDGE = ["zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-XiaohanNeural",
+                          "zh-CN-XiaomengNeural", "zh-CN-XiaoruiNeural", "zh-CN-XiaomoNeural",
+                          "zh-CN-XiaoshuangNeural", "zh-CN-XiaoxuanNeural", "zh-CN-XiaoyanNeural",
+                          "zh-CN-XiaozhenNeural"]
+# MOSS 中文男声（补充）
 ZH_MALE_VOICES = ["Junhao", "Zhiming", "Weiguo"]
+# MOSS 中文女声（补充）
 ZH_FEMALE_VOICES = ["Xiaoyu", "Yuewen", "Lingyu"]
 EN_MALE_VOICES = ["Adam", "Trump", "Nathan"]
 EN_FEMALE_VOICES = ["Ava", "Bella"]
@@ -124,6 +136,72 @@ PODCAST_GENERATE_PROMPT = """请围绕主题「{topic}」创作一段约{duratio
 请直接输出剧本，不要任何解释说明。"""
 
 
+# 丰富扩展模式：在保留原意基础上补充例子/类比/互动，让内容更饱满
+PODCAST_EXPAND_SYSTEM = """你是一位擅长内容扩展的播客制作人，任务是把素材扩展为更丰富饱满的多人对话播客剧本。
+
+核心原则——丰富但不跑题：
+1. **标准普通话**：所有台词必须是标准、清晰的普通话，禁止方言词和吞音表示
+2. **保留原意**：必须覆盖原文所有核心观点，不得遗漏或篡改
+3. **适度扩展**：在原文观点基础上，可以补充相关的例子、类比、生活化比喻，让内容更易懂
+4. **增加互动**：角色间可以有自然的追问、质疑、补充，让对话更有化学反应
+5. **口语化**：用"你想想看""说白了""我举个例"等自然口语过渡
+6. **禁止跑题**：扩展内容必须与原文主题相关，禁止编造无关的故事或观点
+
+""" + _SCRIPT_FORMAT_RULES
+
+PODCAST_EXPAND_PROMPT = """请将以下内容扩展为一段约{duration}分钟的多人对话播客剧本，在保留原意的基础上让内容更丰富饱满。
+
+内容素材：
+{content}
+
+扩展要求：
+- {role_count} 个角色参与对话（{role_desc}）
+- 风格：{style}
+- 总台词数约 {line_count} 行
+- 角色名用简短好记的中文名
+- 开头用注释行声明所有角色及性别
+- 所有台词必须使用标准普通话
+- 在原文观点基础上补充例子、类比、生活化比喻
+- 角色间有自然追问、补充、感叹等互动
+- 主持人开场点明主题，可加入引人入胜的提问
+- 结尾总结要点并可抛出相关思考
+
+请直接输出剧本，不要任何解释说明。"""
+
+# 精简提炼模式：压缩冗余，保留核心观点
+PODCAST_CONDENSE_SYSTEM = """你是一位擅长精简提炼的播客制作人，任务是把素材压缩为简洁有力的多人对话播客剧本。
+
+核心原则——精简但不丢核心：
+1. **标准普通话**：所有台词必须是标准、清晰的普通话，禁止方言词和吞音表示
+2. **保留核心**：必须保留原文最重要的观点和关键数据，只删除冗余表述
+3. **压缩冗余**：把长句缩为短句，重复观点合并，删去不重要的细节
+4. **节奏紧凑**：对话节奏要快，每句控制在15-40字，信息密度高
+5. **口语化**：用简短口语化表达，"综上所述"→"所以"、"具有重要意义"→"很关键"
+6. **禁止添加**：不得添加原文没有的内容，只做减法不做加法
+
+""" + _SCRIPT_FORMAT_RULES
+
+PODCAST_CONDENSE_PROMPT = """请将以下内容精简提炼为一段约{duration}分钟的多人对话播客剧本，压缩冗余，保留核心观点。
+
+内容素材：
+{content}
+
+精简要求：
+- {role_count} 个角色参与对话（{role_desc}）
+- 风格：{style}
+- 总台词数约 {line_count} 行（比原文更精简）
+- 角色名用简短好记的中文名
+- 开头用注释行声明所有角色及性别
+- 所有台词必须使用标准普通话
+- 每句控制在15-40字，信息密度高
+- 删去重复观点和不重要细节，合并相似论述
+- 保留所有核心观点和关键数据
+- 主持人开场简明扼要点明主题
+- 结尾一句话总结核心要点
+
+请直接输出剧本，不要任何解释说明。"""
+
+
 # ============ 工具函数 ============
 
 def parse_script(script_text: str) -> tuple[list[dict], dict[str, str]]:
@@ -192,14 +270,18 @@ def auto_match_voices(
     role_genders: dict[str, str],
     language: str = "zh",
 ) -> dict[str, str]:
-    """自动为角色分配音色
+    """自动为角色分配音色（优先 edge-tts，MOSS 补充）
+
+    中文场景优先使用 edge-tts 音色（合成快约3-5秒），edge 池用完后用 MOSS 补充。
+    英文/日文场景仍用 MOSS 音色（edge-tts 仅支持中文）。
 
     Returns:
         {role: voice_id}
     """
     if language == "zh":
-        male_pool = list(ZH_MALE_VOICES)
-        female_pool = list(ZH_FEMALE_VOICES)
+        # 中文：edge-tts 优先 + MOSS 补充
+        male_pool = list(ZH_MALE_VOICES_EDGE) + list(ZH_MALE_VOICES)
+        female_pool = list(ZH_FEMALE_VOICES_EDGE) + list(ZH_FEMALE_VOICES)
     elif language == "ja":
         male_pool = list(JA_MALE_VOICES)
         female_pool = list(JA_FEMALE_VOICES)
@@ -218,13 +300,13 @@ def auto_match_voices(
                 voice_map[role] = male_pool[male_idx]
                 male_idx += 1
             else:
-                voice_map[role] = male_pool[0] if male_pool else "Junhao"
+                voice_map[role] = male_pool[0] if male_pool else "zh-CN-YunxiNeural"
         elif gender == "female":
             if female_idx < len(female_pool):
                 voice_map[role] = female_pool[female_idx]
                 female_idx += 1
             else:
-                voice_map[role] = female_pool[0] if female_pool else "Xiaoyu"
+                voice_map[role] = female_pool[0] if female_pool else "zh-CN-XiaoxiaoNeural"
         else:
             # 性别未知，交替分配
             if male_idx < len(male_pool):
@@ -234,7 +316,7 @@ def auto_match_voices(
                 voice_map[role] = female_pool[female_idx]
                 female_idx += 1
             else:
-                voice_map[role] = "Junhao"
+                voice_map[role] = "zh-CN-XiaoxiaoNeural"
 
     return voice_map
 
@@ -319,12 +401,56 @@ class PodcastEngine(BaseModule):
         # TTS 缓存目录（相同文本+音色组合复用音频）
         self._cache_dir = Path(self.config.get("project.work_root", "./workspace_data")) / "tts_cache"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
+        # 按 provider 缓存的 TTSEngine 实例（避免每句都新建实例）
+        self._tts_pool: dict[str, TTSEngine] = {}
 
     @property
     def tts(self) -> TTSEngine:
+        """默认 TTS 引擎（向后兼容，返回配置的 provider 引擎）"""
         if self._tts is None:
             self._tts = TTSEngine(config=self.config)
         return self._tts
+
+    def _detect_provider_by_voice(self, voice_id: str) -> str:
+        """根据音色ID自动判断 TTS provider
+
+        路由规则：
+        - zh-CN-* 开头 → edge_tts
+        - MOSS 内置名（Junhao/Trump/...）→ moss_nano
+        - 克隆音色（config/voices/ 下有目录）→ moss_nano
+        - 其他 → 回退到配置的默认 provider
+        """
+        if voice_id and voice_id.startswith("zh-"):
+            return "edge_tts"
+        if voice_id in MOSS_BUILTIN_VOICES:
+            return "moss_nano"
+        # 克隆音色：检查 config/voices/ 下是否有对应目录
+        voices_dir = Path(self.config.get("tts.voices_dir", "./config/voices"))
+        if (voices_dir / voice_id).exists():
+            return "moss_nano"
+        # 回退到配置的默认 provider
+        return self.config.get("tts.provider", "moss_nano")
+
+    def _get_tts_for_voice(self, voice_id: str) -> TTSEngine:
+        """根据音色ID获取对应的 TTS 引擎实例（带缓存复用）
+
+        不同音色可能需要不同的 provider，这里按 provider 缓存引擎实例，
+        避免 MOSS 模型重复加载（首次加载约10秒）。
+        """
+        provider = self._detect_provider_by_voice(voice_id)
+        if provider not in self._tts_pool:
+            # 创建指定 provider 的引擎实例
+            # 深拷贝配置并覆盖 provider，避免影响全局配置
+            import copy
+            from ..core.config import Config
+            # Config 内部用 _data 存储原始字典
+            raw_data = copy.deepcopy(self.config._data) if hasattr(self.config, '_data') else {}
+            raw_data.setdefault("tts", {})["provider"] = provider
+            new_config = Config(raw_data)
+            self._tts_pool[provider] = TTSEngine(config=new_config)
+            self._tts_pool[provider].setup()
+            self.logger.info(f"已创建 {provider} TTS 引擎实例（音色路由）")
+        return self._tts_pool[provider]
 
     @property
     def llm(self) -> LLMClient:
@@ -364,7 +490,7 @@ class PodcastEngine(BaseModule):
     def rewrite_script(
         self,
         content: str,
-        mode: str = "rewrite",
+        mode: str = "polish",
         role_count: int = 3,
         style: str = "轻松对话",
         duration_minutes: int = 5,
@@ -374,8 +500,12 @@ class PodcastEngine(BaseModule):
 
         Args:
             content: 原始内容（文章文本或主题描述）
-            mode: rewrite（改写已有内容）| generate（根据主题生成）
-            role_count: 角色数量
+            mode: 改写模式：
+                  polish（口语润色：内容不变+语气词）
+                  expand（丰富扩展：补充细节）
+                  condense（精简提炼：缩短）
+                  generate（AI创作：主题生成）
+            role_count: 角色数量（0 表示自动，由 AI 决定）
             style: 剧本风格
             duration_minutes: 目标时长（分钟）
             role_desc: 角色描述（如"主持人、行业专家、普通用户"）
@@ -384,35 +514,58 @@ class PodcastEngine(BaseModule):
             播客剧本文本
         """
         line_count = estimate_line_count(duration_minutes)
+        # role_count=0 表示"自动"，让 AI 自行决定角色数
+        role_count_text = "自动决定（2-5人）" if role_count == 0 else f"{role_count}"
         if not role_desc:
-            role_desc = f"{role_count} 个不同视角的对话者"
+            role_desc = f"{role_count} 个不同视角的对话者" if role_count > 0 else "2-5 个不同视角的对话者"
 
+        # 根据 mode 选择 prompt 模板
         if mode == "generate":
             prompt = PODCAST_GENERATE_PROMPT.format(
                 topic=content,
                 duration=duration_minutes,
-                role_count=role_count,
+                role_count=role_count_text,
+                role_desc=role_desc,
+                style=style,
+                line_count=line_count,
+            )
+        elif mode == "expand":
+            prompt = PODCAST_EXPAND_PROMPT.format(
+                content=content[:3000],
+                duration=duration_minutes,
+                role_count=role_count_text,
+                role_desc=role_desc,
+                style=style,
+                line_count=line_count,
+            )
+        elif mode == "condense":
+            prompt = PODCAST_CONDENSE_PROMPT.format(
+                content=content[:3000],
+                duration=duration_minutes,
+                role_count=role_count_text,
                 role_desc=role_desc,
                 style=style,
                 line_count=line_count,
             )
         else:
+            # polish（默认，等价于原 rewrite）
             prompt = PODCAST_REWRITE_PROMPT.format(
-                content=content[:3000],  # 限制长度避免超 token
+                content=content[:3000],
                 duration=duration_minutes,
-                role_count=role_count,
+                role_count=role_count_text,
                 role_desc=role_desc,
                 style=style,
                 line_count=line_count,
             )
 
         # 根据 mode 选择不同的 system prompt 和 temperature
-        if mode == "generate":
-            system_prompt = PODCAST_GENERATE_SYSTEM
-            temperature = 0.8  # 生成模式需要创造性
-        else:
-            system_prompt = PODCAST_REWRITE_SYSTEM
-            temperature = 0.35  # 改写模式需要忠实，降低发散
+        mode_configs = {
+            "generate": (PODCAST_GENERATE_SYSTEM, 0.8),   # 创造性强
+            "expand":   (PODCAST_EXPAND_SYSTEM, 0.6),     # 适度发散
+            "condense": (PODCAST_CONDENSE_SYSTEM, 0.3),   # 精简低发散
+            "polish":   (PODCAST_REWRITE_SYSTEM, 0.35),   # 忠实低发散
+        }
+        system_prompt, temperature = mode_configs.get(mode, mode_configs["polish"])
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -552,7 +705,25 @@ class PodcastEngine(BaseModule):
         all_audio_chunks: list[np.ndarray] = []  # 内存中收集所有音频片段
         cursor = 0.0  # 当前时间游标
         prev_role: Optional[str] = None
-        tts_timeout = self.config.get("tts.timeout", 120)
+        tts_timeout = self.config.get("tts.timeout", 180)
+
+        # 预热 MOSS 运行时（避免首次合成时 60 秒模型加载导致 TTS 超时）
+        # 根因：MOSS-TTS-Nano 首次加载需要约 60 秒，加上克隆合成时间，
+        #        总计可能超过原 120 秒超时，导致克隆音色（如 Lancer）的台词被静音填充
+        moss_voice_ids = {v for v in voice_map.values() if self._detect_provider_by_voice(v) == "moss_nano"}
+        if moss_voice_ids:
+            self.logger.info(f"预热 MOSS 运行时（{len(moss_voice_ids)} 个 MOSS 音色: {moss_voice_ids}）...")
+            if progress_callback:
+                progress_callback(0, len(lines), "正在加载 TTS 引擎...")
+            try:
+                first_moss_voice = next(iter(moss_voice_ids))
+                moss_engine = self._get_tts_for_voice(first_moss_voice)
+                # 触发 MOSS 模型加载（首次约 60 秨）
+                if hasattr(moss_engine, '_get_moss_runtime'):
+                    moss_engine._get_moss_runtime()
+                self.logger.info("MOSS 运行时预热完成")
+            except Exception as e:
+                self.logger.warning(f"MOSS 运行时预热失败: {e}")
 
         for i, line in enumerate(lines):
             role = line["role"]
@@ -609,7 +780,9 @@ class PodcastEngine(BaseModule):
                 synth_timeout = False
                 try:
                     def _do_synth():
-                        return self.tts.synthesize(
+                        # 根据音色ID自动路由到对应 provider 的引擎
+                        tts_engine = self._get_tts_for_voice(voice_id)
+                        return tts_engine.synthesize(
                             text=text, voice_id=voice_id, output_path=tmp_path,
                         )
 

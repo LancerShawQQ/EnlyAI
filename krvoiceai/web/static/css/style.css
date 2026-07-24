@@ -5419,9 +5419,6 @@ input[type="color"]::-webkit-color-swatch {
   #page-podcast .wizard-stepper {
     padding: 0 4px;
   }
-  #page-podcast .wizard-step-label {
-    font-size: 11px;
-  }
   #page-podcast .voice-assign-row {
     flex-wrap: wrap;
     gap: 8px;

@@ -1494,33 +1494,28 @@
       <div class="page" id="page-podcast">
         <!-- 步骤指示器 -->
         <div class="wizard-stepper" id="podcast-stepper">
-          <div class="wizard-step active" data-step="1">
-            <div class="wizard-step-circle">1</div>
-            <div class="wizard-step-label">内容来源</div>
-            <div class="wizard-step-line"></div>
+          <div class="wizard-step active" data-step="1" onclick="podcastGoToStep(1)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">1</span></div>
+            <div class="wizard-step-text">内容与剧本</div>
           </div>
-          <div class="wizard-step" data-step="2">
-            <div class="wizard-step-circle">2</div>
-            <div class="wizard-step-label">剧本改写</div>
-            <div class="wizard-step-line"></div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="2" onclick="podcastGoToStep(2)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">2</span></div>
+            <div class="wizard-step-text">角色音色</div>
           </div>
-          <div class="wizard-step" data-step="3">
-            <div class="wizard-step-circle">3</div>
-            <div class="wizard-step-label">角色音色</div>
-            <div class="wizard-step-line"></div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="3" onclick="podcastGoToStep(3)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">3</span></div>
+            <div class="wizard-step-text">生成设置</div>
           </div>
-          <div class="wizard-step" data-step="4">
-            <div class="wizard-step-circle">4</div>
-            <div class="wizard-step-label">生成设置</div>
-            <div class="wizard-step-line"></div>
-          </div>
-          <div class="wizard-step" data-step="5">
-            <div class="wizard-step-circle">5</div>
-            <div class="wizard-step-label">生成结果</div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="4" onclick="podcastGoToStep(4)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">4</span></div>
+            <div class="wizard-step-text">生成结果</div>
           </div>
         </div>
 
-        <!-- Step 1: 内容来源 -->
+        <!-- Step 1: 内容与剧本（合并原步骤1内容来源 + 原步骤2剧本改写） -->
         <div class="wizard-panel active" id="podcast-panel-1">
           <div class="card">
             <div class="card-header">
@@ -1536,7 +1531,7 @@
 
             <!-- 文章输入 -->
             <div class="sub-page active" id="pod-source-manual">
-              <textarea class="form-input" id="pod-manual-text" rows="8" placeholder="粘贴或输入文章内容...&#10;支持任意文章，AI 将自动改写为播客剧本"></textarea>
+              <textarea class="form-input" id="pod-manual-text" rows="6" placeholder="粘贴或输入文章内容...&#10;支持任意文章，AI 将自动改写为播客剧本"></textarea>
               <div class="script-stats">
                 <span><i data-lucide="type"></i> <span id="pod-manual-count">0</span> 字</span>
               </div>
@@ -1578,24 +1573,28 @@
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Step 2: 剧本改写 -->
-        <div class="wizard-panel" id="podcast-panel-2">
-          <div class="card">
+          <div class="card" style="margin-top:16px">
             <div class="card-header">
-              <div class="card-title"><span class="card-title-icon"><i data-lucide="edit-3"></i></span> 剧本改写</div>
-              <span class="hint">AI 将内容改写为口语化播客剧本</span>
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="edit-3"></i></span> 剧本设置</div>
+              <span class="hint">选择 AI 改写方式生成播客剧本，也可直接粘贴剧本</span>
             </div>
 
             <div class="form-row" style="margin-bottom:16px">
               <div style="flex:1">
                 <label class="form-label">角色数量</label>
                 <select class="form-input" id="pod-role-count">
+                  <option value="0" selected>自动侦测</option>
+                  <option value="1">1 人</option>
                   <option value="2">2 人</option>
-                  <option value="3" selected>3 人</option>
+                  <option value="3">3 人</option>
                   <option value="4">4 人</option>
                   <option value="5">5 人</option>
+                  <option value="6">6 人</option>
+                  <option value="7">7 人</option>
+                  <option value="8">8 人</option>
+                  <option value="9">9 人</option>
+                  <option value="10">10 人</option>
                 </select>
               </div>
               <div style="flex:1">
@@ -1624,12 +1623,24 @@
               <input type="text" class="form-input" id="pod-role-desc" placeholder="如：主持人、行业专家、普通用户">
             </div>
 
-            <button class="btn btn-primary" id="pod-rewrite-btn" type="button" style="margin-bottom:16px">
-              <i data-lucide="sparkles"></i> AI 改写剧本
-            </button>
+            <div class="form-label">AI 改写方式</div>
+            <div class="form-row" style="margin-bottom:16px;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-primary" data-pod-rewrite-mode="polish" type="button">
+                <i data-lucide="sparkles"></i> 口语润色
+              </button>
+              <button class="btn btn-secondary" data-pod-rewrite-mode="expand" type="button">
+                <i data-lucide="plus-circle"></i> 丰富扩展
+              </button>
+              <button class="btn btn-secondary" data-pod-rewrite-mode="condense" type="button">
+                <i data-lucide="minimize-2"></i> 精简提炼
+              </button>
+              <button class="btn btn-secondary" data-pod-rewrite-mode="generate" type="button">
+                <i data-lucide="wand-2"></i> AI 创作
+              </button>
+            </div>
 
             <div class="form-label">剧本预览（可编辑）</div>
-            <textarea class="form-input" id="pod-script-editor" rows="14" placeholder="点击「AI 改写剧本」生成，或直接粘贴剧本...&#10;&#10;格式：&#10;# 张三（男）&#10;张三: 大家好，欢迎收听本期播客。&#10;李四: 大家好，我是李四。"></textarea>
+            <textarea class="form-input" id="pod-script-editor" rows="12" placeholder="点击上方任一「AI 改写方式」按钮生成，或直接粘贴剧本...&#10;&#10;格式：&#10;# 张三（男）&#10;张三: 大家好，欢迎收听本期播客。&#10;李四: 大家好，我是李四。"></textarea>
             <div class="script-stats">
               <span><i data-lucide="type"></i> <span id="pod-script-count">0</span> 字</span>
               <span><i data-lucide="users"></i> <span id="pod-role-count-display">0</span> 个角色</span>
@@ -1637,8 +1648,8 @@
           </div>
         </div>
 
-        <!-- Step 3: 角色音色 -->
-        <div class="wizard-panel" id="podcast-panel-3">
+        <!-- Step 2: 角色音色 -->
+        <div class="wizard-panel" id="podcast-panel-2">
           <div class="card">
             <div class="card-header">
               <div class="card-title"><span class="card-title-icon"><i data-lucide="users"></i></span> 角色与音色</div>
@@ -1655,8 +1666,8 @@
           </div>
         </div>
 
-        <!-- Step 4: 生成设置 -->
-        <div class="wizard-panel" id="podcast-panel-4">
+        <!-- Step 3: 生成设置 -->
+        <div class="wizard-panel" id="podcast-panel-3">
           <div class="card">
             <div class="card-header">
               <div class="card-title"><span class="card-title-icon"><i data-lucide="settings-2"></i></span> 生成设置</div>
@@ -1731,8 +1742,8 @@
           </div>
         </div>
 
-        <!-- Step 5: 生成结果 -->
-        <div class="wizard-panel" id="podcast-panel-5">
+        <!-- Step 4: 生成结果 -->
+        <div class="wizard-panel" id="podcast-panel-4">
           <div class="card">
             <div class="card-header">
               <div class="card-title"><span class="card-title-icon"><i data-lucide="play-circle"></i></span> 生成结果</div>
@@ -1808,7 +1819,7 @@
         <!-- 底部导航 -->
         <div class="wizard-footer">
           <button class="btn btn-secondary" id="pod-prev-btn"><i data-lucide="arrow-left"></i> 上一步</button>
-          <span class="wizard-progress-text" id="pod-progress-text-nav">第 1 / 5 步</span>
+          <span class="wizard-progress-text" id="pod-progress-text-nav">第 1 / 4 步</span>
           <button class="btn btn-primary" id="pod-next-btn">下一步 <i data-lucide="arrow-right"></i></button>
         </div>
       </div>

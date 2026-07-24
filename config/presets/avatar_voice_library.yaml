@@ -153,3 +153,38 @@ voices:
     gender: male
     description: "清朗自然，适合科普、教程"
     recommended_scenes: [knowledge_popular, course_intro]
+
+  zh-CN-XiaomoNeural:
+    label: "晓墨（女·知性）"
+    gender: female
+    description: "知性优雅，适合文化、艺术内容"
+
+  zh-CN-XiaoshuangNeural:
+    label: "晓双（女·童声）"
+    gender: female
+    description: "童声女声，适合儿童内容、童话故事"
+
+  zh-CN-XiaoxuanNeural:
+    label: "晓萱（女·活力）"
+    gender: female
+    description: "活力开朗，适合综艺、娱乐内容"
+
+  zh-CN-XiaoyanNeural:
+    label: "晓颜（女·亲切）"
+    gender: female
+    description: "亲切自然，适合日常对话、生活分享"
+
+  zh-CN-XiaozhenNeural:
+    label: "晓甄（女·沉稳）"
+    gender: female
+    description: "沉稳大方，适合纪录片、专题讲解"
+
+  zh-CN-YunhaoNeural:
+    label: "云皓（男·阳光）"
+    gender: male
+    description: "阳光清新，适合青春、潮流内容"
+
+  zh-CN-YunxiaNeural:
+    label: "夏（男·少年）"
+    gender: male
+    description: "少年男声，适合动画、游戏内容"

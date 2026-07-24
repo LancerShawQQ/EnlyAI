@@ -480,9 +480,11 @@ class EnlyAI:
                 text, voice_id, persist,
                 speed=speed, volume=volume, pitch=pitch, emotion=emotion,
             )
-            # synthesize 可能输出到 persist，也可能输出到别处（如 moss 的 16k 转换）
+            # synthesize 可能输出到 persist，也可能输出到别处（如 moss 返回绝对路径）
+            # 关键：必须用 resolve() 比较，否则绝对路径 vs 相对路径恒不等，
+            #   会误删 persist（实际上 persist 和 audio_path 指向同一文件）
             final = str(audio_path) if audio_path.exists() else str(persist)
-            if Path(final) != persist and persist.exists():
+            if Path(final).resolve() != persist.resolve() and persist.exists():
                 persist.unlink(missing_ok=True)
             return {"success": True, "audio_path": final,
                     "duration": round(float(duration), 2), "error": None}
@@ -568,121 +570,107 @@ class EnlyAI:
         return result
 
     def list_voices(self) -> list[dict]:
-        """列出所有可用音色（根据当前 tts.provider 返回对应音色库）
+        """列出所有可用音色（合并 MOSS + edge-tts + 克隆音色，不再按 provider 分支）
 
-        - edge_tts: 返回 avatar_voice_library.yaml 中的 10 个预制音色
-        - moss_nano: 返回 MOSS 内置音色（Junhao/Trump/Ava/Bella/Adam/Nathan）+ 已注册克隆音色
-        - 其他 provider: 返回默认音色 + 克隆音色
+        返回合并列表，每个音色标注 provider 字段，播客生成时根据 provider 自动路由引擎：
+        - edge_tts: 17 个 zh-CN-* 音色（从 avatar_voice_library.yaml 加载，补全缺失标签）
+        - moss_nano: 18 个 MOSS 内置音色（6中文 + 5英文 + 7日文）
+        - 克隆音色: config/voices/ 下已注册的自定义音色（provider=moss_nano 零样本克隆）
         """
         voices_dir = Path(self.config.get("tts.voices_dir", "./config/voices"))
         result = []
         seen_ids = set()
-        provider = self.config.get("tts.provider", "edge_tts")
 
-        if provider == "edge_tts":
-            # edge_tts: 从 avatar_voice_library.yaml 加载 10 个预制音色
-            preset_file = Path("./config/presets/avatar_voice_library.yaml")
-            if preset_file.exists():
-                try:
-                    import yaml
-                    with open(preset_file, "r", encoding="utf-8") as f:
-                        data = yaml.safe_load(f) or {}
-                    for vid, info in (data.get("voices", {}) or {}).items():
-                        if vid in seen_ids:
-                            continue
-                        result.append({
-                            "voice_id": vid,
-                            "label": info.get("label", vid),
-                            "gender": info.get("gender", ""),
-                            "description": info.get("description", ""),
-                            "type": "preset",
-                            "provider": "edge_tts",
-                            "supports_emotion": True,  # edge_tts 支持 emotion 映射
-                        })
-                        seen_ids.add(vid)
-                except Exception:
-                    pass
-            # edge_tts 默认音色兜底
-            default_voice = self.config.get("tts.edge_voice", "zh-CN-XiaoxiaoNeural")
-            if default_voice and default_voice not in seen_ids:
-                result.append({
-                    "voice_id": default_voice,
-                    "label": default_voice,
-                    "type": "provider_default",
-                    "provider": "edge_tts",
-                    "supports_emotion": True,
-                })
-                seen_ids.add(default_voice)
+        # 1. edge-tts 音色（17 个 zh-CN-*，从 avatar_voice_library.yaml 加载标签）
+        preset_file = Path("./config/presets/avatar_voice_library.yaml")
+        edge_voices_map = {}
+        if preset_file.exists():
+            try:
+                import yaml
+                with open(preset_file, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+                edge_voices_map = data.get("voices", {}) or {}
+            except Exception:
+                pass
 
-        elif provider == "moss_nano":
-            # MOSS-TTS-Nano: 内置 18 个音色（6中文 + 5英文 + 7日文）
-            moss_builtin = {
-                # 中文音色（6个）
-                "Junhao":  {"label": "君浩（男·中文）",   "gender": "male",   "description": "沉稳男声，适合新闻播报"},
-                "Zhiming": {"label": "志明（男·中文）",   "gender": "male",   "description": "温和男声，适合对话叙事"},
-                "Weiguo":  {"label": "建国（男·中文）",   "gender": "male",   "description": "浑厚男声，适合知识分享"},
-                "Xiaoyu":  {"label": "小语（女·中文）",   "gender": "female", "description": "清亮女声，适合日常对话"},
-                "Yuewen":  {"label": "悦文（女·中文）",   "gender": "female", "description": "亲切女声，适合情感内容"},
-                "Lingyu":  {"label": "灵语（女·中文）",   "gender": "female", "description": "知性女声，适合专业讲解"},
-                # 英文音色（5个）
-                "Trump":   {"label": "Trump（男·英文）",  "gender": "male",   "description": "英文男声，特色鲜明"},
-                "Ava":     {"label": "Ava（女·英文）",    "gender": "female", "description": "英文女声，自然流畅"},
-                "Bella":   {"label": "Bella（女·英文）",  "gender": "female", "description": "英文女声，温柔亲和"},
-                "Adam":    {"label": "Adam（男·英文）",   "gender": "male",   "description": "英文男声，沉稳专业"},
-                "Nathan":  {"label": "Nathan（男·英文）", "gender": "male",   "description": "英文男声，浑厚有力"},
-                # 日文音色（7个）
-                "Soyo":    {"label": "Soyo（女·日文）",   "gender": "female", "description": "日文女声，温柔治愈"},
-                "Saki":    {"label": "Saki（女·日文）",   "gender": "female", "description": "日文女声，活泼明亮"},
-                "Mortis":  {"label": "Mortis（男·日文）", "gender": "male",   "description": "日文男声，低沉磁性"},
-                "Umiri":   {"label": "Umiri（女·日文）",  "gender": "female", "description": "日文女声，清澈自然"},
-                "Mei":     {"label": "Mei（女·日文）",    "gender": "female", "description": "日文女声，柔和亲切"},
-                "Anon":    {"label": "Anon（女·日文）",   "gender": "female", "description": "日文女声，清新灵动"},
-                "Arisa":   {"label": "Arisa（女·日文）",  "gender": "female", "description": "日文女声，成熟稳重"},
-            }
-            builtin_voice = self.config.get("tts.moss_nano.builtin_voice", "Junhao")
-            for vid, info in moss_builtin.items():
-                if vid in seen_ids:
-                    continue
-                result.append({
-                    "voice_id": vid,
-                    "label": info["label"],
-                    "gender": info["gender"],
-                    "description": info["description"],
-                    "type": "preset" if vid == builtin_voice else "preset",
-                    "provider": "moss_nano",
-                    "supports_emotion": False,  # MOSS NANO 暂不支持 emotion 映射
-                })
-                seen_ids.add(vid)
+        # edge-tts 全部 17 个音色 ID（与 tts_engine.py EDGE_SUPPORTED_VOICES 同步）
+        EDGE_ALL_VOICES = [
+            "zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural", "zh-CN-YunjianNeural",
+            "zh-CN-XiaoyiNeural", "zh-CN-YunyangNeural", "zh-CN-XiaohanNeural",
+            "zh-CN-XiaomengNeural", "zh-CN-XiaomoNeural", "zh-CN-XiaoruiNeural",
+            "zh-CN-XiaoshuangNeural", "zh-CN-XiaoxuanNeural", "zh-CN-XiaoyanNeural",
+            "zh-CN-XiaozhenNeural", "zh-CN-YunfengNeural", "zh-CN-YunhaoNeural",
+            "zh-CN-YunxiaNeural", "zh-CN-YunzeNeural",
+        ]
+        for vid in EDGE_ALL_VOICES:
+            if vid in seen_ids:
+                continue
+            info = edge_voices_map.get(vid, {})
+            result.append({
+                "voice_id": vid,
+                "label": info.get("label", vid),
+                "gender": info.get("gender", ""),
+                "description": info.get("description", ""),
+                "type": "preset",
+                "provider": "edge_tts",
+                "supports_emotion": True,
+            })
+            seen_ids.add(vid)
 
-        else:
-            # 其他 provider（mimo/gpt_sovits/mock）：返回默认音色
-            default_voice = self.config.get("tts.default_voice", "zh-CN-XiaoxiaoNeural")
-            if default_voice:
-                result.append({
-                    "voice_id": default_voice,
-                    "label": default_voice,
-                    "type": "provider_default",
-                    "provider": provider,
-                    "supports_emotion": False,
-                })
-                seen_ids.add(default_voice)
+        # 2. MOSS-TTS-Nano 内置音色（18 个：6中文 + 5英文 + 7日文）
+        moss_builtin = {
+            # 中文音色（6个）
+            "Junhao":  {"label": "君浩（男·中文）",   "gender": "male",   "description": "沉稳男声，适合新闻播报"},
+            "Zhiming": {"label": "志明（男·中文）",   "gender": "male",   "description": "温和男声，适合对话叙事"},
+            "Weiguo":  {"label": "建国（男·中文）",   "gender": "male",   "description": "浑厚男声，适合知识分享"},
+            "Xiaoyu":  {"label": "小语（女·中文）",   "gender": "female", "description": "清亮女声，适合日常对话"},
+            "Yuewen":  {"label": "悦文（女·中文）",   "gender": "female", "description": "亲切女声，适合情感内容"},
+            "Lingyu":  {"label": "灵语（女·中文）",   "gender": "female", "description": "知性女声，适合专业讲解"},
+            # 英文音色（5个）
+            "Trump":   {"label": "Trump（男·英文）",  "gender": "male",   "description": "英文男声，特色鲜明"},
+            "Ava":     {"label": "Ava（女·英文）",    "gender": "female", "description": "英文女声，自然流畅"},
+            "Bella":   {"label": "Bella（女·英文）",  "gender": "female", "description": "英文女声，温柔亲和"},
+            "Adam":    {"label": "Adam（男·英文）",   "gender": "male",   "description": "英文男声，沉稳专业"},
+            "Nathan":  {"label": "Nathan（男·英文）", "gender": "male",   "description": "英文男声，浑厚有力"},
+            # 日文音色（7个）
+            "Soyo":    {"label": "Soyo（女·日文）",   "gender": "female", "description": "日文女声，温柔治愈"},
+            "Saki":    {"label": "Saki（女·日文）",   "gender": "female", "description": "日文女声，活泼明亮"},
+            "Mortis":  {"label": "Mortis（男·日文）", "gender": "male",   "description": "日文男声，低沉磁性"},
+            "Umiri":   {"label": "Umiri（女·日文）",  "gender": "female", "description": "日文女声，清澈自然"},
+            "Mei":     {"label": "Mei（女·日文）",    "gender": "female", "description": "日文女声，柔和亲切"},
+            "Anon":    {"label": "Anon（女·日文）",   "gender": "female", "description": "日文女声，清新灵动"},
+            "Arisa":   {"label": "Arisa（女·日文）",  "gender": "female", "description": "日文女声，成熟稳重"},
+        }
+        for vid, info in moss_builtin.items():
+            if vid in seen_ids:
+                continue
+            result.append({
+                "voice_id": vid,
+                "label": info["label"],
+                "gender": info["gender"],
+                "description": info["description"],
+                "type": "preset",
+                "provider": "moss_nano",
+                "supports_emotion": False,
+            })
+            seen_ids.add(vid)
 
-        # 已注册的自定义克隆音色（所有 provider 通用，moss_nano 用做零样本克隆参考）
+        # 3. 已注册的自定义克隆音色（provider=moss_nano 零样本克隆）
         if voices_dir.exists():
             for d in sorted(voices_dir.iterdir()):
                 if not d.is_dir():
                     continue
                 if d.name in seen_ids:
                     continue
-                # 排除预生成试听样本目录（不是音色）
                 if d.name == "samples":
                     continue
                 info = {
                     "voice_id": d.name,
                     "label": d.name + "（克隆）",
+                    "gender": "",
                     "type": "custom",
-                    "provider": provider,
-                    "supports_emotion": provider == "edge_tts",
+                    "provider": "moss_nano",
+                    "supports_emotion": False,
                 }
                 for ext in (".wav", ".mp3", ".flac", ".m4a"):
                     samples = list(d.glob(f"*{ext}"))
@@ -700,10 +688,61 @@ class EnlyAI:
         return avatar.register_avatar(avatar_id, Path(reference_video))
 
     def register_voice(self, voice_id: str, sample_audio: Path) -> bool:
-        """注册音色"""
-        tts = TTSEngine()
+        """注册音色
+
+        注册成功后会在后台线程预生成试听样本（约60-120s），
+        保存到 config/voices/samples/{voice_id}.wav，
+        之后前端试听直接返回预生成文件（<1秒），无需实时合成。
+        """
+        tts = TTSEngine(config=self.config)
         tts.setup()  # 触发 GPU 不可用时的 mock 降级
-        return tts.register_voice(voice_id, Path(sample_audio))
+        ok = tts.register_voice(voice_id, Path(sample_audio))
+        if ok:
+            # 后台预生成试听样本（不阻塞注册 API 返回）
+            self._pregenerate_voice_sample_async(voice_id)
+        return ok
+
+    def _pregenerate_voice_sample_async(self, voice_id: str) -> None:
+        """后台线程预生成克隆音色的试听样本
+
+        用已注册的音色合成固定试听文本，保存到 config/voices/samples/{voice_id}.wav。
+        生成完成后前端试听即可即时返回。失败仅记日志，不影响注册结果。
+        """
+        import threading
+
+        def _generate():
+            try:
+                sample_text = "大家好，欢迎收听本期播客，今天我们来聊一个有趣的话题。"
+                samples_dir = Path("config/voices/samples")
+                samples_dir.mkdir(parents=True, exist_ok=True)
+                sample_path = samples_dir / f"{voice_id}.wav"
+
+                # 用已注册的 TTS 引擎合成（复用 self.modules 的引擎，配置一致）
+                engine = self.modules.get("tts")
+                if engine is None:
+                    engine = TTSEngine(config=self.config)
+                    engine.setup()
+
+                tmp_path = Path("workspace_data/tmp") / f"voice_sample_{voice_id}.wav"
+                tmp_path.parent.mkdir(parents=True, exist_ok=True)
+
+                self.logger.info(f"开始后台预生成试听样本: {voice_id}")
+                t0 = time.time()
+                audio_path, duration, _ = engine.synthesize(
+                    sample_text, voice_id, tmp_path,
+                )
+                # 复制到样本目录（覆盖旧样本）
+                shutil.copy2(str(audio_path), str(sample_path))
+                elapsed = time.time() - t0
+                self.logger.info(
+                    f"试听样本预生成完成: {voice_id} -> {sample_path.name} "
+                    f"({elapsed:.1f}s, {sample_path.stat().st_size/1024:.0f}KB, {duration:.1f}s)"
+                )
+            except Exception as e:
+                self.logger.warning(f"试听样本预生成失败({voice_id}): {e}")
+
+        t = threading.Thread(target=_generate, daemon=True, name=f"voice-sample-{voice_id}")
+        t.start()
 
     def delete_avatar(self, avatar_id: str) -> bool:
         """删除已注册的数字人形象（不允许删除 default 形象）"""
@@ -734,6 +773,11 @@ class EnlyAI:
         except ValueError:
             return False
         shutil.rmtree(target)
+        # 同步删除预生成试听样本（如有）
+        sample_file = Path("config/voices/samples") / f"{voice_id}.wav"
+        if sample_file.exists():
+            sample_file.unlink(missing_ok=True)
+            self.logger.info(f"已删除预生成试听样本: {sample_file.name}")
         self.logger.info(f"已删除音色: {voice_id}")
         return True
 
