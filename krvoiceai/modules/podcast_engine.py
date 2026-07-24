@@ -35,15 +35,11 @@ MOSS_BUILTIN_VOICES = {
 
 # 音色池分组（按语言+性别）
 # 优先使用 edge-tts 音色（合成快约3-5秒），MOSS 作为补充
-# edge-tts 中文男声
+# edge-tts 中文男声（仅保留实测可用的音色）
 ZH_MALE_VOICES_EDGE = ["zh-CN-YunxiNeural", "zh-CN-YunjianNeural", "zh-CN-YunyangNeural",
-                        "zh-CN-YunzeNeural", "zh-CN-YunfengNeural", "zh-CN-YunhaoNeural",
                         "zh-CN-YunxiaNeural"]
-# edge-tts 中文女声
-ZH_FEMALE_VOICES_EDGE = ["zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-XiaohanNeural",
-                          "zh-CN-XiaomengNeural", "zh-CN-XiaoruiNeural", "zh-CN-XiaomoNeural",
-                          "zh-CN-XiaoshuangNeural", "zh-CN-XiaoxuanNeural", "zh-CN-XiaoyanNeural",
-                          "zh-CN-XiaozhenNeural"]
+# edge-tts 中文女声（仅保留实测可用的音色）
+ZH_FEMALE_VOICES_EDGE = ["zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-XiaoxuanNeural"]
 # MOSS 中文男声（补充）
 ZH_MALE_VOICES = ["Junhao", "Zhiming", "Weiguo"]
 # MOSS 中文女声（补充）

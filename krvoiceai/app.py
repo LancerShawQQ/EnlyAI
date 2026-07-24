@@ -593,14 +593,11 @@ class EnlyAI:
             except Exception:
                 pass
 
-        # edge-tts 全部 17 个音色 ID（与 tts_engine.py EDGE_SUPPORTED_VOICES 同步）
+        # edge-tts 可用音色（经实测 7 个稳定可用，其余 10 个服务端返回 NoAudioReceived）
         EDGE_ALL_VOICES = [
             "zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural", "zh-CN-YunjianNeural",
-            "zh-CN-XiaoyiNeural", "zh-CN-YunyangNeural", "zh-CN-XiaohanNeural",
-            "zh-CN-XiaomengNeural", "zh-CN-XiaomoNeural", "zh-CN-XiaoruiNeural",
-            "zh-CN-XiaoshuangNeural", "zh-CN-XiaoxuanNeural", "zh-CN-XiaoyanNeural",
-            "zh-CN-XiaozhenNeural", "zh-CN-YunfengNeural", "zh-CN-YunhaoNeural",
-            "zh-CN-YunxiaNeural", "zh-CN-YunzeNeural",
+            "zh-CN-XiaoyiNeural", "zh-CN-YunyangNeural", "zh-CN-XiaoxuanNeural",
+            "zh-CN-YunxiaNeural",
         ]
         for vid in EDGE_ALL_VOICES:
             if vid in seen_ids:

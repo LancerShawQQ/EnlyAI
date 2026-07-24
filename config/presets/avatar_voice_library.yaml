@@ -76,7 +76,7 @@ avatars:
     gender: male
     description: "儒雅沉稳，适合古风文化、历史故事、国学经典"
     recommended_scenes: [chinese_culture]
-    recommended_voice: zh-CN-YunzeNeural
+    recommended_voice: zh-CN-YunjianNeural
     recommended_emotion: calm
     placeholder_color: "#2d1810"
     note: "预制占位形象，建议上传真人正面照替换以获得最佳效果"
@@ -87,7 +87,7 @@ avatars:
     gender: female
     description: "时尚活力，适合个人IP打造、自我介绍、账号定位"
     recommended_scenes: [personal_ip]
-    recommended_voice: zh-CN-XiaomengNeural
+    recommended_voice: zh-CN-XiaoyiNeural
     recommended_emotion: cheerful
     placeholder_color: "#ec4899"
     note: "预制占位形象，建议上传真人正面照替换以获得最佳效果"
@@ -105,18 +105,6 @@ voices:
     gender: female
     description: "活泼可爱，适合教育、科普、轻松内容"
     recommended_scenes: [knowledge_popular, course_intro]
-
-  zh-CN-XiaohanNeural:
-    label: "晓涵（女·深情）"
-    gender: female
-    description: "深情温柔，适合情感故事、治愈内容"
-    recommended_scenes: [emotional_story]
-
-  zh-CN-XiaomengNeural:
-    label: "晓梦（女·甜美）"
-    gender: female
-    description: "甜美清新，适合个人IP、时尚生活"
-    recommended_scenes: [personal_ip, product_selling]
 
   zh-CN-YunxiNeural:
     label: "云希（男·沉稳）"
@@ -136,53 +124,10 @@ voices:
     description: "专业理性，适合科技测评、知识解读"
     recommended_scenes: [tech_review, knowledge_popular]
 
-  zh-CN-YunzeNeural:
-    label: "云泽（男·成熟）"
-    gender: male
-    description: "成熟稳重，适合文化历史、深度内容"
-    recommended_scenes: [chinese_culture, news_broadcast]
-
-  zh-CN-XiaoruiNeural:
-    label: "晓瑞（女·端庄）"
-    gender: female
-    description: "端庄大方，适合新闻、正式场合"
-    recommended_scenes: [news_broadcast]
-
-  zh-CN-YunfengNeural:
-    label: "云枫（男·清朗）"
-    gender: male
-    description: "清朗自然，适合科普、教程"
-    recommended_scenes: [knowledge_popular, course_intro]
-
-  zh-CN-XiaomoNeural:
-    label: "晓墨（女·知性）"
-    gender: female
-    description: "知性优雅，适合文化、艺术内容"
-
-  zh-CN-XiaoshuangNeural:
-    label: "晓双（女·童声）"
-    gender: female
-    description: "童声女声，适合儿童内容、童话故事"
-
   zh-CN-XiaoxuanNeural:
     label: "晓萱（女·活力）"
     gender: female
     description: "活力开朗，适合综艺、娱乐内容"
-
-  zh-CN-XiaoyanNeural:
-    label: "晓颜（女·亲切）"
-    gender: female
-    description: "亲切自然，适合日常对话、生活分享"
-
-  zh-CN-XiaozhenNeural:
-    label: "晓甄（女·沉稳）"
-    gender: female
-    description: "沉稳大方，适合纪录片、专题讲解"
-
-  zh-CN-YunhaoNeural:
-    label: "云皓（男·阳光）"
-    gender: male
-    description: "阳光清新，适合青春、潮流内容"
 
   zh-CN-YunxiaNeural:
     label: "夏（男·少年）"

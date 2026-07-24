@@ -694,16 +694,13 @@ class TTSEngine(BaseModule):
         # 关键修复：edge_tts 必须使用用户选择的 voice_id，而非配置中的 edge_voice
         # voice_id 来自前端音色卡片选择（如 zh-CN-YunxiNeural 男声）
         # 仅当 voice_id 为空/default 时，才回退到 config 的 edge_voice
-        # Voice 兼容性校验：edge_tts 仅支持 zh-CN-* Neural 音色
+        # Voice 兼容性校验：edge_tts 仅支持实测可用的 zh-CN-* Neural 音色
         # （模板 voice 字段可能写入 Ava/Junhao 等 MOSS 内置音色，切换到 edge_tts 时需降级）
         # 与 settings_manager.PROVIDER_PRESETS['tts']['edge_tts']['voices'] 保持同步
         EDGE_SUPPORTED_VOICES = {
             "zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural", "zh-CN-YunjianNeural",
-            "zh-CN-XiaoyiNeural", "zh-CN-YunyangNeural", "zh-CN-XiaohanNeural",
-            "zh-CN-XiaomengNeural", "zh-CN-XiaomoNeural", "zh-CN-XiaoruiNeural",
-            "zh-CN-XiaoshuangNeural", "zh-CN-XiaoxuanNeural", "zh-CN-XiaoyanNeural",
-            "zh-CN-XiaozhenNeural", "zh-CN-YunfengNeural", "zh-CN-YunhaoNeural",
-            "zh-CN-YunxiaNeural", "zh-CN-YunzeNeural",
+            "zh-CN-XiaoyiNeural", "zh-CN-YunyangNeural", "zh-CN-XiaoxuanNeural",
+            "zh-CN-YunxiaNeural",
         }
         if voice_id and voice_id not in ("default", "", "None") and voice_id not in EDGE_SUPPORTED_VOICES:
             self.logger.warning(

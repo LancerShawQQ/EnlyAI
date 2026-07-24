@@ -103,11 +103,8 @@ PROVIDER_PRESETS = {
             "needs_api_key": False,
             "voices": [
                 "zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural", "zh-CN-YunjianNeural",
-                "zh-CN-XiaoyiNeural", "zh-CN-YunyangNeural", "zh-CN-XiaohanNeural",
-                "zh-CN-XiaomengNeural", "zh-CN-XiaomoNeural", "zh-CN-XiaoruiNeural",
-                "zh-CN-XiaoshuangNeural", "zh-CN-XiaoxuanNeural", "zh-CN-XiaoyanNeural",
-                "zh-CN-XiaozhenNeural", "zh-CN-YunfengNeural", "zh-CN-YunhaoNeural",
-                "zh-CN-YunxiaNeural", "zh-CN-YunzeNeural",
+                "zh-CN-XiaoyiNeural", "zh-CN-YunyangNeural", "zh-CN-XiaoxuanNeural",
+                "zh-CN-YunxiaNeural",
             ],
         },
         "mock": {

@@ -53,25 +53,15 @@ MOSS_VOICES = {
     "Arisa":   SAMPLE_TEXT_JA,
 }
 
-# edge-tts 17 个中文音色（与 tts_engine.py EDGE_SUPPORTED_VOICES 同步）
+# edge-tts 7 个实测可用中文音色（与 tts_engine.py EDGE_SUPPORTED_VOICES 同步）
 EDGE_VOICES = {
     "zh-CN-XiaoxiaoNeural":   SAMPLE_TEXT_ZH,
     "zh-CN-YunxiNeural":      SAMPLE_TEXT_ZH,
     "zh-CN-YunjianNeural":    SAMPLE_TEXT_ZH,
     "zh-CN-XiaoyiNeural":     SAMPLE_TEXT_ZH,
     "zh-CN-YunyangNeural":    SAMPLE_TEXT_ZH,
-    "zh-CN-XiaohanNeural":    SAMPLE_TEXT_ZH,
-    "zh-CN-XiaomengNeural":   SAMPLE_TEXT_ZH,
-    "zh-CN-XiaomoNeural":     SAMPLE_TEXT_ZH,
-    "zh-CN-XiaoruiNeural":    SAMPLE_TEXT_ZH,
-    "zh-CN-XiaoshuangNeural": SAMPLE_TEXT_ZH,
     "zh-CN-XiaoxuanNeural":   SAMPLE_TEXT_ZH,
-    "zh-CN-XiaoyanNeural":    SAMPLE_TEXT_ZH,
-    "zh-CN-XiaozhenNeural":   SAMPLE_TEXT_ZH,
-    "zh-CN-YunfengNeural":    SAMPLE_TEXT_ZH,
-    "zh-CN-YunhaoNeural":     SAMPLE_TEXT_ZH,
     "zh-CN-YunxiaNeural":     SAMPLE_TEXT_ZH,
-    "zh-CN-YunzeNeural":      SAMPLE_TEXT_ZH,
 }
 SAMPLES_DIR = project_root / "config" / "voices" / "samples"
 
