@@ -724,27 +724,61 @@ class TTSEngine(BaseModule):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         mp3_path = output_path.with_suffix(".mp3")
 
-        async def _synth():
-            # edge-tts 首字吞音修复：在文本前加一个逗号停顿，让合成器"热身"
-            # 避免开头2个字被吞掉（edge-tts 已知问题）
-            warmup_text = f"，{text}" if not text.startswith(("，", ",", "。", ".")) else text
-            communicate = edge_tts.Communicate(warmup_text, actual_voice, **kwargs)
-            await communicate.save(str(mp3_path))
+        # 带重试的合成（edge-tts 服务端偶发返回空音频/NoAudioReceived）
+        MAX_RETRIES = 3
+        last_error: Exception | None = None
 
-        asyncio.run(_synth())
+        async def _synth_with_retry():
+            """带重试的 edge-tts 合成，确保生成有效音频文件"""
+            nonlocal last_error
+            # edge-tts 首字吞音修复：在文本前加一个逗号停顿，让合成器"热身"
+            warmup_text = f"，{text}" if not text.startswith(("，", ",", "。", ".")) else text
+            for attempt in range(1, MAX_RETRIES + 1):
+                mp3_path.unlink(missing_ok=True)  # 清理上次可能的空文件
+                try:
+                    communicate = edge_tts.Communicate(warmup_text, actual_voice, **kwargs)
+                    await communicate.save(str(mp3_path))
+                    # 检查文件大小（有效音频至少 1KB）
+                    if mp3_path.exists() and mp3_path.stat().st_size > 1000:
+                        self.logger.info(f"edge-tts 合成成功（尝试 {attempt}/{MAX_RETRIES}）"
+                                         f" size={mp3_path.stat().st_size}")
+                        return
+                    self.logger.warning(
+                        f"edge-tts 尝试 {attempt}/{MAX_RETRIES}: "
+                        f"音频文件为空或过小 size={mp3_path.stat().st_size if mp3_path.exists() else 0}"
+                    )
+                except Exception as e:
+                    last_error = e
+                    self.logger.warning(f"edge-tts 尝试 {attempt}/{MAX_RETRIES}: {type(e).__name__}: {e}")
+                await asyncio.sleep(1.5)
+            # 重试耗尽，抛出最后一个异常
+            raise last_error or RuntimeError(
+                f"edge-tts 合成失败：重试 {MAX_RETRIES} 次后仍无音频输出 voice={actual_voice}"
+            )
+
+        asyncio.run(_synth_with_retry())
 
         # 用 ffmpeg 将 mp3 转为 wav（与 MiMo 分支保持一致）
         final_path = mp3_path
         try:
             import subprocess
-            subprocess.run(
+            result = subprocess.run(
                 ["ffmpeg", "-y", "-i", str(mp3_path), "-acodec", "pcm_s16le",
                  "-ar", "16000", "-ac", "1", str(output_path)],
                 capture_output=True, timeout=30,
             )
-            if output_path.exists():
+            if output_path.exists() and output_path.stat().st_size > 1000:
                 mp3_path.unlink(missing_ok=True)
                 final_path = output_path
+                self.logger.info(f"edge-tts ffmpeg 转 wav 成功: {output_path.name} "
+                                 f"size={output_path.stat().st_size}")
+            else:
+                self.logger.warning(
+                    f"edge-tts ffmpeg 转 wav 后文件无效: "
+                    f"exists={output_path.exists()} "
+                    f"size={output_path.stat().st_size if output_path.exists() else 0} "
+                    f"stderr={result.stderr.decode('utf-8', errors='replace')[:200]}"
+                )
         except Exception as e:
             self.logger.warning(f"edge-tts ffmpeg 转 wav 失败，使用 mp3: {e}")
 

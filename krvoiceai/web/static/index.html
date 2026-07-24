@@ -1515,73 +1515,52 @@
           </div>
         </div>
 
-        <!-- Step 1: 内容与剧本（合并原步骤1内容来源 + 原步骤2剧本改写） -->
+        <!-- Step 1: 内容与剧本（整合为单卡片，参考创作向导风格） -->
         <div class="wizard-panel active" id="podcast-panel-1">
           <div class="card">
             <div class="card-header">
-              <div class="card-title"><span class="card-title-icon"><i data-lucide="file-text"></i></span> 内容来源</div>
-              <span class="hint">选择内容来源方式</span>
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="file-text"></i></span> 内容与剧本</div>
+              <span class="hint" id="pod-script-count-hint">0 字</span>
             </div>
+
+            <!-- 内容来源切换 -->
             <div class="sub-tabs">
-              <button class="sub-tab active" data-pod-source="manual" type="button">文章输入</button>
-              <button class="sub-tab" data-pod-source="url" type="button">网络链接</button>
-              <button class="sub-tab" data-pod-source="file" type="button">本地文档</button>
-              <button class="sub-tab" data-pod-source="topic" type="button">AI 生成</button>
+              <button class="sub-tab active" data-pod-source="manual" type="button"><i data-lucide="pen-line" style="width:14px;height:14px"></i> 文章输入</button>
+              <button class="sub-tab" data-pod-source="url" type="button"><i data-lucide="link" style="width:14px;height:14px"></i> 网络链接</button>
+              <button class="sub-tab" data-pod-source="file" type="button"><i data-lucide="upload-cloud" style="width:14px;height:14px"></i> 本地文档</button>
+              <button class="sub-tab" data-pod-source="topic" type="button"><i data-lucide="lightbulb" style="width:14px;height:14px"></i> AI 生成</button>
             </div>
 
-            <!-- 文章输入 -->
-            <div class="sub-page active" id="pod-source-manual">
-              <textarea class="form-input" id="pod-manual-text" rows="6" placeholder="粘贴或输入文章内容...&#10;支持任意文章，AI 将自动改写为播客剧本"></textarea>
-              <div class="script-stats">
-                <span><i data-lucide="type"></i> <span id="pod-manual-count">0</span> 字</span>
-              </div>
-            </div>
-
-            <!-- 网络链接 -->
-            <div class="sub-page" id="pod-source-url">
-              <textarea class="form-input" id="pod-url-input" rows="4" placeholder="粘贴视频/文章链接或分享文本...&#10;支持抖音/快手/B站/YouTube/微信公众号等"></textarea>
-              <div class="form-row" style="margin-top:12px">
-                <button class="btn btn-primary" id="pod-extract-btn" type="button">
+            <!-- 网络链接输入区（提取后填入剧本编辑器） -->
+            <div class="sub-page" id="pod-source-url" style="display:none">
+              <textarea class="form-input" id="pod-url-input" rows="3" placeholder="粘贴视频/文章链接或分享文本...&#10;支持抖音/快手/B站/YouTube/微信公众号等"></textarea>
+              <div class="form-row" style="margin-top:8px">
+                <button class="btn btn-primary btn-sm" id="pod-extract-btn" type="button">
                   <i data-lucide="download"></i> 提取内容
                 </button>
               </div>
-              <div id="pod-extract-preview" style="margin-top:12px"></div>
+              <div id="pod-extract-preview" style="margin-top:8px"></div>
             </div>
 
-            <!-- 本地文档 -->
-            <div class="sub-page" id="pod-source-file">
-              <div class="upload-area" id="pod-file-upload">
-                <i data-lucide="upload-cloud" style="width:32px;height:32px"></i>
-                <p>点击或拖拽文件到此处</p>
+            <!-- 本地文档上传区（读取后填入剧本编辑器） -->
+            <div class="sub-page" id="pod-source-file" style="display:none">
+              <div class="upload-area" id="pod-file-upload" style="padding:16px">
+                <i data-lucide="upload-cloud" style="width:28px;height:28px"></i>
+                <p style="margin:4px 0">点击或拖拽文件到此处</p>
                 <span class="hint">支持 .txt / .md 格式</span>
                 <input type="file" id="pod-file-input" accept=".txt,.md" style="display:none">
               </div>
-              <div id="pod-file-preview" style="margin-top:12px"></div>
+              <div id="pod-file-preview" style="margin-top:8px"></div>
             </div>
 
-            <!-- AI 生成 -->
-            <div class="sub-page" id="pod-source-topic">
-              <textarea class="form-input" id="pod-topic-input" rows="3" placeholder="输入主题描述，如：&#10;AI 对未来职场的影响&#10;三个人讨论，分别从技术、商业、用户角度"></textarea>
-              <div class="form-row" style="margin-top:12px;align-items:center">
-                <label class="form-label">风格：</label>
-                <select class="form-input" id="pod-topic-style" style="flex:1">
-                  <option value="轻松对话">轻松对话</option>
-                  <option value="深度访谈">深度访谈</option>
-                  <option value="专业讨论">专业讨论</option>
-                  <option value="趣味科普">趣味科普</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div class="card" style="margin-top:16px">
-            <div class="card-header">
-              <div class="card-title"><span class="card-title-icon"><i data-lucide="edit-3"></i></span> 剧本设置</div>
-              <span class="hint">选择 AI 改写方式生成播客剧本，也可直接粘贴剧本</span>
+            <!-- AI 生成参数区（生成后填入剧本编辑器） -->
+            <div class="sub-page" id="pod-source-topic" style="display:none">
+              <textarea class="form-input" id="pod-topic-input" rows="2" placeholder="输入主题描述，如：AI 对未来职场的影响，三人讨论"></textarea>
             </div>
 
-            <div class="form-row" style="margin-bottom:16px">
-              <div style="flex:1">
+            <!-- 生成设置（紧凑工具栏，始终可见） -->
+            <div class="form-row" style="margin:12px 0;gap:8px;align-items:flex-end;flex-wrap:wrap">
+              <div style="flex:1;min-width:90px">
                 <label class="form-label">角色数量</label>
                 <select class="form-input" id="pod-role-count">
                   <option value="0" selected>自动侦测</option>
@@ -1597,7 +1576,7 @@
                   <option value="10">10 人</option>
                 </select>
               </div>
-              <div style="flex:1">
+              <div style="flex:1;min-width:90px">
                 <label class="form-label">目标时长</label>
                 <select class="form-input" id="pod-duration">
                   <option value="3">3 分钟</option>
@@ -1607,7 +1586,7 @@
                   <option value="20">20 分钟</option>
                 </select>
               </div>
-              <div style="flex:1">
+              <div style="flex:1;min-width:90px">
                 <label class="form-label">改写风格</label>
                 <select class="form-input" id="pod-rewrite-style">
                   <option value="轻松对话">轻松对话</option>
@@ -1616,31 +1595,34 @@
                   <option value="趣味科普">趣味科普</option>
                 </select>
               </div>
+              <div style="flex:1;min-width:120px">
+                <label class="form-label">角色描述（可选）</label>
+                <input type="text" class="form-input" id="pod-role-desc" placeholder="如：主持人、专家、用户">
+              </div>
             </div>
 
-            <div style="margin-bottom:12px">
-              <label class="form-label">角色描述（可选）</label>
-              <input type="text" class="form-input" id="pod-role-desc" placeholder="如：主持人、行业专家、普通用户">
-            </div>
-
-            <div class="form-label">AI 改写方式</div>
-            <div class="form-row" style="margin-bottom:16px;gap:8px;flex-wrap:wrap">
-              <button class="btn btn-primary" data-pod-rewrite-mode="polish" type="button">
+            <!-- AI 改写工具栏 -->
+            <div class="form-row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" data-pod-rewrite-mode="polish" type="button">
                 <i data-lucide="sparkles"></i> 口语润色
               </button>
-              <button class="btn btn-secondary" data-pod-rewrite-mode="expand" type="button">
+              <button class="btn btn-secondary btn-sm" data-pod-rewrite-mode="expand" type="button">
                 <i data-lucide="plus-circle"></i> 丰富扩展
               </button>
-              <button class="btn btn-secondary" data-pod-rewrite-mode="condense" type="button">
+              <button class="btn btn-secondary btn-sm" data-pod-rewrite-mode="condense" type="button">
                 <i data-lucide="minimize-2"></i> 精简提炼
               </button>
-              <button class="btn btn-secondary" data-pod-rewrite-mode="generate" type="button">
+              <button class="btn btn-secondary btn-sm" data-pod-rewrite-mode="generate" type="button">
                 <i data-lucide="wand-2"></i> AI 创作
+              </button>
+              <button class="btn btn-ghost btn-sm" id="pod-clear-script-btn" type="button">
+                <i data-lucide="eraser"></i> 清空
               </button>
             </div>
 
-            <div class="form-label">剧本预览（可编辑）</div>
-            <textarea class="form-input" id="pod-script-editor" rows="12" placeholder="点击上方任一「AI 改写方式」按钮生成，或直接粘贴剧本...&#10;&#10;格式：&#10;# 张三（男）&#10;张三: 大家好，欢迎收听本期播客。&#10;李四: 大家好，我是李四。"></textarea>
+            <!-- 剧本编辑器（唯一文本框，既是输入也是结果） -->
+            <div class="form-label">剧本（可粘贴文章让 AI 改写，或直接编辑剧本）</div>
+            <textarea class="form-input" id="pod-script-editor" rows="12" placeholder="&gt; 粘贴文章内容后点击上方「口语润色」等按钮 AI 改写&#10;&gt; 或直接粘贴/编辑剧本，格式：&#10;# 张三（男）&#10;张三: 大家好，欢迎收听本期播客。&#10;李四: 大家好，我是李四。"></textarea>
             <div class="script-stats">
               <span><i data-lucide="type"></i> <span id="pod-script-count">0</span> 字</span>
               <span><i data-lucide="users"></i> <span id="pod-role-count-display">0</span> 个角色</span>

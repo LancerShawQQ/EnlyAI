@@ -782,8 +782,30 @@ class PodcastEngine(BaseModule):
                         text=text, voice_id=voice_id, output_path=tmp_path,
                     )
 
+                    # 关键修复：使用 synthesize() 返回的 audio_path 而非 tmp_path
+                    # 不同 provider 的输出路径可能不同：
+                    # - moss_nano: 输出到 tmp_path（wav）
+                    # - edge_tts: 当 ffmpeg 转 wav 失败时返回 mp3_path（mp3），tmp_path 不存在
+                    # 用返回的 audio_path 作为实际音频文件路径
+                    actual_audio = Path(audio_path) if audio_path else tmp_path
+                    if not actual_audio.exists():
+                        # 回退到 tmp_path（部分 provider 可能确实写到 tmp_path）
+                        actual_audio = tmp_path
+
+                    # 统一转 wav（edge_tts 可能返回 mp3，soundfile 无法直接读取 mp3）
+                    if actual_audio.suffix.lower() == ".mp3":
+                        wav_path = actual_audio.with_suffix(".wav")
+                        import subprocess as _sp
+                        _sp.run(
+                            ["ffmpeg", "-y", "-i", str(actual_audio),
+                             "-acodec", "pcm_s16le", "-ar", "24000", "-ac", "1", str(wav_path)],
+                            capture_output=True, timeout=30,
+                        )
+                        actual_audio.unlink(missing_ok=True)  # 删除临时 mp3
+                        actual_audio = wav_path
+
                     # 读取到内存
-                    seg_audio, sr = sf.read(str(tmp_path), dtype="float32")
+                    seg_audio, sr = sf.read(str(actual_audio), dtype="float32")
                     if seg_audio.ndim > 1:
                         seg_audio = seg_audio.mean(axis=1)
                     if sr != sample_rate:
@@ -793,12 +815,14 @@ class PodcastEngine(BaseModule):
                         seg_audio = np.interp(indices, np.arange(len(seg_audio)), seg_audio).astype(np.float32)
                     duration = len(seg_audio) / sample_rate
 
-                    # 写入缓存
+                    # 写入缓存（统一存 wav 格式）
                     import shutil
-                    shutil.copy2(str(tmp_path), str(cache_path))
+                    shutil.copy2(str(actual_audio), str(cache_path))
 
                     # 清理临时文件
-                    tmp_path.unlink(missing_ok=True)
+                    if actual_audio != tmp_path:
+                        tmp_path.unlink(missing_ok=True)
+                    actual_audio.unlink(missing_ok=True)
 
                 except Exception as e:
                     self.logger.error(f"第 {i} 句合成失败: {e}")

@@ -4192,21 +4192,18 @@ function bindPodcastEvents() {
       podcastState.source = tab.dataset.podSource;
       document.querySelectorAll('[data-pod-source]').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      document.querySelectorAll('.sub-page').forEach(p => {
-        if (p.id && p.id.startsWith('pod-source-')) p.classList.remove('active');
+      // 切换来源输入区显示：manual 时隐藏所有输入区（剧本编辑器始终可见），
+      // 其他来源显示对应输入区
+      document.querySelectorAll('[id^="pod-source-"]').forEach(p => {
+        if (p.id === 'pod-source-manual') return; // 无独立输入区
+        p.style.display = 'none';
       });
       const target = document.getElementById(`pod-source-${tab.dataset.podSource}`);
-      if (target) target.classList.add('active');
+      if (target && tab.dataset.podSource !== 'manual') {
+        target.style.display = '';
+      }
     });
   });
-
-  // 文章输入字数统计
-  const manualText = document.getElementById('pod-manual-text');
-  if (manualText) {
-    manualText.addEventListener('input', () => {
-      document.getElementById('pod-manual-count').textContent = manualText.value.length;
-    });
-  }
 
   // URL 提取
   document.getElementById('pod-extract-btn')?.addEventListener('click', podExtractContent);
@@ -4231,6 +4228,17 @@ function bindPodcastEvents() {
   // AI 改写剧本（4 种模式按钮）
   document.querySelectorAll('[data-pod-rewrite-mode]').forEach(btn => {
     btn.addEventListener('click', () => podRewriteScript(btn.dataset.podRewriteMode, btn));
+  });
+
+  // 清空剧本
+  document.getElementById('pod-clear-script-btn')?.addEventListener('click', () => {
+    const editor = document.getElementById('pod-script-editor');
+    if (editor) {
+      editor.value = '';
+      podcastState.script = '';
+      podcastState.content = '';
+      updatePodcastScriptStats();
+    }
   });
 
   // 剧本编辑器字数/角色统计
@@ -4386,8 +4394,6 @@ function podcastNext() {
     podcastState.result = null;
     podcastState.jobId = null;
     // 清空表单
-    document.getElementById('pod-manual-text').value = '';
-    document.getElementById('pod-manual-count').textContent = '0';
     document.getElementById('pod-url-input').value = '';
     document.getElementById('pod-extract-preview').innerHTML = '';
     document.getElementById('pod-file-preview').innerHTML = '';
@@ -4437,7 +4443,8 @@ function podcastNext() {
 function collectPodcastContent() {
   switch (podcastState.source) {
     case 'manual':
-      return (document.getElementById('pod-manual-text')?.value || '').trim();
+      // 整合后：文章输入直接从剧本编辑器读取（用户粘贴文章到编辑器）
+      return (document.getElementById('pod-script-editor')?.value || '').trim();
     case 'url':
       return podcastState.content; // 已在提取时保存
     case 'file':
@@ -4467,11 +4474,14 @@ async function podExtractContent() {
   try {
     const data = await api('/api/podcast/extract', { method: 'POST', body: { url } });
     podcastState.content = data.text;
-    preview.innerHTML = `
-      <div class="card" style="background:var(--bg-secondary);padding:12px">
-        <div class="hint" style="margin-bottom:8px">提取成功 · ${data.char_count} 字</div>
-        <div style="max-height:200px;overflow-y:auto;font-size:13px;line-height:1.6;white-space:pre-wrap">${escapeHtml(data.text.substring(0, 2000))}${data.text.length > 2000 ? '\n...(已截断预览)' : ''}</div>
-      </div>`;
+    // 提取内容后填入剧本编辑器，用户可直接改写或编辑
+    const editor = document.getElementById('pod-script-editor');
+    if (editor) {
+      editor.value = data.text;
+      podcastState.script = data.text;
+      updatePodcastScriptStats();
+    }
+    preview.innerHTML = `<div class="hint" style="color:var(--color-success)"><i data-lucide="check-circle"></i> 提取成功 · ${data.char_count} 字，已填入剧本编辑器，可点击「口语润色」等按钮改写</div>`;
     if (window.lucide) lucide.createIcons();
     toast(`提取成功，共 ${data.char_count} 字`, 'success');
   } catch (e) {
@@ -4495,12 +4505,15 @@ function handlePodcastFile(file) {
   reader.onload = (e) => {
     const text = e.target.result;
     podcastState.content = text;
+    // 文件内容填入剧本编辑器
+    const editor = document.getElementById('pod-script-editor');
+    if (editor) {
+      editor.value = text;
+      podcastState.script = text;
+      updatePodcastScriptStats();
+    }
     const preview = document.getElementById('pod-file-preview');
-    preview.innerHTML = `
-      <div class="card" style="background:var(--bg-secondary);padding:12px">
-        <div class="hint" style="margin-bottom:4px"><i data-lucide="file-text"></i> ${escapeHtml(file.name)} · ${text.length} 字</div>
-        <div style="max-height:150px;overflow-y:auto;font-size:13px;line-height:1.6;white-space:pre-wrap">${escapeHtml(text.substring(0, 1000))}${text.length > 1000 ? '\n...' : ''}</div>
-      </div>`;
+    preview.innerHTML = `<div class="hint" style="color:var(--color-success)"><i data-lucide="check-circle"></i> ${escapeHtml(file.name)} · ${text.length} 字，已填入剧本编辑器</div>`;
     if (window.lucide) lucide.createIcons();
     toast(`文件已加载，共 ${text.length} 字`, 'success');
   };
@@ -4564,6 +4577,9 @@ function updatePodcastScriptStats() {
   document.getElementById('pod-script-count').textContent = script.length;
   const roles = parsePodcastRoles(script);
   document.getElementById('pod-role-count-display').textContent = roles.length;
+  // 同步 header hint 字数
+  const hint = document.getElementById('pod-script-count-hint');
+  if (hint) hint.textContent = `${script.length} 字`;
 }
 
 // 解析剧本中的角色列表（按首次出现顺序）
