@@ -368,27 +368,6 @@ class TTSEngine(BaseModule):
             f"clone={'是' if prompt_audio_path else '否'} text_len={len(text)}"
         )
 
-        # v7: 采样参数调优（降低 AI 感，让语音更自然）
-        # v6 修复：必须通过 synthesize() 的 sample_mode/do_sample 参数传递
-        # v7 新增：voice_clone_max_text_tokens 从 75 调到 100（保持长句韵律连贯）
-        # 注意：audio_top_k 不宜过低（<22 会导致模型无法选到 audio_end_token，
-        #        生成满 30s max_new_frames 才停止），保持 manifest 默认 25
-        gen_defaults = runtime.manifest["generation_defaults"]
-        _orig_defaults = dict(gen_defaults)
-        try:
-            # 音频层参数通过 manifest 注入（synthesize 不覆盖这些字段）
-            # v7: temperature=0.9 与 v6 一致（0.85 太低导致生成过长）
-            if "audio_temperature" in gen_defaults:
-                gen_defaults["audio_temperature"] = float(cfg.get("audio_temperature", 0.9))
-            if "audio_top_p" in gen_defaults:
-                gen_defaults["audio_top_p"] = float(cfg.get("audio_top_p", 0.90))
-            if "audio_repetition_penalty" in gen_defaults:
-                gen_defaults["audio_repetition_penalty"] = float(cfg.get("audio_repetition_penalty", 1.05))
-            if "text_temperature" in gen_defaults:
-                gen_defaults["text_temperature"] = float(cfg.get("text_temperature", 1.0))
-        except (TypeError, ValueError):
-            pass
-
         # v6: sample_mode 和 do_sample 必须通过参数传递（不能只改 manifest）
         # v8.2: 从 full 改回 fixed。full 模式会生成大量静音（85-95% 静音比例），
         #   fixed 模式稳定（静音比例 <25%），且补静音参考音频已解决开头急促问题
@@ -416,9 +395,6 @@ class TTSEngine(BaseModule):
             sample_mode=sample_mode_val,
             do_sample=do_sample_val,
         )
-
-        # 恢复原始采样参数（避免影响后续合成）
-        runtime.manifest["generation_defaults"] = _orig_defaults
 
         # v8.1: 截断尾部连续静音（>500ms）
         # full 模式有时会生成大量尾部静音，需要自动截断
@@ -452,32 +428,12 @@ class TTSEngine(BaseModule):
             self.logger.warning(f"v8.1: 尾部静音截断失败: {_e}")
 
         audio_path = Path(result["audio_path"])
-        # MOSS 输出 48kHz 立体声 wav；转 16kHz 单声道供 Wav2Lip 使用
-        # 关键：系统 ffmpeg 是极简编译版（--disable-everything，无音频编解码器），
-        #   必须用 imageio-ffmpeg 自带的完整版 ffmpeg，否则转换静默失败
-        final_path = audio_path
-        try:
-            import subprocess
-            import imageio_ffmpeg
-            ffmpeg_cmd = imageio_ffmpeg.get_ffmpeg_exe()
-            mono_path = output_path.parent / f"{output_path.stem}_16k.wav"
-            subprocess.run(
-                [ffmpeg_cmd, "-y", "-i", str(audio_path),
-                 "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
-                 str(mono_path)],
-                check=True, capture_output=True, timeout=30,
-            )
-            if mono_path.exists():
-                # 替换为 16k 单声道版本
-                audio_path.unlink(missing_ok=True)
-                mono_path.rename(output_path)
-                final_path = output_path
-        except Exception as e:
-            self.logger.warning(f"MOSS 音频转 16k 失败，使用原始输出: {e}")
-            # 转换失败时确保原始音频落到 output_path（resolve 比较，避免绝对/相对路径误判）
-            if audio_path.resolve() != output_path.resolve() and audio_path.exists():
-                audio_path.rename(output_path)
-            final_path = output_path
+        # 保留 MOSS 原始 48kHz 立体声输出：
+        # - 数字人场景：Wav2Lip 服务端 audio.load_wav(path, 16000) 会自行重采样到 16kHz 单声道
+        # - 播客场景：podcast_engine 会重采样到 24kHz；保留 48kHz 避免 16k→24k 上采样损失音质
+        if audio_path.resolve() != output_path.resolve() and audio_path.exists():
+            audio_path.rename(output_path)
+        final_path = output_path
 
         duration = get_wav_duration(final_path)
 

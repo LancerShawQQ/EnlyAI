@@ -55,8 +55,8 @@ tts:
     execution_provider: cpu
     # 内置音色（无参考音频时使用）：Junhao / Trump / Ava / Bella / Adam / Nathan
     builtin_voice: Junhao
-    # 文本归一化是否启用 WeTextProcessing（需 pynini，Windows 难装建议关）
-    enable_wetext: false
+    # 文本归一化是否启用 WeTextProcessing（需 pynini，已安装启用）
+    enable_wetext: true
     # 是否启用 robust normalizer
     enable_normalize_tts_text: true
     # 长文本分块 token 预算
