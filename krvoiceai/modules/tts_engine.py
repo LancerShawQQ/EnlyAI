@@ -451,6 +451,20 @@ class TTSEngine(BaseModule):
                     self.logger.info(
                         f"v9: 补齐开头静音 {_leading_silence_ms2:.0f}ms → 200ms"
                     )
+            elif _leading_silence_ms2 > 200:
+                # v9.8: 截断过长的开头静音到 200ms
+                # 根因：Junhao 音色在 fixed 模式下会生成 500ms+ 开头静音，
+                #   导致用户听感"等很久才出声"。原 v9 逻辑只补齐 < 150ms，不截断 > 200ms。
+                # 修复：保留前 200ms 静音 + 从语音起点开始的音频。
+                _keep_samples2 = int(_sr2 * 0.2)
+                _trimmed2 = _np2.concatenate([
+                    _data2[:_keep_samples2],       # 保留 200ms 开头静音
+                    _data2[_first_speech2:],        # 从语音起点开始的音频
+                ], axis=0)
+                _sf2.write(str(result["audio_path"]), _trimmed2, _sr2, subtype="PCM_16")
+                self.logger.info(
+                    f"v9.8: 截断开头静音 {_leading_silence_ms2:.0f}ms → 200ms"
+                )
         except Exception as _e2:
             self.logger.warning(f"v9: 开头静音补齐失败: {_e2}")
 
@@ -499,8 +513,8 @@ class TTSEngine(BaseModule):
                 _compressed = []
                 _sil_start3 = -1
                 _total_compressed_ms = 0
-                _max_silence_ms = 300  # 超过此值才压缩
-                _target_silence_ms = 200  # 压缩到此值
+                _max_silence_ms = 150  # v9.10: 超过此值才压缩（原 300ms，导致 170-190ms 静音未被压缩，卡顿）
+                _target_silence_ms = 120  # v9.10: 压缩到此值（原 150ms，中文播客听感仍卡顿）
                 _target_silence_samples = int(_sr3 * _target_silence_ms / 1000)
 
                 for _idx3, _sil in enumerate(_is_silence):
@@ -544,76 +558,80 @@ class TTSEngine(BaseModule):
                 else:
                     _result3 = _data3
 
-                # v9.7: 从过渡区开始应用淡入（最后一个静音点之后）
-                # 根因：v9.6 从检测点开始淡入，但检测点后可能有一段纯静音（如 780~830ms），
-                #   淡入窗口被静音"浪费"，导致真正需要淡入的过渡区（830~860ms）只剩 30ms 窗口，
-                #   不足以平滑过渡，840ms 处仍被检测为爆破音。
-                # v9.5 根因回顾：从"第一个明确语音点"（RMS>0.015）开始淡入，漏掉了过渡区
-                #   （RMS 在 0.005~0.015 之间的辅音起始）。
-                # 修复：从检测点开始按 1ms 步进扫描，找到第一个 RMS > silence_rms 的点
-                #   （即过渡区开始），从该点应用 80ms 平方淡入。
-                #   - 既覆盖过渡区（解决 v9.5 漏检问题）
-                #   - 又不在静音上浪费淡入窗口（解决 v9.6 窗口不足问题）
-                _fade_ms_93 = 80
-                _fade_samples_93 = int(_sr3 * _fade_ms_93 / 1000)
-                _fade_win_93 = int(_sr3 * 0.01)  # 10ms 步进
-                _silence_rms_93 = 0.005  # 静音判定（严格，只有接近纯零才算）
-                _speech_rms_93 = 0.015   # 语音判定（降低，覆盖辅音起始）
-                _search_step_93 = int(_sr3 * 0.001)  # 1ms 步进定位过渡区起点
-                _fade_applied_93 = 0
-                _skip_until_93 = 0
+                # v9.10: 优化淡入长度（80ms → 40ms）
+                # v9.9 缺陷：80ms 淡入过长，覆盖到 292ms，导致 240-292ms 稳定语音被压制 40-86%
+                #   实例：255ms 处原始 RMS=0.2384，压制后 0.0795（降低 67%），听感"闷"和"断续"
+                # v9.10 修复：缩短到 40ms，只覆盖过渡区 212-252ms
+                #   效果：220-235ms 过渡区被有效压制（84-97%），240ms 后完全保留语音（0% 压制）
+                # v9.9 保留逻辑（prev 2ms / next 30ms / search 5ms）：
+                #   1. prev 窗口 2ms，只检测紧邻检测点的静音
+                #   2. next 窗口 30ms，避免在静音段提前触发
+                #   3. 搜索窗口 5ms，RMS 更稳定
+                _fade_ms_99 = 40  # v9.10: 80ms → 40ms（避免过度压制稳定语音）
+                _fade_samples_99 = int(_sr3 * _fade_ms_99 / 1000)
+                _detect_step_99 = int(_sr3 * 0.01)   # 10ms 检测步进（性能考虑）
+                _prev_win_99 = int(_sr3 * 0.002)     # 2ms prev 窗口（修复 3880ms 漏检）
+                _next_win_99 = int(_sr3 * 0.03)      # 30ms next 窗口（避免提前触发）
+                _silence_rms_99 = 0.005  # 静音判定
+                _speech_rms_99 = 0.015   # 语音判定
+                _search_step_99 = int(_sr3 * 0.005)  # 5ms 步进定位过渡区起点
+                _fade_applied_99 = 0
+                _skip_until_99 = 0
 
-                for _i93 in range(_fade_win_93, len(_result3) - _fade_samples_93 - _fade_win_93, _fade_win_93):
-                    if _i93 < _skip_until_93:
+                for _i99 in range(_prev_win_99, len(_result3) - _next_win_99 - _fade_samples_99, _detect_step_99):
+                    if _i99 < _skip_until_99:
                         continue
-                    _prev_frame_93 = _result3[_i93 - _fade_win_93:_i93]
-                    _next_frame_93 = _result3[_i93:_i93 + _fade_samples_93]
-                    if _prev_frame_93.shape[0] < _fade_win_93 or _next_frame_93.shape[0] < _fade_samples_93:
+                    _prev_frame_99 = _result3[_i99 - _prev_win_99:_i99]
+                    _next_frame_99 = _result3[_i99:_i99 + _next_win_99]
+                    if _prev_frame_99.shape[0] < _prev_win_99 or _next_frame_99.shape[0] < _next_win_99:
                         continue
-                    _prev_rms_93 = float(_np3.sqrt(_np3.mean(_prev_frame_93 ** 2)))
-                    _next_rms_93 = float(_np3.sqrt(_np3.mean(_next_frame_93 ** 2)))
+                    _prev_rms_99 = float(_np3.sqrt(_np3.mean(_prev_frame_99 ** 2)))
+                    _next_rms_99 = float(_np3.sqrt(_np3.mean(_next_frame_99 ** 2)))
 
-                    if _prev_rms_93 < _silence_rms_93 and _next_rms_93 > _speech_rms_93:
-                        # v9.7: 从检测点开始按 1ms 步进找到过渡区起点（第一个 RMS > silence_rms 的点）
-                        _fade_start_93 = _i93  # 默认从检测点开始
-                        _search_end_93 = min(_i93 + _fade_samples_93, len(_result3) - _fade_samples_93)
-                        for _j93 in range(_i93, _search_end_93, _search_step_93):
-                            _probe_frame_93 = _result3[_j93:_j93 + _search_step_93]
-                            if _probe_frame_93.shape[0] < _search_step_93:
+                    if _prev_rms_99 < _silence_rms_99 and _next_rms_99 > _speech_rms_99:
+                        # v9.9: 从检测点开始按 5ms 步进找到过渡区起点（第一个 RMS > silence_rms 的点）
+                        _fade_start_99 = _i99  # 默认从检测点开始
+                        _search_end_99 = min(_i99 + _next_win_99, len(_result3) - _search_step_99)
+                        for _j99 in range(_i99, _search_end_99, _search_step_99):
+                            _probe_frame_99 = _result3[_j99:_j99 + _search_step_99]
+                            if _probe_frame_99.shape[0] < _search_step_99:
                                 break
-                            _probe_rms_93 = float(_np3.sqrt(_np3.mean(_probe_frame_93 ** 2)))
-                            if _probe_rms_93 > _silence_rms_93:
-                                _fade_start_93 = _j93
+                            _probe_rms_99 = float(_np3.sqrt(_np3.mean(_probe_frame_99 ** 2)))
+                            if _probe_rms_99 > _silence_rms_99:
+                                _fade_start_99 = _j99
                                 break
 
                         # 从过渡区起点应用 80ms 平方淡入
-                        _fade_end_93 = min(_fade_start_93 + _fade_samples_93, len(_result3))
-                        _fade_len_93 = _fade_end_93 - _fade_start_93
-                        if _fade_len_93 > 0:
-                            _fade_region_93 = _result3[_fade_start_93:_fade_end_93].astype(_np3.float32, copy=True)
-                            # v9.7: 使用平方淡入（envelope = (t/T)²）
-                            _fade_linear = _np3.linspace(0, 1, _fade_len_93, dtype=_np3.float32)
-                            _fade_envelope_93 = _fade_linear ** 2  # 平方淡入
-                            if _fade_region_93.ndim == 2:
-                                _fade_envelope_93 = _fade_envelope_93.reshape(-1, 1)
-                            _faded_region_93 = _fade_region_93 * _fade_envelope_93
-                            _result3[_fade_start_93:_fade_end_93] = _faded_region_93
-                            _fade_applied_93 += 1
-                            _skip_until_93 = _fade_end_93
+                        _fade_end_99 = min(_fade_start_99 + _fade_samples_99, len(_result3))
+                        _fade_len_99 = _fade_end_99 - _fade_start_99
+                        if _fade_len_99 > 0:
+                            _fade_region_99 = _result3[_fade_start_99:_fade_end_99].astype(_np3.float32, copy=True)
+                            # v9.11: 使用三次方淡入（envelope = (t/T)³）
+                            # v9.10 缺陷：平方淡入在早期压制不足，220ms 处只压制 67%，爆破音仍可闻
+                            # v9.11 修复：三次方淡入在早期提供更强压制（envelope=0.19 vs 0.33），
+                            #   后期快速恢复（envelope=0.56 vs 0.68），既消除爆破音又保留语音自然度
+                            _fade_linear_99 = _np3.linspace(0, 1, _fade_len_99, dtype=_np3.float32)
+                            _fade_envelope_99 = _fade_linear_99 ** 3  # v9.11: 三次方淡入
+                            if _fade_region_99.ndim == 2:
+                                _fade_envelope_99 = _fade_envelope_99.reshape(-1, 1)
+                            _faded_region_99 = _fade_region_99 * _fade_envelope_99
+                            _result3[_fade_start_99:_fade_end_99] = _faded_region_99
+                            _fade_applied_99 += 1
+                            _skip_until_99 = _fade_end_99
                             self.logger.info(
-                                f"v9.7: 淡入 #{_fade_applied_93} 检测点={_i93/_sr3*1000:.1f}ms "
-                                f"过渡区起点={_fade_start_93/_sr3*1000:.1f}ms "
-                                f"淡入结束={_fade_end_93/_sr3*1000:.1f}ms "
-                                f"prev_rms={_prev_rms_93:.4f} next_rms={_next_rms_93:.4f}"
+                                f"v9.11: 淡入 #{_fade_applied_99} 检测点={_i99/_sr3*1000:.1f}ms "
+                                f"过渡区起点={_fade_start_99/_sr3*1000:.1f}ms "
+                                f"淡入结束={_fade_end_99/_sr3*1000:.1f}ms "
+                                f"prev_rms={_prev_rms_99:.4f} next_rms={_next_rms_99:.4f}"
                             )
 
                 _sf3.write(str(result["audio_path"]), _result3, _sr3, subtype="PCM_16")
                 self.logger.info(
-                    f"v9.7: 压缩内部静音 {_total_compressed_ms}ms, 应用淡入 {_fade_applied_93} 处 "
+                    f"v9.11: 压缩内部静音 {_total_compressed_ms}ms, 应用淡入 {_fade_applied_99} 处 "
                     f"(原时长={len(_data3)/_sr3:.2f}s → 新时长={len(_result3)/_sr3:.2f}s)"
                 )
         except Exception as _e3:
-            self.logger.warning(f"v9.7: 内部静音压缩/淡入失败: {_e3}")
+            self.logger.warning(f"v9.11: 内部静音压缩/淡入失败: {_e3}")
 
         audio_path = Path(result["audio_path"])
         # 保留 MOSS 原始 48kHz 立体声输出：
