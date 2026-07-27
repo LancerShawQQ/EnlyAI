@@ -513,7 +513,7 @@ class TTSEngine(BaseModule):
                 _compressed = []
                 _sil_start3 = -1
                 _total_compressed_ms = 0
-                _max_silence_ms = 150  # v9.10: 超过此值才压缩（原 300ms，导致 170-190ms 静音未被压缩，卡顿）
+                _max_silence_ms = 100  # v9.12: 超过此值才压缩（原 150ms，导致 Lancer 克隆 140ms 静音未被压缩，听感断续）
                 _target_silence_ms = 120  # v9.10: 压缩到此值（原 150ms，中文播客听感仍卡顿）
                 _target_silence_samples = int(_sr3 * _target_silence_ms / 1000)
 
@@ -589,6 +589,24 @@ class TTSEngine(BaseModule):
                     _next_rms_99 = float(_np3.sqrt(_np3.mean(_next_frame_99 ** 2)))
 
                     if _prev_rms_99 < _silence_rms_99 and _next_rms_99 > _speech_rms_99:
+                        # v9.13: 区分开头边界和内部边界，使用不同阈值
+                        # v9.12 缺陷：对所有边界统一用阈值 5，导致 Xiaoyu 开头（ratio=8.6, 11.9）被误判为"突变"而应用淡入
+                        #   实测数据：
+                        #   - Xiaoyu 开头边界 ratio=8.6/11.9（平缓上升，不应淡入）
+                        #   - Lancer 开头边界 ratio=544.3（真正突变，应淡入）
+                        #   - 内部边界 ratio=3-15（需要区分，阈值 5 合适）
+                        # v9.13 修复：开头边界（_fade_applied_99==0）使用阈值 20，内部边界保持阈值 5
+                        #   依据：需要淡入的音色（Junhao/Lancer）开头 ratio 通常 >100，平缓音色（Xiaoyu）开头 ratio <15
+                        _energy_ratio_99 = _next_rms_99 / max(_prev_rms_99, 0.0001)
+                        _threshold_99 = 20.0 if _fade_applied_99 == 0 else 5.0
+                        if _energy_ratio_99 < _threshold_99:
+                            _skip_until_99 = _i99 + _next_win_99
+                            _boundary_type_99 = "开头" if _fade_applied_99 == 0 else "内部"
+                            self.logger.info(
+                                f"v9.13: 跳过淡入（{_boundary_type_99}边界能量上升平缓 ratio={_energy_ratio_99:.1f}<{_threshold_99:.0f}）"
+                                f" 检测点={_i99/_sr3*1000:.1f}ms prev_rms={_prev_rms_99:.4f} next_rms={_next_rms_99:.4f}"
+                            )
+                            continue
                         # v9.9: 从检测点开始按 5ms 步进找到过渡区起点（第一个 RMS > silence_rms 的点）
                         _fade_start_99 = _i99  # 默认从检测点开始
                         _search_end_99 = min(_i99 + _next_win_99, len(_result3) - _search_step_99)
@@ -619,19 +637,19 @@ class TTSEngine(BaseModule):
                             _fade_applied_99 += 1
                             _skip_until_99 = _fade_end_99
                             self.logger.info(
-                                f"v9.11: 淡入 #{_fade_applied_99} 检测点={_i99/_sr3*1000:.1f}ms "
+                                f"v9.13: 淡入 #{_fade_applied_99} 检测点={_i99/_sr3*1000:.1f}ms "
                                 f"过渡区起点={_fade_start_99/_sr3*1000:.1f}ms "
                                 f"淡入结束={_fade_end_99/_sr3*1000:.1f}ms "
-                                f"prev_rms={_prev_rms_99:.4f} next_rms={_next_rms_99:.4f}"
+                                f"prev_rms={_prev_rms_99:.4f} next_rms={_next_rms_99:.4f} ratio={_energy_ratio_99:.1f}"
                             )
 
                 _sf3.write(str(result["audio_path"]), _result3, _sr3, subtype="PCM_16")
                 self.logger.info(
-                    f"v9.11: 压缩内部静音 {_total_compressed_ms}ms, 应用淡入 {_fade_applied_99} 处 "
+                    f"v9.13: 压缩内部静音 {_total_compressed_ms}ms, 应用淡入 {_fade_applied_99} 处 "
                     f"(原时长={len(_data3)/_sr3:.2f}s → 新时长={len(_result3)/_sr3:.2f}s)"
                 )
         except Exception as _e3:
-            self.logger.warning(f"v9.11: 内部静音压缩/淡入失败: {_e3}")
+            self.logger.warning(f"v9.13: 内部静音压缩/淡入失败: {_e3}")
 
         audio_path = Path(result["audio_path"])
         # 保留 MOSS 原始 48kHz 立体声输出：
