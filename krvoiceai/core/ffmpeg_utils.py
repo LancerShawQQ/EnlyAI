@@ -28,8 +28,27 @@ class FFmpegRunner:
 
     def __init__(self, ffmpeg_path: str | None = None):
         cfg = get_config()
-        self.ffmpeg = ffmpeg_path or cfg.get("composer.ffmpeg_path", "ffmpeg")
-        self.ffprobe = self.ffmpeg.replace("ffmpeg", "ffprobe")
+        if ffmpeg_path:
+            self.ffmpeg = ffmpeg_path
+        else:
+            # 优先使用 imageio-ffmpeg 的完整版 ffmpeg（支持 -loop、mp3 解码等），
+            # 避免 TRAE 自带轻量 ffmpeg 缺失选项导致 compose/tts 失败。
+            # 配置文件显式指定 composer.ffmpeg_path 时，覆盖自动选择。
+            configured = cfg.get("composer.ffmpeg_path", "")
+            if configured and configured != "ffmpeg":
+                self.ffmpeg = configured
+            else:
+                try:
+                    import imageio_ffmpeg
+                    self.ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+                except Exception:
+                    self.ffmpeg = "ffmpeg"
+        # ffprobe：imageio-ffmpeg 不提供 ffprobe，优先用系统 PATH 中的 ffprobe
+        # （所有 ffprobe 调用前都有 shutil.which 检查，缺失时仅无法探测时长，不影响主流程）
+        if shutil.which("ffprobe"):
+            self.ffprobe = "ffprobe"
+        else:
+            self.ffprobe = self.ffmpeg.replace("ffmpeg", "ffprobe")
         self.logger = get_logger().bind(component="ffmpeg")
         # 硬件编码探测（启动时一次性检测，结果缓存于 hardware_probe 的 lru_cache）
         from .hardware_probe import get_video_encoder, detect_nvenc
