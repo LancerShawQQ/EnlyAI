@@ -348,20 +348,12 @@ class TTSEngine(BaseModule):
                 f"MOSS 未找到 {voice_id} 的克隆样本，回退到内置音色 {actual_builtin}"
             )
 
-        # v8: 修复 Junhao 开头急促问题
-        # 根因：Junhao 参考音频 zh_1.wav 开头静音仅 60ms（< 1 codec 帧），
-        #   模型学到"急促起音"韵律，导致第一个字没说完就跳到下一个字。
-        #   其他音色（Zhiming 200ms、Xiaoyu 270ms 开头静音）无此问题。
-        # 修复：对 Junhao 音色，使用补了 240ms 静音前缀 + 200ms 后缀的参考音频，
-        #   让模型学到"静音→起音"的自然过渡。幅度淡入无法解决韵律问题。
-        if prompt_audio_path is None and actual_builtin == "Junhao":
-            from ..core.config import PROJECT_ROOT
-            junhao_padded = (PROJECT_ROOT / "../MOSS-TTS-Nano/assets/audio/zh_1_padded.wav").resolve()
-            if junhao_padded.exists():
-                prompt_audio_path = str(junhao_padded)
-                self.logger.info(
-                    f"v8: Junhao 使用补静音参考音频 (240ms前缀+200ms后缀): {junhao_padded.name}"
-                )
+        # v9: 移除 Junhao padded 参考音频特殊处理
+        # 根因：padded 参考音频（300ms开头+500ms尾部静音）被 codec 重新编码后，
+        #   模型学到"静音→说话→静音"模式，导致每个 chunk 都生成 700-1000ms 静音，
+        #   静音占比高达 52%（正常 <25%）。改为使用 manifest 预编码（与 Xiaoyu 一致），
+        #   开头急促问题通过后处理补静音解决（见下方 _ensure_leading_silence）。
+        # v8 原方案：使用 padded 参考音频 → 导致大量内部静音/卡顿
 
         self.logger.info(
             f"MOSS-TTS-Nano 合成 voice={voice_id} builtin={actual_builtin} "
@@ -426,6 +418,202 @@ class TTSEngine(BaseModule):
                 )
         except Exception as _e:
             self.logger.warning(f"v8.1: 尾部静音截断失败: {_e}")
+
+        # v9: 补齐开头静音（修复 Junhao 开头急促问题）
+        # 根因：Junhao manifest 预编码参考音频 zh_1.wav 开头静音仅 60ms，
+        #   模型学到的韵律导致输出开头静音不足（< 100ms），听起来急促。
+        #   其他音色（Xiaoyu 200ms、Zhiming 200ms 开头静音）无此问题。
+        # 修复：检测输出开头静音，不足 150ms 时补齐到 200ms。
+        try:
+            import soundfile as _sf2
+            import numpy as _np2
+            _data2, _sr2 = _sf2.read(str(result["audio_path"]), dtype="float32")
+            if _data2.ndim == 1:
+                _data2 = _data2.reshape(-1, 1)
+            _win2 = int(_sr2 * 0.01)  # 10ms 窗口
+            _silence_threshold2 = 0.01
+            # 从开头向后找第一个非静音窗口
+            _first_speech2 = len(_data2)
+            for _i2 in range(0, len(_data2) - _win2, _win2):
+                _w2 = _data2[_i2: _i2 + _win2]
+                _rms2 = float(_np2.sqrt(_np2.mean(_w2 ** 2)))
+                if _rms2 > _silence_threshold2:
+                    _first_speech2 = _i2
+                    break
+            _leading_silence_ms2 = _first_speech2 / _sr2 * 1000
+            if _leading_silence_ms2 < 150:
+                # 补齐到 200ms 开头静音
+                _pad_samples2 = int(_sr2 * 0.2) - _first_speech2
+                if _pad_samples2 > 0:
+                    _padding2 = _np2.zeros((_pad_samples2, _data2.shape[1]), dtype=_data2.dtype)
+                    _padded2 = _np2.concatenate([_padding2, _data2], axis=0)
+                    _sf2.write(str(result["audio_path"]), _padded2, _sr2, subtype="PCM_16")
+                    self.logger.info(
+                        f"v9: 补齐开头静音 {_leading_silence_ms2:.0f}ms → 200ms"
+                    )
+        except Exception as _e2:
+            self.logger.warning(f"v9: 开头静音补齐失败: {_e2}")
+
+        # v9.1: 压缩内部静音（修复 Junhao chunk 间静音过长问题）
+        # 根因：Junhao 音色在 fixed 模式下，模型会在 chunk 边界生成 700-1000ms 静音，
+        #   导致说话卡顿（静音占比 50%+，正常 <25%）。inter-chunk pause 仅 180ms，
+        #   但模型在 chunk 内部也生成大量静音。
+        # 修复：检测超过 300ms 的内部静音段，压缩到 200ms。保留首尾静音不变。
+        try:
+            import soundfile as _sf3
+            import numpy as _np3
+            _data3, _sr3 = _sf3.read(str(result["audio_path"]), dtype="float32")
+            if _data3.ndim == 1:
+                _data3 = _data3.reshape(-1, 1)
+            _win3 = int(_sr3 * 0.01)  # 10ms 窗口
+            _silence_threshold3 = 0.01
+            _channels3 = _data3.shape[1]
+
+            # 找到第一个和最后一个非静音窗口
+            _first_speech3 = 0
+            _last_speech3 = len(_data3)
+            for _i3 in range(0, len(_data3) - _win3, _win3):
+                _w3 = _data3[_i3: _i3 + _win3]
+                _rms3 = float(_np3.sqrt(_np3.mean(_w3 ** 2)))
+                if _rms3 > _silence_threshold3:
+                    _first_speech3 = _i3
+                    break
+            for _i3 in range(len(_data3) - _win3, -1, -_win3):
+                _w3 = _data3[_i3: _i3 + _win3]
+                _rms3 = float(_np3.sqrt(_np3.mean(_w3 ** 2)))
+                if _rms3 > _silence_threshold3:
+                    _last_speech3 = _i3 + _win3
+                    break
+
+            # 只压缩语音范围内的内部静音
+            if _last_speech3 > _first_speech3:
+                _speech_range = _data3[_first_speech3:_last_speech3]
+                # 标记每个窗口是否为静音
+                _is_silence = []
+                for _i3 in range(0, len(_speech_range) - _win3, _win3):
+                    _w3 = _speech_range[_i3: _i3 + _win3]
+                    _rms3 = float(_np3.sqrt(_np3.mean(_w3 ** 2)))
+                    _is_silence.append(_rms3 < _silence_threshold3)
+
+                # 找到连续静音段并压缩
+                _compressed = []
+                _sil_start3 = -1
+                _total_compressed_ms = 0
+                _max_silence_ms = 300  # 超过此值才压缩
+                _target_silence_ms = 200  # 压缩到此值
+                _target_silence_samples = int(_sr3 * _target_silence_ms / 1000)
+
+                for _idx3, _sil in enumerate(_is_silence):
+                    if _sil:
+                        if _sil_start3 < 0:
+                            _sil_start3 = _idx3
+                    else:
+                        if _sil_start3 >= 0:
+                            _sil_dur_ms = (_idx3 - _sil_start3) * 10
+                            if _sil_dur_ms >= _max_silence_ms:
+                                # 压缩这段静音
+                                _compressed.append(_np3.zeros((_target_silence_samples, _channels3), dtype=_data3.dtype))
+                                _total_compressed_ms += _sil_dur_ms - _target_silence_ms
+                            else:
+                                # 保留原始静音
+                                _sil_start_sample = _sil_start3 * _win3
+                                _sil_end_sample = _idx3 * _win3
+                                _compressed.append(_speech_range[_sil_start_sample:_sil_end_sample])
+                            _sil_start3 = -1
+                        # 保留非静音部分
+                        _seg_start = _idx3 * _win3
+                        _seg_end = (_idx3 + 1) * _win3
+                        _compressed.append(_speech_range[_seg_start:_seg_end])
+
+                # 处理末尾的静音段
+                if _sil_start3 >= 0:
+                    _sil_dur_ms = (len(_is_silence) - _sil_start3) * 10
+                    if _sil_dur_ms >= _max_silence_ms:
+                        _compressed.append(_np3.zeros((_target_silence_samples, _channels3), dtype=_data3.dtype))
+                        _total_compressed_ms += _sil_dur_ms - _target_silence_ms
+                    else:
+                        _sil_start_sample = _sil_start3 * _win3
+                        _compressed.append(_speech_range[_sil_start_sample:])
+
+                if _total_compressed_ms > 0 and _compressed:
+                    _result3 = _np3.concatenate([
+                        _data3[:_first_speech3],  # 保留开头静音
+                        _np3.concatenate(_compressed, axis=0),  # 压缩后的语音
+                        _data3[_last_speech3:],  # 保留尾部静音
+                    ], axis=0)
+                else:
+                    _result3 = _data3
+
+                # v9.7: 从过渡区开始应用淡入（最后一个静音点之后）
+                # 根因：v9.6 从检测点开始淡入，但检测点后可能有一段纯静音（如 780~830ms），
+                #   淡入窗口被静音"浪费"，导致真正需要淡入的过渡区（830~860ms）只剩 30ms 窗口，
+                #   不足以平滑过渡，840ms 处仍被检测为爆破音。
+                # v9.5 根因回顾：从"第一个明确语音点"（RMS>0.015）开始淡入，漏掉了过渡区
+                #   （RMS 在 0.005~0.015 之间的辅音起始）。
+                # 修复：从检测点开始按 1ms 步进扫描，找到第一个 RMS > silence_rms 的点
+                #   （即过渡区开始），从该点应用 80ms 平方淡入。
+                #   - 既覆盖过渡区（解决 v9.5 漏检问题）
+                #   - 又不在静音上浪费淡入窗口（解决 v9.6 窗口不足问题）
+                _fade_ms_93 = 80
+                _fade_samples_93 = int(_sr3 * _fade_ms_93 / 1000)
+                _fade_win_93 = int(_sr3 * 0.01)  # 10ms 步进
+                _silence_rms_93 = 0.005  # 静音判定（严格，只有接近纯零才算）
+                _speech_rms_93 = 0.015   # 语音判定（降低，覆盖辅音起始）
+                _search_step_93 = int(_sr3 * 0.001)  # 1ms 步进定位过渡区起点
+                _fade_applied_93 = 0
+                _skip_until_93 = 0
+
+                for _i93 in range(_fade_win_93, len(_result3) - _fade_samples_93 - _fade_win_93, _fade_win_93):
+                    if _i93 < _skip_until_93:
+                        continue
+                    _prev_frame_93 = _result3[_i93 - _fade_win_93:_i93]
+                    _next_frame_93 = _result3[_i93:_i93 + _fade_samples_93]
+                    if _prev_frame_93.shape[0] < _fade_win_93 or _next_frame_93.shape[0] < _fade_samples_93:
+                        continue
+                    _prev_rms_93 = float(_np3.sqrt(_np3.mean(_prev_frame_93 ** 2)))
+                    _next_rms_93 = float(_np3.sqrt(_np3.mean(_next_frame_93 ** 2)))
+
+                    if _prev_rms_93 < _silence_rms_93 and _next_rms_93 > _speech_rms_93:
+                        # v9.7: 从检测点开始按 1ms 步进找到过渡区起点（第一个 RMS > silence_rms 的点）
+                        _fade_start_93 = _i93  # 默认从检测点开始
+                        _search_end_93 = min(_i93 + _fade_samples_93, len(_result3) - _fade_samples_93)
+                        for _j93 in range(_i93, _search_end_93, _search_step_93):
+                            _probe_frame_93 = _result3[_j93:_j93 + _search_step_93]
+                            if _probe_frame_93.shape[0] < _search_step_93:
+                                break
+                            _probe_rms_93 = float(_np3.sqrt(_np3.mean(_probe_frame_93 ** 2)))
+                            if _probe_rms_93 > _silence_rms_93:
+                                _fade_start_93 = _j93
+                                break
+
+                        # 从过渡区起点应用 80ms 平方淡入
+                        _fade_end_93 = min(_fade_start_93 + _fade_samples_93, len(_result3))
+                        _fade_len_93 = _fade_end_93 - _fade_start_93
+                        if _fade_len_93 > 0:
+                            _fade_region_93 = _result3[_fade_start_93:_fade_end_93].astype(_np3.float32, copy=True)
+                            # v9.7: 使用平方淡入（envelope = (t/T)²）
+                            _fade_linear = _np3.linspace(0, 1, _fade_len_93, dtype=_np3.float32)
+                            _fade_envelope_93 = _fade_linear ** 2  # 平方淡入
+                            if _fade_region_93.ndim == 2:
+                                _fade_envelope_93 = _fade_envelope_93.reshape(-1, 1)
+                            _faded_region_93 = _fade_region_93 * _fade_envelope_93
+                            _result3[_fade_start_93:_fade_end_93] = _faded_region_93
+                            _fade_applied_93 += 1
+                            _skip_until_93 = _fade_end_93
+                            self.logger.info(
+                                f"v9.7: 淡入 #{_fade_applied_93} 检测点={_i93/_sr3*1000:.1f}ms "
+                                f"过渡区起点={_fade_start_93/_sr3*1000:.1f}ms "
+                                f"淡入结束={_fade_end_93/_sr3*1000:.1f}ms "
+                                f"prev_rms={_prev_rms_93:.4f} next_rms={_next_rms_93:.4f}"
+                            )
+
+                _sf3.write(str(result["audio_path"]), _result3, _sr3, subtype="PCM_16")
+                self.logger.info(
+                    f"v9.7: 压缩内部静音 {_total_compressed_ms}ms, 应用淡入 {_fade_applied_93} 处 "
+                    f"(原时长={len(_data3)/_sr3:.2f}s → 新时长={len(_result3)/_sr3:.2f}s)"
+                )
+        except Exception as _e3:
+            self.logger.warning(f"v9.7: 内部静音压缩/淡入失败: {_e3}")
 
         audio_path = Path(result["audio_path"])
         # 保留 MOSS 原始 48kHz 立体声输出：
