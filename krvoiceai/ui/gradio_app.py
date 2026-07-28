@@ -420,9 +420,21 @@ def _build_ui() -> "gr.Blocks":
                     return "❌ 请填写名称并上传音频", gr.update(), None
                 try:
                     app = _get_app()
-                    ok = app.register_voice(vid, Path(sample))
+                    result = app.register_voice(vid, Path(sample))
+                    # 兼容旧返回（bool）和新返回（dict）
+                    if isinstance(result, dict):
+                        ok = bool(result.get("success", False))
+                        qr = result.get("quality_report") or {}
+                    else:
+                        ok = bool(result)
+                        qr = {}
                     av, vv, da, dv = _refresh_avatar_voice_options()
                     msg = f"✅ 音色 {vid} 注册成功！" if ok else f"❌ 注册失败"
+                    # 附加质量检测警告
+                    if ok and qr and not qr.get("ok", True):
+                        warnings = qr.get("warnings", [])
+                        if warnings:
+                            msg += f"\n⚠️ 参考音频质量提醒：\n" + "\n".join(f"  - {w}" for w in warnings)
                     return msg, vv, dv
                 except Exception as e:
                     return f"❌ 注册失败：{e}", gr.update(), None

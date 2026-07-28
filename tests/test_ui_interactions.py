@@ -310,7 +310,12 @@ class TestAssetManagement:
         # 生成测试音频
         test_audio = tmp_path / "sample.wav"
         generate_silent_wav(test_audio, duration=3.0)
-        ok = app.register_voice("test_voice_01", test_audio)
+        result = app.register_voice("test_voice_01", test_audio)
+        # 兼容旧返回（bool）和新返回（dict）
+        if isinstance(result, dict):
+            ok = bool(result.get("success", False))
+        else:
+            ok = bool(result)
         assert ok is True
         # 验证列表
         voices = app.list_voices()

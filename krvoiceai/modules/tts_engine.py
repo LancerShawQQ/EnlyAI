@@ -1015,6 +1015,200 @@ class TTSEngine(BaseModule):
 
         return info.path, info.duration, timestamps
 
+    def analyze_reference_audio(self, sample_audio: Path) -> dict:
+        """分析参考音频质量，返回结构化质量报告
+
+        用于声音克隆前的质量检测，识别开头/尾部静音过长、语音占比低、
+        内部静音段过多、信噪比低、时长不达标等问题。
+
+        Returns:
+            {
+                "ok": bool,                     # 是否无明显质量问题
+                "metrics": {...},               # 详细指标
+                "warnings": [str, ...],         # 警告列表
+                "suggestions": [str, ...],      # 录制改进建议
+            }
+        """
+        import numpy as np
+        import soundfile as sf
+
+        sample_audio = Path(sample_audio)
+        result: dict[str, Any] = {
+            "ok": True,
+            "metrics": {},
+            "warnings": [],
+            "suggestions": [],
+        }
+
+        if not sample_audio.exists():
+            result["ok"] = False
+            result["warnings"].append(f"音频文件不存在: {sample_audio}")
+            return result
+
+        try:
+            data, sr = sf.read(str(sample_audio), dtype="float32")
+        except Exception as e:
+            result["ok"] = False
+            result["warnings"].append(f"音频文件读取失败: {e}")
+            return result
+
+        # 立体声转单声道
+        if data.ndim > 1:
+            data = data.mean(axis=1)
+
+        duration_ms = len(data) / sr * 1000
+        rms = float(np.sqrt(np.mean(data ** 2)))
+        peak = float(np.max(np.abs(data)))
+
+        # 静音分析（10ms 窗口）
+        win = int(sr * 0.01)
+        n = len(data) // win
+        threshold = 0.01
+        first_speech = 0
+        last_speech = len(data)
+
+        for i in range(n):
+            w = data[i * win:(i + 1) * win]
+            r = float(np.sqrt(np.mean(w ** 2)))
+            if r > threshold:
+                if first_speech == 0:
+                    first_speech = i * win
+                last_speech = (i + 1) * win
+
+        leading_silence_ms = first_speech / sr * 1000
+        trailing_silence_ms = (len(data) - last_speech) / sr * 1000
+
+        # 内部静音段（>=100ms 的连续静音，排除开头和尾部）
+        internal_silences: list[tuple[int, int, int]] = []
+        current_silence_start = None
+        for i in range(n):
+            w = data[i * win:(i + 1) * win]
+            r = float(np.sqrt(np.mean(w ** 2)))
+            if r <= threshold:
+                if current_silence_start is None:
+                    current_silence_start = i * 10
+            else:
+                if current_silence_start is not None:
+                    silence_duration = i * 10 - current_silence_start
+                    if silence_duration >= 100:
+                        # 仅记录真正的内部静音（非开头/尾部）
+                        if current_silence_start != 0 and i * 10 < duration_ms - 50:
+                            internal_silences.append(
+                                (current_silence_start, i * 10, silence_duration)
+                            )
+                    current_silence_start = None
+
+        # 信噪比估计（粗略）：语音段 RMS / 静音段 RMS
+        speech_mask = np.zeros(len(data), dtype=bool)
+        for i in range(n):
+            w = data[i * win:(i + 1) * win]
+            if float(np.sqrt(np.mean(w ** 2))) > threshold:
+                speech_mask[i * win:(i + 1) * win] = True
+        speech_rms = float(np.sqrt(np.mean(data[speech_mask] ** 2))) if speech_mask.any() else 0.0
+        silence_mask = ~speech_mask
+        noise_rms = float(np.sqrt(np.mean(data[silence_mask] ** 2))) if silence_mask.any() else 0.001
+        # 避免 log10(0) = -inf：当 speech_rms 为 0 时（纯静音音频），SNR = 0
+        if speech_rms <= 1e-6:
+            snr_db = 0.0
+        else:
+            snr_db = 20 * float(np.log10(speech_rms / max(noise_rms, 1e-6)))
+
+        # 语音占比
+        speech_ratio_pct = speech_mask.sum() / max(len(data), 1) * 100
+
+        # 基频估计（限制 80-300Hz 人声范围）
+        f0 = 0.0
+        try:
+            from scipy.signal import welch
+            freqs, psd = welch(data, sr, nperseg=min(4096, len(data)))
+            voice_mask = (freqs >= 80) & (freqs <= 300)
+            voice_freqs = freqs[voice_mask]
+            voice_psd = psd[voice_mask]
+            if len(voice_freqs) > 0:
+                f0_idx = int(np.argmax(voice_psd))
+                f0 = float(voice_freqs[f0_idx])
+        except Exception:
+            # scipy 不可用时跳过基频检测
+            pass
+
+        metrics = {
+            "duration_ms": round(duration_ms),
+            "duration_s": round(duration_ms / 1000, 2),
+            "sample_rate": sr,
+            "rms": round(rms, 4),
+            "peak": round(peak, 4),
+            "leading_silence_ms": round(leading_silence_ms),
+            "trailing_silence_ms": round(trailing_silence_ms),
+            "internal_silence_count": len(internal_silences),
+            "internal_silences": [
+                {"start_ms": s, "end_ms": e, "duration_ms": d}
+                for s, e, d in internal_silences
+            ],
+            "speech_ratio_pct": round(speech_ratio_pct, 1),
+            "snr_db": round(snr_db, 1),
+            "f0_hz": round(f0, 1),
+            "speech_rms": round(speech_rms, 4),
+            "noise_rms": round(noise_rms, 4),
+        }
+        result["metrics"] = metrics
+
+        # 质量评估
+        warnings: list[str] = []
+        if leading_silence_ms > 500:
+            warnings.append(
+                f"开头静音过长（{leading_silence_ms:.0f}ms > 500ms），建议裁剪到 200ms 以内，"
+                f"否则克隆音色首字发音不稳定"
+            )
+        if trailing_silence_ms > 500:
+            warnings.append(
+                f"尾部静音过长（{trailing_silence_ms:.0f}ms > 500ms），建议裁剪到 200ms 以内，"
+                f"浪费参考音频有效时长"
+            )
+        if speech_ratio_pct < 60:
+            warnings.append(
+                f"语音占比过低（{speech_ratio_pct:.1f}% < 60%），静音太多，"
+                f"模型学不到足够的韵律特征，克隆发音不标准"
+            )
+        if snr_db < 20:
+            warnings.append(
+                f"信噪比过低（{snr_db:.1f}dB < 20dB），有背景噪音，"
+                f"会污染克隆音色，导致发音模糊或带杂音"
+            )
+        if duration_ms < 5000:
+            warnings.append(
+                f"时长过短（{duration_ms:.0f}ms < 5000ms），建议 10-30s，"
+                f"参考音频太短模型学不到稳定音色"
+            )
+        if duration_ms > 30000:
+            warnings.append(
+                f"时长过长（{duration_ms:.0f}ms > 30000ms），建议 10-30s，"
+                f"参考音频太长会稀释关键韵律特征"
+            )
+        if len(internal_silences) > 3:
+            warnings.append(
+                f"内部静音段过多（{len(internal_silences)}段 > 3段），"
+                f"影响韵律学习，会导致克隆发音卡顿或节奏不自然"
+            )
+
+        # 录制改进建议（仅在有问题时才返回）
+        if warnings:
+            result["suggestions"] = [
+                "在安静环境录制（关闭风扇、空调、电视等噪音源）",
+                "使用高质量麦克风（推荐 USB 麦克风或手机原装麦克风）",
+                "距离麦克风 15-20cm，避免喷麦（可加防喷罩）",
+                "录制 10-20s 的连续语音，不要有长时间停顿",
+                "朗读标准普通话内容（避免方言、口语化表达）",
+                "语速自然，不要太快或太慢",
+                "录制完成后裁剪开头/尾部静音到 200ms 以内",
+                "确保音频格式为 WAV，采样率 >= 16kHz",
+                "避免音频中有咳嗽、清嗓子等非语音声音",
+                "推荐录制内容：自我介绍 + 一段短文朗读",
+            ]
+
+        result["warnings"] = warnings
+        result["ok"] = len(warnings) == 0
+        return result
+
     def register_voice(self, voice_id: str, sample_audio: Path) -> bool:
         """注册音色"""
         sample_audio = Path(sample_audio)

@@ -3918,6 +3918,127 @@ async function deleteVoice(voiceId) {
   }
 }
 
+// ========== 声音克隆录制指南与质量检测展示 ==========
+
+/**
+ * 显示录制指南弹窗（统一入口，供音色管理/创作向导/播客克隆共用）
+ */
+function showVoiceRecordingGuide() {
+  // 若已有弹窗，先移除
+  const old = document.getElementById('voice-recording-guide-overlay');
+  if (old) old.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'voice-recording-guide-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:18px;padding:28px;width:560px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:90vh;overflow-y:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="font-size:18px;font-weight:600;margin:0">参考音频录制指南</h3>
+        <button onclick="document.getElementById('voice-recording-guide-overlay').remove()" style="background:transparent;border:none;font-size:24px;color:#6e6e73;cursor:pointer;line-height:1">×</button>
+      </div>
+      <div style="font-size:13px;color:#6e6e73;line-height:1.7;margin-bottom:14px">
+        参考音频质量直接决定克隆音色的发音标准度和稳定性。请按以下要求录制，避免克隆音色出现普通话不标准、卡顿、发音模糊等问题。
+      </div>
+      <div style="margin-bottom:16px;padding:14px;background:#F5F5F7;border-radius:12px;font-size:13px;color:#1d1d1f;line-height:1.8">
+        <strong style="font-size:14px">录制要求</strong><br>
+        <strong>时长</strong>：10~30 秒（太短学不到稳定音色，太长稀释关键韵律）<br>
+        <strong>格式</strong>：WAV（推荐）、MP3、M4A、FLAC<br>
+        <strong>采样率</strong>：≥ 16kHz，越高越清晰（建议 44.1kHz 或 48kHz）<br>
+        <strong>语音占比</strong>：≥ 60%（开头/尾部静音 ≤ 200ms，避免长时间停顿）<br>
+        <strong>信噪比</strong>：≥ 20dB（无明显背景噪音）<br>
+        <strong>内部静音</strong>：≤ 3 段（>100ms 的停顿不超过 3 处）<br>
+        <strong>内容</strong>：标准普通话，避免方言、口语化吞音、英文混读
+      </div>
+      <div style="margin-bottom:16px;padding:14px;background:#FFF8E1;border-radius:12px;font-size:13px;color:#1d1d1f;line-height:1.8">
+        <strong style="font-size:14px">推荐录制内容</strong><br>
+        大家好，欢迎收听本期播客，今天我们来聊一个关于人工智能的话题。我觉得这个领域最近发展得特别快，很多新技术让人眼前一亮。希望今天的内容能给大家带来一些启发和思考。
+      </div>
+      <div style="margin-bottom:16px;padding:14px;background:#E8F5E9;border-radius:12px;font-size:13px;color:#1d1d1f;line-height:1.8">
+        <strong style="font-size:14px">录制技巧</strong><br>
+        1. 在安静无回声的房间录制（关闭风扇、空调、电视等噪音源）<br>
+        2. 使用高质量麦克风（推荐 USB 麦克风或手机原装麦克风）<br>
+        3. 距离麦克风 15-20cm，避免喷麦（可加防喷罩）<br>
+        4. 语速自然，不要太快或太慢<br>
+        5. 录制完成后用音频编辑软件裁剪开头/尾部静音到 200ms 以内<br>
+        6. 避免音频中有咳嗽、清嗓子等非语音声音
+      </div>
+      <div style="margin-bottom:16px;padding:14px;background:#FFEBEE;border-radius:12px;font-size:13px;color:#1d1d1f;line-height:1.8">
+        <strong style="font-size:14px">常见问题</strong><br>
+        <strong>Q: 为什么克隆音色普通话不标准？</strong><br>
+        A: 通常是因为参考音频中存在方言、吞音或背景噪音，导致模型学到了错误的发音模式。<br>
+        <strong>Q: 为什么克隆音色前几轮发音不稳定？</strong><br>
+        A: 参考音频开头/尾部静音过长、内部停顿过多会影响韵律学习的稳定性。<br>
+        <strong>Q: 为什么克隆音色有杂音？</strong><br>
+        A: 信噪比过低（&lt;20dB），背景噪音被克隆进了音色。
+      </div>
+      <div style="display:flex;justify-content:flex-end">
+        <button class="btn btn-primary" onclick="document.getElementById('voice-recording-guide-overlay').remove()" style="padding:8px 20px;border-radius:10px;background:#0071e3;color:#fff;border:none;cursor:pointer;font-size:14px">我已了解</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  // 点击遮罩关闭
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+/**
+ * 渲染参考音频质量报告
+ * @param {Object} report - 后端返回的质量报告 {ok, metrics, warnings, suggestions}
+ * @param {string} containerId - 渲染容器元素 ID
+ */
+function renderVoiceQualityReport(report, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  if (!report) { container.style.display = 'none'; return; }
+
+  const m = report.metrics || {};
+  const warnings = report.warnings || [];
+  const suggestions = report.suggestions || [];
+  const isOk = report.ok !== false && warnings.length === 0;
+
+  // 格式化指标
+  const fmtMs = (v) => v != null ? `${v}ms` : '-';
+  const fmtDb = (v) => v != null ? `${v}dB` : '-';
+  const fmtPct = (v) => v != null ? `${v}%` : '-';
+  const fmtHz = (v) => v != null && v > 0 ? `${v}Hz` : '-';
+
+  let html = '';
+  if (isOk) {
+    html += `<div style="padding:10px 12px;background:#E8F5E9;border-left:3px solid #30d158;border-radius:8px;font-size:12px;color:#1d1d1f;margin-bottom:8px">
+      <strong style="color:#30d158">✓ 参考音频质量良好</strong>
+    </div>`;
+  } else {
+    html += `<div style="padding:10px 12px;background:#FFF3E0;border-left:3px solid #FF9500;border-radius:8px;font-size:12px;color:#1d1d1f;margin-bottom:8px">
+      <strong style="color:#FF9500">⚠️ 检测到 ${warnings.length} 个质量问题</strong>
+      <ul style="margin:6px 0 0 0;padding-left:18px;line-height:1.6">
+        ${warnings.map(w => `<li>${w}</li>`).join('')}
+      </ul>
+    </div>`;
+  }
+
+  // 详细指标
+  html += `<div style="padding:10px 12px;background:#F5F5F7;border-radius:8px;font-size:12px;color:#6e6e73;line-height:1.7">
+    <strong style="color:#1d1d1f">音频指标</strong><br>
+    时长：${m.duration_s || '-'}s ｜ 采样率：${m.sample_rate || '-'}Hz ｜ 基频 F0：${fmtHz(m.f0_hz)}<br>
+    开头静音：${fmtMs(m.leading_silence_ms)} ｜ 尾部静音：${fmtMs(m.trailing_silence_ms)}<br>
+    语音占比：${fmtPct(m.speech_ratio_pct)} ｜ 信噪比：${fmtDb(m.snr_db)} ｜ 内部静音段：${m.internal_silence_count ?? '-'}
+  </div>`;
+
+  // 改进建议
+  if (suggestions && suggestions.length > 0) {
+    html += `<details style="margin-top:8px;padding:8px 12px;background:#F5F5F7;border-radius:8px;font-size:12px;color:#6e6e73">
+      <summary style="cursor:pointer;color:#1d1d1f;font-weight:500">查看录制改进建议</summary>
+      <ol style="margin:6px 0 0 0;padding-left:18px;line-height:1.7">
+        ${suggestions.map(s => `<li>${s}</li>`).join('')}
+      </ol>
+    </details>`;
+  }
+
+  container.innerHTML = html;
+  container.style.display = 'block';
+}
+
 async function handleRegisterVoice() {
   const voiceIdInput = document.getElementById('voice-id');
   const voiceId = voiceIdInput.value.trim();
@@ -3942,9 +4063,16 @@ async function handleRegisterVoice() {
     if (result.success) {
       document.getElementById('voice-id').value = '';
       fileInput.value = '';
+      // 恢复上传区域默认文案
+      const uploadText = document.querySelector('#voice-file')?.parentElement?.querySelector('.upload-text');
+      if (uploadText) uploadText.textContent = '点击或拖拽上传音频';
       loadVoices();
       // 联动 P2：广播音色变更事件，通知向导刷新音色列表
       window.dispatchEvent(new CustomEvent('enlyai:voices-changed'));
+    }
+    // 展示参考音频质量报告（无论成功或失败）
+    if (result.quality_report) {
+      renderVoiceQualityReport(result.quality_report, 'voice-quality-report');
     }
   } catch (e) {
     toast(`注册失败: ${e.message}`, 'error');
@@ -4001,6 +4129,10 @@ async function onWizardVoiceClone(fileInput) {
     } else {
       if (statusEl) statusEl.textContent = '✗ 克隆失败：' + (result.error || '未知错误');
       toast('声音克隆失败', 'error');
+    }
+    // 展示参考音频质量报告
+    if (result.quality_report) {
+      renderVoiceQualityReport(result.quality_report, 'wiz-clone-quality-report');
     }
   } catch (e) {
     if (statusEl) statusEl.textContent = '✗ 上传失败：' + e.message;
@@ -4694,10 +4826,13 @@ async function podCloneVoice() {
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center';
   overlay.innerHTML = `
     <div style="background:#fff;border-radius:18px;padding:28px;width:480px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:90vh;overflow-y:auto">
-      <h3 style="font-size:18px;font-weight:600;margin-bottom:16px">克隆新音色</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="font-size:18px;font-weight:600;margin:0">克隆新音色</h3>
+        <button onclick="showVoiceRecordingGuide()" style="background:transparent;border:none;font-size:12px;color:#0071e3;cursor:pointer;padding:4px 8px">查看完整录制指南 ›</button>
+      </div>
       <div style="margin-bottom:14px;padding:14px;background:#F5F5F7;border-radius:12px;font-size:12px;color:#6e6e73;line-height:1.7">
-        <strong style="color:#1d1d1f">录制指南</strong><br>
-        • <strong>时长</strong>：5～30 秒（太短克隆效果差，太长处理慢）<br>
+        <strong style="color:#1d1d1f">快速提示</strong><br>
+        • <strong>时长</strong>：10～30 秒（太短学不到稳定音色，太长稀释关键韵律）<br>
         • <strong>格式</strong>：WAV（推荐）、MP3、M4A、FLAC<br>
         • <strong>采样率</strong>：≥ 16kHz，越高越清晰（建议 44.1kHz 或 48kHz）<br>
         • <strong>内容</strong>：用正常语速朗读一段自然口语，推荐读：「大家好，欢迎收听本期播客，今天我们来聊一个关于人工智能的话题。我觉得这个领域最近发展得特别快，很多新技术让人眼前一亮。」<br>
@@ -4716,6 +4851,7 @@ async function podCloneVoice() {
         <input type="file" id="pod-clone-file-input" accept=".wav,.mp3,.m4a,.flac" style="display:none">
       </div>
       <div id="pod-clone-status" style="font-size:13px;margin-bottom:14px;min-height:18px"></div>
+      <div id="pod-clone-quality-report" style="display:none;margin-bottom:14px"></div>
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button class="btn btn-secondary" id="pod-clone-cancel" style="padding:8px 16px;border-radius:10px;border:1px solid rgba(0,0,0,0.1);background:transparent;cursor:pointer;font-size:14px">取消</button>
         <button class="btn btn-primary" id="pod-clone-confirm" style="padding:8px 16px;border-radius:10px;background:#0071e3;color:#fff;border:none;cursor:pointer;font-size:14px" disabled>开始克隆</button>
@@ -4789,12 +4925,24 @@ async function podCloneVoice() {
         renderPodcastVoiceList();
         // 广播音色变更
         window.dispatchEvent(new CustomEvent('enlyai:voices-changed'));
-        setTimeout(() => overlay.remove(), 1200);
+        // 若有质量警告，保留弹窗让用户查看；否则延时关闭
+        const hasWarnings = result.quality_report && !result.quality_report.ok;
+        if (!hasWarnings) {
+          setTimeout(() => overlay.remove(), 1200);
+        } else {
+          confirmBtn.textContent = '我已查看';
+          confirmBtn.disabled = false;
+          confirmBtn.onclick = () => overlay.remove();
+        }
       } else {
         statusEl.style.color = '#ff453a';
         statusEl.textContent = '✗ 克隆失败：' + (result.error || '未知错误');
         confirmBtn.disabled = false;
         confirmBtn.textContent = '开始克隆';
+      }
+      // 展示参考音频质量报告
+      if (result.quality_report) {
+        renderVoiceQualityReport(result.quality_report, 'pod-clone-quality-report');
       }
     } catch (e) {
       statusEl.style.color = '#ff453a';

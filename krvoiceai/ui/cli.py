@@ -143,8 +143,21 @@ def main():
             for v in voices:
                 print(f"  {v['voice_id']}")
         elif args.voice_command == "register":
-            ok = app.register_voice(args.voice_id, Path(args.audio))
+            result = app.register_voice(args.voice_id, Path(args.audio))
+            # 兼容旧返回（bool）和新返回（dict）
+            if isinstance(result, dict):
+                ok = bool(result.get("success", False))
+                qr = result.get("quality_report") or {}
+            else:
+                ok = bool(result)
+                qr = {}
             print(f"注册音色: {'成功' if ok else '失败'}")
+            if ok and qr and not qr.get("ok", True):
+                warnings = qr.get("warnings", [])
+                if warnings:
+                    print("⚠️ 参考音频质量提醒：")
+                    for w in warnings:
+                        print(f"  - {w}")
             return 0 if ok else 1
 
     elif args.command == "serve":

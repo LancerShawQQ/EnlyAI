@@ -503,6 +503,9 @@
               <i data-lucide="upload-cloud" style="width:18px;height:18px;color:var(--accent-primary, #0071e3)"></i>
               <span style="font-size:14px;font-weight:600;color:var(--text-primary, #1d1d1f)">声音克隆</span>
               <span class="hint" style="font-size:12px">上传5-10秒干净人声样本</span>
+              <button class="btn btn-sm btn-secondary" type="button" onclick="showVoiceRecordingGuide()" style="margin-left:auto;padding:4px 10px;font-size:12px">
+                <i data-lucide="help-circle" style="width:14px;height:14px"></i> 录制指南
+              </button>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <input type="text" class="form-input" id="wiz-clone-voice-id" placeholder="音色名称（如：我的音色）" style="flex:1;min-width:120px">
@@ -512,6 +515,7 @@
               <input type="file" id="wiz-clone-file" accept=".wav,.mp3,.m4a,.flac" style="display:none" onchange="onWizardVoiceClone(this)">
             </div>
             <div id="wiz-clone-status" style="font-size:12px;color:var(--text-secondary, #6e6e73);min-height:18px;margin-top:6px"></div>
+            <div id="wiz-clone-quality-report" style="display:none;margin-top:8px"></div>
           </div>
         </div>
           <div class="card">
@@ -1881,6 +1885,7 @@
           <div class="card">
             <div class="card-header">
               <div class="card-title"><span class="card-title-icon"><i data-lucide="download"></i></span> 注册新音色</div>
+              <button class="btn btn-sm btn-secondary" onclick="showVoiceRecordingGuide()"><i data-lucide="help-circle"></i> 录制指南</button>
             </div>
             <div class="form-group">
               <label class="form-label">音色 ID <span class="hint">英文字母+数字</span></label>
@@ -1896,6 +1901,7 @@
               </div>
             </div>
             <button class="btn btn-primary btn-block" id="voice-reg-btn"><i data-lucide="download"></i> 注册音色</button>
+            <div id="voice-quality-report" style="display:none;margin-top:12px"></div>
           </div>
 
           <div class="card">

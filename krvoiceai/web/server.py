@@ -700,13 +700,23 @@ def create_app() -> FastAPI:
         tmp = Path(tempfile.mktemp(suffix=suffix))
         with open(tmp, "wb") as f:
             shutil.copyfileobj(file.file, f)
-        ok = _get_app().register_voice(voice_id, tmp)
+        result = _get_app().register_voice(voice_id, tmp)
         tmp.unlink(missing_ok=True)
-        return {
+        # 兼容旧返回类型（bool）：若返回 True/False 视为成功/失败
+        if isinstance(result, bool):
+            ok = result
+            quality_report = None
+        else:
+            ok = bool(result.get("success", False))
+            quality_report = result.get("quality_report")
+        response = {
             "success": ok,
             "voice_id": voice_id,
             "message": "音色已注册，试听样本正在后台生成中（约1-2分钟），稍后即可即时试听" if ok else "注册失败",
         }
+        if quality_report:
+            response["quality_report"] = quality_report
+        return response
 
     @app.delete("/api/avatars/{avatar_id}")
     async def delete_avatar(avatar_id: str):

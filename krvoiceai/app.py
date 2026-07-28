@@ -684,20 +684,43 @@ class EnlyAI:
         avatar.setup()  # 触发 GPU 不可用时的 mock 降级
         return avatar.register_avatar(avatar_id, Path(reference_video))
 
-    def register_voice(self, voice_id: str, sample_audio: Path) -> bool:
+    def register_voice(self, voice_id: str, sample_audio: Path) -> dict:
         """注册音色
 
         注册成功后会在后台线程预生成试听样本（约60-120s），
         保存到 config/voices/samples/{voice_id}.wav，
         之后前端试听直接返回预生成文件（<1秒），无需实时合成。
+
+        Returns:
+            {
+                "success": bool,
+                "quality_report": dict,  # 参考音频质量报告
+            }
         """
         tts = TTSEngine(config=self.config)
         tts.setup()  # 触发 GPU 不可用时的 mock 降级
+
+        # 上传时自动检测参考音频质量
+        quality_report: dict = {}
+        try:
+            quality_report = tts.analyze_reference_audio(Path(sample_audio))
+            if not quality_report.get("ok", True):
+                self.logger.warning(
+                    f"参考音频质量检测发现 {len(quality_report.get('warnings', []))} 个问题: "
+                    f"{quality_report.get('warnings', [])}"
+                )
+        except Exception as e:
+            self.logger.warning(f"参考音频质量检测失败（不阻塞注册）: {e}")
+            quality_report = {"ok": True, "warnings": [], "metrics": {}, "suggestions": []}
+
         ok = tts.register_voice(voice_id, Path(sample_audio))
         if ok:
             # 后台预生成试听样本（不阻塞注册 API 返回）
             self._pregenerate_voice_sample_async(voice_id)
-        return ok
+        return {
+            "success": ok,
+            "quality_report": quality_report,
+        }
 
     def _pregenerate_voice_sample_async(self, voice_id: str) -> None:
         """后台线程预生成克隆音色的试听样本
