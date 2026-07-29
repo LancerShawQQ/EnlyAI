@@ -239,8 +239,73 @@ async function testLLMConnection() {
 
 // ========== TTS 配置 ==========
 
-function loadTTSSettings() {
+// 缓存从 API 加载的音色列表，确保所有界面数据源一致
+let _loadedVoicesCache = null;
+
+/**
+ * 从 /api/voices 加载音色列表并填充设置中心下拉框
+ * 保证设置中心与口播视频/音色管理/播客界面看到的音色列表完全一致
+ */
+async function loadVoicesIntoSettings() {
+  if (_loadedVoicesCache) return _loadedVoicesCache;
+  try {
+    const resp = await fetch('/api/voices');
+    const data = await resp.json();
+    const voices = data.voices || data || [];
+    _loadedVoicesCache = voices;
+
+    // 按 provider 分组
+    const edgeVoices = voices.filter(v => v.provider === 'edge_tts');
+    const mossVoices = voices.filter(v => v.provider === 'moss_nano' && v.type === 'preset');
+
+    // 填充 Edge TTS 下拉框
+    const edgeSel = document.getElementById('tts-edge-voice');
+    if (edgeSel) {
+      edgeSel.innerHTML = edgeVoices.map(v =>
+        `<option value="${v.voice_id}">${v.label}</option>`
+      ).join('');
+    }
+
+    // 填充 MOSS NANO 下拉框
+    const mossSel = document.getElementById('tts-moss-voice');
+    if (mossSel) {
+      mossSel.innerHTML = mossVoices.map(v =>
+        `<option value="${v.voice_id}">${v.label}</option>`
+      ).join('');
+    }
+    return voices;
+  } catch (e) {
+    console.error('加载音色列表失败:', e);
+    return [];
+  }
+}
+
+/**
+ * 试听音色（设置中心专用，复用 app.js 的 playVoicePreview）
+ */
+function previewSettingsVoice(voiceId, btn) {
+  if (typeof playVoicePreview === 'function') {
+    playVoicePreview(voiceId, btn);
+  } else {
+    // 回退：直接播放音频
+    if (!voiceId) return;
+    const audio = new Audio(`/api/voice/preview/${encodeURIComponent(voiceId)}`);
+    if (btn) {
+      const originalHTML = btn.innerHTML;
+      btn.innerHTML = '<i data-lucide="loader-2" style="width:14px;height:14px" class="spin"></i>';
+      if (window.lucide) lucide.createIcons();
+      audio.addEventListener('ended', () => { btn.innerHTML = originalHTML; if (window.lucide) lucide.createIcons(); });
+      audio.addEventListener('error', () => { btn.innerHTML = originalHTML; if (window.lucide) lucide.createIcons(); });
+    }
+    audio.play().catch(err => console.error('试听失败:', err));
+  }
+}
+
+async function loadTTSSettings() {
   if (!_currentSettings) return;
+  // 先加载音色列表（异步），再回填选中值
+  await loadVoicesIntoSettings();
+
   const tts = _currentSettings.tts || {};
   document.getElementById('tts-provider').value = tts.provider || 'moss_nano';
   onTTSProviderChange();
@@ -253,6 +318,24 @@ function loadTTSSettings() {
   if (mossSel) mossSel.value = mossVoice;
   document.getElementById('tts-default-voice').value = tts.default_voice || 'Junhao';
   document.getElementById('tts-timeout').value = tts.timeout || 120;
+
+  // 绑定试听按钮事件
+  const edgePreviewBtn = document.getElementById('tts-edge-preview-btn');
+  if (edgePreviewBtn && !edgePreviewBtn._bound) {
+    edgePreviewBtn._bound = true;
+    edgePreviewBtn.addEventListener('click', () => {
+      const v = document.getElementById('tts-edge-voice').value;
+      previewSettingsVoice(v, edgePreviewBtn);
+    });
+  }
+  const mossPreviewBtn = document.getElementById('tts-moss-preview-btn');
+  if (mossPreviewBtn && !mossPreviewBtn._bound) {
+    mossPreviewBtn._bound = true;
+    mossPreviewBtn.addEventListener('click', () => {
+      const v = document.getElementById('tts-moss-voice').value;
+      previewSettingsVoice(v, mossPreviewBtn);
+    });
+  }
 }
 
 function onTTSProviderChange() {

@@ -307,14 +307,12 @@ class TTSEngine(BaseModule):
         runtime = self._get_moss_runtime()
         cfg = self.config.get("tts.moss_nano", {}) or {}
 
-        # MOSS 内置音色清单（18 个：6 中文 + 5 英文 + 7 日文）
+        # MOSS 内置音色清单（11 个：6 中文 + 5 英文）
         MOSS_BUILTIN_VOICES = {
             # 中文音色
             "Junhao", "Zhiming", "Weiguo", "Xiaoyu", "Yuewen", "Lingyu",
             # 英文音色
             "Trump", "Ava", "Bella", "Adam", "Nathan",
-            # 日文音色
-            "Soyo", "Saki", "Mortis", "Umiri", "Mei", "Anon", "Arisa",
         }
         config_builtin = cfg.get("builtin_voice", "Junhao")
 

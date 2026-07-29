@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
   <title>EnlyAI · 虚拟人口播智能体</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260708v5">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260729lg3">
+  <link rel="stylesheet" href="/static/css/liquid_glass.css?v=20260729lg3">
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
   <!-- 移动端点击修复（内联确保优先级，避免外部CSS缓存导致失效） -->
@@ -101,16 +102,10 @@
 
             <nav class="sidebar-nav">
         <button class="nav-item active" id="nav-wizard">
-          <span class="nav-icon"><i data-lucide="wand-2"></i></span><span>创作向导</span>
+          <span class="nav-icon"><i data-lucide="wand-2"></i></span><span>口播视频</span>
         </button>
         <button class="nav-item" id="nav-podcast">
           <span class="nav-icon"><i data-lucide="podcast"></i></span><span>语音博客</span>
-        </button>
-        <button class="nav-item" id="nav-resources">
-          <span class="nav-icon"><i data-lucide="folder-open"></i></span><span>资源中心</span>
-        </button>
-        <button class="nav-item" id="nav-jobs">
-          <span class="nav-icon"><i data-lucide="clipboard-list"></i></span><span>我的任务</span>
         </button>
         <button class="nav-item" id="nav-settings">
           <span class="nav-icon"><i data-lucide="settings"></i></span><span>设置中心</span>
@@ -217,10 +212,10 @@
         </div>
       </div>
 
-      <!-- ===== 页面 0: 创作向导 ===== -->
+      <!-- ===== 页面 0: 口播视频 ===== -->
       <div class="page active" id="page-wizard">
         <div class="page-header">
-          <h1 class="page-title">创作向导</h1>
+          <h1 class="page-title">口播视频</h1>
           <p class="page-subtitle">流水线式引导创作，6 步完成商业级数字人口播视频</p>
         </div>
 
@@ -1519,7 +1514,7 @@
           </div>
         </div>
 
-        <!-- Step 1: 内容与剧本（整合为单卡片，参考创作向导风格） -->
+        <!-- Step 1: 内容与剧本（整合为单卡片，参考口播视频风格） -->
         <div class="wizard-panel active" id="podcast-panel-1">
           <div class="card">
             <div class="card-header">
@@ -1812,10 +1807,14 @@
 
       <!-- ===== 页面 5: 形象管理 ===== -->
       <div class="page" id="page-avatars">
-        <div class="resource-tabs">
-          <button class="resource-tab active" data-target="avatars" type="button">形象管理</button>
-          <button class="resource-tab" data-target="voices" type="button">音色管理</button>
-          <button class="resource-tab" data-target="templates" type="button">模板中心</button>
+        <div class="settings-tabs">
+          <button class="settings-tab" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景效果</button>
+          <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
+          <button class="settings-tab" data-target="avatars" type="button">形象管理</button>
+          <button class="settings-tab" data-target="voices" type="button">音色管理</button>
+          <button class="settings-tab" data-target="templates" type="button">模板中心</button>
         </div>
         <div class="page-header">
           <h1 class="page-title">形象管理</h1>
@@ -1871,10 +1870,14 @@
 
       <!-- ===== 页面 6: 音色管理 ===== -->
       <div class="page" id="page-voices">
-        <div class="resource-tabs">
-          <button class="resource-tab active" data-target="avatars" type="button">形象管理</button>
-          <button class="resource-tab" data-target="voices" type="button">音色管理</button>
-          <button class="resource-tab" data-target="templates" type="button">模板中心</button>
+        <div class="settings-tabs">
+          <button class="settings-tab" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景效果</button>
+          <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
+          <button class="settings-tab" data-target="avatars" type="button">形象管理</button>
+          <button class="settings-tab" data-target="voices" type="button">音色管理</button>
+          <button class="settings-tab" data-target="templates" type="button">模板中心</button>
         </div>
         <div class="page-header">
           <h1 class="page-title">音色管理</h1>
@@ -1915,10 +1918,14 @@
 
       <!-- ===== 页面 6.5: 模板中心 ===== -->
       <div class="page" id="page-templates">
-        <div class="resource-tabs">
-          <button class="resource-tab active" data-target="avatars" type="button">形象管理</button>
-          <button class="resource-tab" data-target="voices" type="button">音色管理</button>
-          <button class="resource-tab" data-target="templates" type="button">模板中心</button>
+        <div class="settings-tabs">
+          <button class="settings-tab" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景效果</button>
+          <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
+          <button class="settings-tab" data-target="avatars" type="button">形象管理</button>
+          <button class="settings-tab" data-target="voices" type="button">音色管理</button>
+          <button class="settings-tab" data-target="templates" type="button">模板中心</button>
         </div>
         <div class="page-header">
           <h1 class="page-title">模板中心</h1>
@@ -2026,10 +2033,13 @@
       <!-- ===== 页面 8: 模型配置 ===== -->
       <div class="page" id="page-settings-models">
         <div class="settings-tabs">
-          <button class="settings-tab active" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-models" type="button">模型配置</button>
           <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
-          <button class="settings-tab" data-target="settings-scene" type="button">场景与效果</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景效果</button>
           <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
+          <button class="settings-tab" data-target="avatars" type="button">形象管理</button>
+          <button class="settings-tab" data-target="voices" type="button">音色管理</button>
+          <button class="settings-tab" data-target="templates" type="button">模板中心</button>
         </div>
         <div class="page-header">
           <h1 class="page-title">模型配置</h1>
@@ -2121,8 +2131,8 @@
               <div class="form-group">
                 <label class="form-label">服务提供商</label>
                 <select class="form-select" id="tts-provider" onchange="onTTSProviderChange()">
-                  <option value="moss_nano">MOSS NANO（本地声音克隆，11内置音色）</option>
-                  <option value="edge_tts">Edge TTS（微软标准音色，免费，7音色）</option>
+                  <option value="moss_nano">MOSS NANO（本地声音克隆，6中文+5英文）</option>
+                  <option value="edge_tts">Edge TTS（微软标准音色，免费，7中文）</option>
                   <option value="mimo">MiMo TTS（小米云端，需API凭证）</option>
                   <option value="gpt_sovits">GPT-SoVITS 云端（声音克隆）</option>
                   <option value="mock">Mock 模式（静音音频，调试用）</option>
@@ -2132,13 +2142,7 @@
                 <label class="form-label">Edge 音色</label>
                 <div style="display:flex;gap:8px">
                   <select class="form-select" id="tts-edge-voice" style="flex:1">
-                    <option value="zh-CN-XiaoxiaoNeural">晓晓 (女·温柔)</option>
-                    <option value="zh-CN-YunxiNeural">云希 (男·阳光)</option>
-                    <option value="zh-CN-YunjianNeural">云健 (男·浑厚)</option>
-                    <option value="zh-CN-XiaoyiNeural">晓伊 (女·活泼)</option>
-                    <option value="zh-CN-YunyangNeural">云扬 (男·专业)</option>
-                    <option value="zh-CN-XiaoxuanNeural">晓萱 (女·知性)</option>
-                    <option value="zh-CN-YunxiaNeural">云夏 (男·少年)</option>
+                    <!-- 由 settings.js 动态加载，数据源 /api/voices -->
                   </select>
                   <button class="btn btn-secondary" id="tts-edge-preview-btn" type="button" title="试听当前音色"><i data-lucide="play" style="width:14px;height:14px"></i></button>
                 </div>
@@ -2147,17 +2151,7 @@
                 <label class="form-label">MOSS NANO 内置音色</label>
                 <div style="display:flex;gap:8px">
                   <select class="form-select" id="tts-moss-voice" style="flex:1">
-                    <option value="Junhao">君浩（男·中文）</option>
-                    <option value="Zhiming">志明（男·中文）</option>
-                    <option value="Weiguo">卫国（男·中文）</option>
-                    <option value="Xiaoyu">小雨（女·中文）</option>
-                    <option value="Yuewen">悦文（女·中文）</option>
-                    <option value="Lingyu">灵语（女·中文）</option>
-                    <option value="Trump">Trump（男·英文）</option>
-                    <option value="Ava">Ava（女·英文）</option>
-                    <option value="Bella">Bella（女·英文）</option>
-                    <option value="Adam">Adam（男·英文）</option>
-                    <option value="Nathan">Nathan（男·英文）</option>
+                    <!-- 由 settings.js 动态加载，数据源 /api/voices -->
                   </select>
                   <button class="btn btn-secondary" id="tts-moss-preview-btn" type="button" title="试听当前音色"><i data-lucide="play" style="width:14px;height:14px"></i></button>
                 </div>
@@ -2388,10 +2382,13 @@
       <!-- ===== 页面 9: 视频设置 ===== -->
       <div class="page" id="page-settings-video">
         <div class="settings-tabs">
-          <button class="settings-tab active" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-models" type="button">模型配置</button>
           <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
-          <button class="settings-tab" data-target="settings-scene" type="button">场景与效果</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景效果</button>
           <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
+          <button class="settings-tab" data-target="avatars" type="button">形象管理</button>
+          <button class="settings-tab" data-target="voices" type="button">音色管理</button>
+          <button class="settings-tab" data-target="templates" type="button">模板中心</button>
         </div>
         <div class="page-header">
           <h1 class="page-title">视频设置</h1>
@@ -2576,10 +2573,13 @@
       <!-- ===== 页面 9.5: 场景与效果设置 ===== -->
       <div class="page" id="page-settings-scene">
         <div class="settings-tabs">
-          <button class="settings-tab active" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-models" type="button">模型配置</button>
           <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
-          <button class="settings-tab" data-target="settings-scene" type="button">场景与效果</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景效果</button>
           <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
+          <button class="settings-tab" data-target="avatars" type="button">形象管理</button>
+          <button class="settings-tab" data-target="voices" type="button">音色管理</button>
+          <button class="settings-tab" data-target="templates" type="button">模板中心</button>
         </div>
         <div class="page-header">
           <h1 class="page-title">场景与效果</h1>
@@ -2781,10 +2781,13 @@
       <!-- ===== 页面 10: 发布设置 ===== -->
       <div class="page" id="page-settings-publish">
         <div class="settings-tabs">
-          <button class="settings-tab active" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-models" type="button">模型配置</button>
           <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
-          <button class="settings-tab" data-target="settings-scene" type="button">场景与效果</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景效果</button>
           <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
+          <button class="settings-tab" data-target="avatars" type="button">形象管理</button>
+          <button class="settings-tab" data-target="voices" type="button">音色管理</button>
+          <button class="settings-tab" data-target="templates" type="button">模板中心</button>
         </div>
         <div class="page-header">
           <h1 class="page-title">发布设置</h1>
@@ -3017,6 +3020,10 @@
 
       <!-- ===== 页面 11: 系统状态 ===== -->
       <div class="page" id="page-health">
+        <div class="settings-tabs">
+          <button class="settings-tab" data-target="jobs" type="button">任务列表</button>
+          <button class="settings-tab" data-target="health" type="button">系统状态</button>
+        </div>
         <div class="page-header">
           <h1 class="page-title">系统状态</h1>
           <p class="page-subtitle">查看各模块运行状态</p>
@@ -3051,14 +3058,6 @@
       <button class="bottom-nav-item active" data-page="wizard">
         <span class="bottom-nav-icon"><i data-lucide="wand-2"></i></span>
         <span class="bottom-nav-label">创作</span>
-      </button>
-      <button class="bottom-nav-item" data-page="avatars">
-        <span class="bottom-nav-icon"><i data-lucide="folder-open"></i></span>
-        <span class="bottom-nav-label">资源</span>
-      </button>
-      <button class="bottom-nav-item" data-page="jobs">
-        <span class="bottom-nav-icon"><i data-lucide="clipboard-list"></i></span>
-        <span class="bottom-nav-label">任务</span>
       </button>
       <button class="bottom-nav-item" data-page="settings-models">
         <span class="bottom-nav-icon"><i data-lucide="settings"></i></span>
@@ -3097,7 +3096,32 @@
   <!-- Toast 容器 -->
   <div class="toast-container" id="toast-container"></div>
 
-  <script src="/static/js/app.js?v=20260708v5"></script>
-  <script src="/static/js/settings.js?v=20260708v5"></script>
+  <script src="/static/js/app.js?v=20260729lg3"></script>
+  <script src="/static/js/settings.js?v=20260729lg3"></script>
+
+  <!-- ========== Liquid Glass SVG 滤镜定义（边缘折射变形效果） ========== -->
+  <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false">
+    <defs>
+      <!-- 强折射：用于大卡片、弹窗 -->
+      <filter id="lg-distortion-strong" x="-10%" y="-10%" width="120%" height="120%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.012 0.012" numOctaves="2" seed="92" result="noise"/>
+        <feGaussianBlur in="noise" stdDeviation="2.5" result="blurred"/>
+        <feDisplacementMap in="SourceGraphic" in2="blurred" scale="50" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+      <!-- 轻折射：用于按钮、导航项 -->
+      <filter id="lg-distortion-subtle" x="-5%" y="-5%" width="110%" height="110%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.02 0.02" numOctaves="1" seed="42" result="noise"/>
+        <feGaussianBlur in="noise" stdDeviation="1" result="blurred"/>
+        <feDisplacementMap in="SourceGraphic" in2="blurred" scale="18" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+      <!-- 光泽渐变：用于高光层 -->
+      <linearGradient id="lg-sheen" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="rgba(255,255,255,0)"/>
+        <stop offset="40%" stop-color="rgba(255,255,255,0.6)"/>
+        <stop offset="60%" stop-color="rgba(255,255,255,0.6)"/>
+        <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+      </linearGradient>
+    </defs>
+  </svg>
 </body>
 </html>

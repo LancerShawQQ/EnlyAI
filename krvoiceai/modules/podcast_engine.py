@@ -29,8 +29,6 @@ MOSS_BUILTIN_VOICES = {
     "Junhao", "Zhiming", "Weiguo", "Xiaoyu", "Yuewen", "Lingyu",
     # 英文音色
     "Trump", "Ava", "Bella", "Adam", "Nathan",
-    # 日文音色
-    "Soyo", "Saki", "Mortis", "Umiri", "Mei", "Anon", "Arisa",
 }
 
 # 音色池分组（按语言+性别）
@@ -46,8 +44,6 @@ ZH_MALE_VOICES = ["Junhao", "Zhiming", "Weiguo"]
 ZH_FEMALE_VOICES = ["Xiaoyu", "Yuewen", "Lingyu"]
 EN_MALE_VOICES = ["Adam", "Trump", "Nathan"]
 EN_FEMALE_VOICES = ["Ava", "Bella"]
-JA_FEMALE_VOICES = ["Soyo", "Saki", "Umiri", "Mei", "Anon", "Arisa"]
-JA_MALE_VOICES = ["Mortis"]
 
 # 停顿常量（秒）
 ROLE_SWITCH_PAUSE = 0.4
@@ -270,7 +266,7 @@ def auto_match_voices(
     """自动为角色分配音色（优先 edge-tts，MOSS 补充）
 
     中文场景优先使用 edge-tts 音色（合成快约3-5秒），edge 池用完后用 MOSS 补充。
-    英文/日文场景仍用 MOSS 音色（edge-tts 仅支持中文）。
+    英文场景用 MOSS 音色（edge-tts 仅支持中文）。
 
     Returns:
         {role: voice_id}
@@ -279,9 +275,6 @@ def auto_match_voices(
         # 中文：edge-tts 优先 + MOSS 补充
         male_pool = list(ZH_MALE_VOICES_EDGE) + list(ZH_MALE_VOICES)
         female_pool = list(ZH_FEMALE_VOICES_EDGE) + list(ZH_FEMALE_VOICES)
-    elif language == "ja":
-        male_pool = list(JA_MALE_VOICES)
-        female_pool = list(JA_FEMALE_VOICES)
     else:
         male_pool = list(EN_MALE_VOICES)
         female_pool = list(EN_FEMALE_VOICES)

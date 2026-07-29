@@ -232,11 +232,13 @@ function navigate(page) {
   if (targetPage) targetPage.classList.add('active');
   if (targetNav) targetNav.classList.add('active');
 
-  // 资源中心 / 设置中心 分组导航高亮
+  // 资源中心已整合到设置中心 → avatars/voices/templates 归属 nav-settings
+  // 我的任务已整合到系统状态 → jobs 归属 nav-health
   const NAV_GROUP = {
-    avatars: 'nav-resources', voices: 'nav-resources', templates: 'nav-resources',
+    avatars: 'nav-settings', voices: 'nav-settings', templates: 'nav-settings',
     'settings-models': 'nav-settings', 'settings-video': 'nav-settings',
     'settings-scene': 'nav-settings', 'settings-publish': 'nav-settings',
+    jobs: 'nav-health',
   };
   const groupNavId = NAV_GROUP[page];
   if (groupNavId) {
@@ -246,9 +248,10 @@ function navigate(page) {
 
   // 更新底部导航栏激活状态（移动端，按分组映射）
   const BOTTOM_GROUP = {
-    avatars: 'avatars', voices: 'avatars', templates: 'avatars',
+    avatars: 'settings-models', voices: 'settings-models', templates: 'settings-models',
     'settings-models': 'settings-models', 'settings-video': 'settings-models',
     'settings-scene': 'settings-models', 'settings-publish': 'settings-models',
+    jobs: 'health',
   };
   const activeBottom = BOTTOM_GROUP[page] || page;
   document.querySelectorAll('.bottom-nav-item').forEach(item => {
@@ -288,24 +291,12 @@ function navigate(page) {
   if (window.lucide) lucide.createIcons();
 }
 
-// 资源中心 / 设置中心 内部 Tab 高亮同步（页面切换时调用）
+// 设置中心 / 系统状态 内部 Tab 高亮同步（页面切换时调用）
+// 统一处理所有 settings-tab：7个设置中心sheet + 2个系统状态sheet
 function syncResourceSettingsTabs(page) {
-  const resourceMap = { avatars: 'avatars', voices: 'voices', templates: 'templates' };
-  const rTarget = resourceMap[page];
-  document.querySelectorAll('.resource-tab').forEach(t => {
-    const on = t.dataset.target === rTarget;
-    t.classList.toggle('active', on);
-    t.style.color = on ? 'var(--primary)' : 'var(--text-muted)';
-    t.style.borderBottom = on ? '2px solid var(--primary)' : 'none';
-    t.style.fontWeight = on ? '600' : 'normal';
-  });
-  const settingsMap = {
-    'settings-models': 'settings-models', 'settings-video': 'settings-video',
-    'settings-scene': 'settings-scene', 'settings-publish': 'settings-publish',
-  };
-  const sTarget = settingsMap[page];
+  // 所有 settings-tab 统一处理（包括原资源中心3个 + 原设置中心4个 + 系统状态2个）
   document.querySelectorAll('.settings-tab').forEach(t => {
-    const on = t.dataset.target === sTarget;
+    const on = t.dataset.target === page;
     t.classList.toggle('active', on);
     t.style.color = on ? 'var(--primary)' : 'var(--text-muted)';
     t.style.borderBottom = on ? '2px solid var(--primary)' : 'none';
@@ -422,7 +413,7 @@ async function applyDashboardTemplate(templateId) {
       body: { template_id: templateId },
     });
     if (result.success) {
-      toast(result.message || '模板已应用，即将进入创作向导', 'success');
+      toast(result.message || '模板已应用，即将进入口播视频', 'success');
       navigate('wizard');
     } else {
       toast(result.message || '应用失败', 'error');
@@ -601,7 +592,7 @@ function fillSelect(selectId, presets, valueKey) {
   ).join('');
 }
 
-// ========== 创作向导 ==========
+// ========== 口播视频 ==========
 
 const POSE_ICONS = { standing: '🧍', sitting: '🪑', half_body: '🧍', closeup: '👤' };
 const EMOTION_ICONS = { neutral: '😐', calm: '😌', excited: '🤩', gentle: '😊', serious: '😐', cheerful: '😄' };
@@ -3044,8 +3035,8 @@ async function applyTemplateFromCenter(templateId) {
       body: { template_id: templateId },
     });
     if (result.success) {
-      toast(result.message || '模板应用成功，即将进入创作向导', 'success');
-      // 自动跳转到创作向导（对标万兴播爆"选模板→自动进入创作"）
+      toast(result.message || '模板应用成功，即将进入口播视频', 'success');
+      // 自动跳转到口播视频（对标万兴播爆"选模板→自动进入创作"）
       wizardState.selectedTemplate = templateId;
       navigate('wizard');
     } else {
@@ -3209,7 +3200,7 @@ async function applySceneStyle() {
     const data = await resp.json();
     if (data.success) {
       toast(`样式应用成功！已设置: ${data.applied_sections.join(', ')}`, 'success');
-      // 关闭弹窗，自动跳转到创作向导并预填文案（对标万兴播爆"一键创作"无缝流程）
+      // 关闭弹窗，自动跳转到口播视频并预填文案（对标万兴播爆"一键创作"无缝流程）
       closeSceneModal();
       wizardState.sceneScript = sceneState.generatedScript || '';
       navigate('wizard');
@@ -3296,7 +3287,7 @@ async function usePresetAvatar(avatarId, voice, emotion) {
       window._wizardVoiceList = null;
     }
 
-    // 3. 跳转到创作向导并预选该形象
+    // 3. 跳转到口播视频并预选该形象
     wizardState.presetAvatarId = targetAvatarId;
     navigate('wizard');
     // 向导数据加载后刷新形象列表并预选
@@ -3323,7 +3314,7 @@ async function usePresetAvatar(avatarId, voice, emotion) {
       } catch (e) { /* 忽略刷新失败 */ }
     }, 600);
 
-    toast(`已使用该形象${voice ? '（音色: ' + voice + (emotion ? ' / 情感: ' + emotion : '') + '）' : ''}，即将进入创作向导`, 'success');
+    toast(`已使用该形象${voice ? '（音色: ' + voice + (emotion ? ' / 情感: ' + emotion : '') + '）' : ''}，即将进入口播视频`, 'success');
   } catch (e) {
     toast(`设置失败: ${e.message}`, 'error');
   }
@@ -3469,7 +3460,7 @@ async function handleGenerate() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> 生成中...';
 
-  // 统一进度反馈：显示全局进度模态框（与创作向导一致）
+  // 统一进度反馈：显示全局进度模态框（与口播视频一致）
   showProgressModal();
   renderPipeline({});
 
@@ -3862,9 +3853,9 @@ async function loadVoices() {
       const genderIcon = v.gender === 'female' ? '👩' : (v.gender === 'male' ? '👨' : '🎵');
       const displayName = v.label || v.voice_id;
       const actions = [];
-      actions.push(`<button class="voice-preview-btn" data-voice="${v.voice_id}" type="button" title="试听" style="background:#f5f5f5;color:#333;border:none;border-radius:6px;padding:6px;cursor:pointer;display:flex;align-items:center"><i data-lucide="play" style="width:14px;height:14px"></i></button>`);
+      actions.push(`<button class="voice-preview-btn btn btn-secondary" data-voice="${v.voice_id}" type="button" title="试听" style="padding:6px 12px;font-size:12px;display:flex;align-items:center;gap:4px"><i data-lucide="play" style="width:14px;height:14px"></i>试听</button>`);
       if (isCustom) {
-        actions.push(`<button onclick="deleteVoice('${v.voice_id}')" title="删除" type="button" style="background:rgba(239,68,68,0.1);color:#ef4444;border:none;border-radius:6px;padding:6px;cursor:pointer;display:flex;align-items:center"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>`);
+        actions.push(`<button class="btn btn-secondary" onclick="deleteVoice('${v.voice_id}')" title="删除" type="button" style="background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.2);padding:6px 10px;font-size:12px;display:flex;align-items:center;gap:4px"><i data-lucide="trash-2" style="width:14px;height:14px"></i>删除</button>`);
       }
       return `
         <div class="asset-card" style="padding:10px">
@@ -3921,7 +3912,7 @@ async function deleteVoice(voiceId) {
 // ========== 声音克隆录制指南与质量检测展示 ==========
 
 /**
- * 显示录制指南弹窗（统一入口，供音色管理/创作向导/播客克隆共用）
+ * 显示录制指南弹窗（统一入口，供音色管理/口播视频/播客克隆共用）
  */
 function showVoiceRecordingGuide() {
   // 若已有弹窗，先移除
@@ -4804,7 +4795,7 @@ function renderPodcastVoiceList() {
   if (window.lucide) lucide.createIcons();
 }
 
-// 音色试听（复用统一的 playVoicePreview，与设置中心/预制音色库/创作向导行为一致）
+// 音色试听（复用统一的 playVoicePreview，与设置中心/预制音色库/口播视频行为一致）
 function previewPodcastVoice(role) {
   // 获取当前角色选中的音色
   const sel = document.querySelector(`.pod-voice-select[data-role="${role}"]`);
@@ -5595,6 +5586,24 @@ document.addEventListener('DOMContentLoaded', () => {
   // 初始化 Lucide 矢量图标（替换全站 Emoji，专业图标系统）
   if (window.lucide) lucide.createIcons();
 
+  // ========== Liquid Glass 鼠标跟随高光 ==========
+  // 在所有 .card 元素上跟踪鼠标位置，更新 --mouse-x/--mouse-y CSS 变量
+  // 配合 .card::after 的 radial-gradient 实现鼠标跟随光晕效果
+  document.addEventListener('mousemove', (e) => {
+    const cards = document.querySelectorAll('.card');
+    cards.forEach(card => {
+      const rect = card.getBoundingClientRect();
+      // 只处理鼠标在卡片上或接近卡片的情况（性能优化）
+      if (e.clientX >= rect.left - 50 && e.clientX <= rect.right + 50 &&
+          e.clientY >= rect.top - 50 && e.clientY <= rect.bottom + 50) {
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        card.style.setProperty('--mouse-x', x + 'px');
+        card.style.setProperty('--mouse-y', y + 'px');
+      }
+    });
+  }, { passive: true });
+
   // 导航绑定
   PAGES.forEach(p => {
     const nav = document.getElementById(`nav-${p}`);
@@ -5602,7 +5611,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 资源中心 / 设置中心 分组导航绑定
-  document.getElementById('nav-resources')?.addEventListener('click', () => navigate('avatars'));
+  // nav-resources 已整合到 nav-settings，无需单独绑定
   document.getElementById('nav-settings')?.addEventListener('click', () => navigate('settings-models'));
 
   // 向导步骤6：跳转到发布设置页
@@ -5613,8 +5622,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 资源中心 / 设置中心 内部 Tab 点击切换（事件委托）
   document.addEventListener('click', (e) => {
-    const rt = e.target.closest('.resource-tab');
-    if (rt) { navigate(rt.dataset.target); return; }
     const st = e.target.closest('.settings-tab');
     if (st) navigate(st.dataset.target);
   });
@@ -5684,7 +5691,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('dash-from-template-btn')?.addEventListener('click', () => navigate('templates'));
   document.getElementById('dash-view-all-jobs')?.addEventListener('click', () => navigate('jobs'));
   document.getElementById('dash-view-all-templates')?.addEventListener('click', () => navigate('templates'));
-  // 场景卡点击跳转到创作向导，并带入场景分类上下文
+  // 场景卡点击跳转到口播视频，并带入场景分类上下文
   document.querySelectorAll('.scene-card').forEach(card => {
     card.addEventListener('click', () => {
       const scene = card.dataset.scene;
@@ -5751,7 +5758,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 初始渲染进度
   renderPipeline({});
 
-  // 默认落地页：创作向导
+  // 默认落地页：口播视频
   navigate('wizard');
   loadHealth();
 });
@@ -6520,7 +6527,7 @@ async function confirmQuickEdit() {
   }
 }
 
-// ========== 创作向导 B-roll 集成 ==========
+// ========== 口播视频 B-roll 集成 ==========
 let wizBrollState = {
   assets: [],        // 素材库
   clips: [],         // 已添加片段

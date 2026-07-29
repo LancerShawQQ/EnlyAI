@@ -1,0 +1,410 @@
+
+/* ============================================
+   Liquid Glass 液态玻璃视觉语言（macOS 27 风格 - 增强版）
+   核心：半透明 + 实时光影折射 + 动态高光 + 鼠标跟随光晕 + 弹跳动画
+   ============================================ */
+:root {
+  --lg-blur: 60px;
+  --lg-blur-heavy: 80px;
+  --lg-blur-light: 30px;
+  --lg-saturation: 200%;
+  --lg-opacity: 0.45;
+  --lg-opacity-hover: 0.6;
+  --lg-opacity-active: 0.75;
+  --lg-edge-highlight: rgba(255, 255, 255, 0.7);
+  --lg-edge-highlight-soft: rgba(255, 255, 255, 0.35);
+  --lg-shadow-ambient: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --lg-shadow-float: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --lg-shadow-deep: 0 16px 48px rgba(0, 0, 0, 0.16);
+  --lg-shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.18);
+  --lg-inner-glow: inset 0 1px 1px rgba(255, 255, 255, 0.5);
+  --lg-inner-glow-strong: inset 0 1px 2px rgba(255,255,255,0.8), inset 0 -1px 1px rgba(255,255,255,0.25);
+  --lg-transition: 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --lg-spring: 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --lg-spring-bounce: 0.7s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+/* ---------- 极光漂移动画（增强动态感） ---------- */
+@keyframes lg-aurora-drift {
+  0% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  33% { transform: translate(3%, -2%) scale(1.08) rotate(1deg); }
+  66% { transform: translate(-2%, 3%) scale(1.05) rotate(-1deg); }
+  100% { transform: translate(1%, -1%) scale(1.03) rotate(0.5deg); }
+}
+
+/* ---------- 卡片入场动画 ---------- */
+@keyframes lg-card-enter {
+  0% { opacity: 0; transform: translateY(12px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ---------- 光晕脉冲（用于 active 状态） ---------- */
+@keyframes lg-glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 113, 227, 0.0), var(--lg-inner-glow-strong); }
+  50% { box-shadow: 0 0 20px 4px rgba(0, 113, 227, 0.15), var(--lg-inner-glow-strong); }
+}
+
+/* ---------- 卡片液态玻璃增强 ---------- */
+.card {
+  position: relative;
+  background: rgba(255, 255, 255, var(--lg-opacity));
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturation));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturation));
+  border: 1px solid var(--lg-edge-highlight-soft);
+  box-shadow: var(--lg-shadow-ambient), var(--lg-inner-glow);
+  transition: var(--lg-spring);
+  overflow: hidden;
+  animation: lg-card-enter 0.5s var(--lg-spring) backwards;
+}
+
+/* 135° 对角高光层 */
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  height: auto;
+  background: linear-gradient(135deg, rgba(255,255,255,0.5) 0%, transparent 35%, transparent 65%, rgba(255,255,255,0.15) 100%);
+  pointer-events: none;
+  opacity: 0.9;
+  z-index: 0;
+}
+
+/* 鼠标跟随光晕层（由 JS 设置 --mouse-x/--mouse-y） */
+.card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle 250px at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255,255,255,0.35), transparent 60%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 0;
+}
+
+.card:hover::after {
+  opacity: 1;
+}
+
+.card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.card:hover {
+  background: rgba(255, 255, 255, var(--lg-opacity-hover));
+  box-shadow: var(--lg-shadow-hover), var(--lg-inner-glow-strong);
+  transform: translateY(-4px) scale(1.008);
+  border-color: var(--lg-edge-highlight);
+}
+
+/* ---------- 按钮液态玻璃（增强） ---------- */
+.btn,
+.btn-primary,
+.btn-secondary,
+.btn-ghost {
+  position: relative;
+  backdrop-filter: blur(var(--lg-blur-light)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--lg-blur-light)) saturate(180%);
+  border: 1px solid var(--lg-edge-highlight-soft);
+  box-shadow: var(--lg-shadow-ambient), var(--lg-inner-glow);
+  transition: var(--lg-spring-bounce);
+  overflow: hidden;
+}
+
+/* 流光扫过效果（增强） */
+.btn::before,
+.btn-primary::before,
+.btn-secondary::before,
+.btn-ghost::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -150%;
+  width: 150%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+  transition: left 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.btn:hover::before,
+.btn-primary:hover::before,
+.btn-secondary:hover::before,
+.btn-ghost:hover::before {
+  left: 150%;
+}
+
+.btn > *,
+.btn-primary > *,
+.btn-secondary > *,
+.btn-ghost > * {
+  position: relative;
+  z-index: 1;
+}
+
+.btn:hover,
+.btn-secondary:hover,
+.btn-ghost:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: var(--lg-shadow-float), var(--lg-inner-glow-strong);
+  border-color: var(--lg-edge-highlight);
+}
+
+.btn:active,
+.btn-primary:active,
+.btn-secondary:active,
+.btn-ghost:active {
+  transform: translateY(0) scale(0.96);
+  transition: 0.1s ease;
+}
+
+/* ---------- 主按钮（Apple 黑色风格）液态玻璃 ---------- */
+.btn-primary {
+  background: rgba(20, 20, 22, 0.75);
+  backdrop-filter: blur(var(--lg-blur)) saturate(200%);
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.25), inset 0 -1px 1px rgba(0, 0, 0, 0.3);
+}
+
+.btn-primary:hover {
+  background: rgba(30, 30, 32, 0.85);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.35), inset 0 -1px 1px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- 侧边栏液态玻璃 ---------- */
+.sidebar {
+  backdrop-filter: blur(var(--lg-blur-heavy)) saturate(200%);
+  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(200%);
+  background: rgba(255, 255, 255, 0.5);
+  border-right: 1px solid var(--lg-edge-highlight-soft);
+}
+
+.nav-item {
+  position: relative;
+  background: transparent;
+  border: 1px solid transparent;
+  backdrop-filter: blur(var(--lg-blur-light));
+  -webkit-backdrop-filter: blur(var(--lg-blur-light));
+  transition: var(--lg-spring);
+  overflow: hidden;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(var(--lg-blur)) saturate(200%);
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(200%);
+  border-color: var(--lg-edge-highlight-soft);
+  box-shadow: var(--lg-shadow-ambient), var(--lg-inner-glow);
+  transform: translateX(2px);
+}
+
+.nav-item.active {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(var(--lg-blur)) saturate(220%);
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(220%);
+  border-color: var(--lg-edge-highlight);
+  box-shadow: var(--lg-shadow-float), var(--lg-inner-glow-strong);
+  animation: lg-glow-pulse 3s ease-in-out infinite;
+}
+
+.nav-item.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 3px;
+  background: linear-gradient(180deg, #0071E3, #5E5CE6);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 8px rgba(0, 113, 227, 0.5);
+}
+
+/* ---------- 移动端顶部栏液态玻璃 ---------- */
+.mobile-topbar {
+  backdrop-filter: blur(var(--lg-blur-heavy)) saturate(220%);
+  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(220%);
+  background: rgba(255, 255, 255, 0.6);
+  border-bottom: 1px solid var(--lg-edge-highlight-soft);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* ---------- 弹窗液态玻璃 ---------- */
+.modal,
+.modal-content,
+.modal-body {
+  backdrop-filter: blur(var(--lg-blur-heavy)) saturate(220%);
+  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(220%);
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid var(--lg-edge-highlight);
+  box-shadow: var(--lg-shadow-deep), var(--lg-inner-glow-strong);
+}
+
+/* ---------- 输入框液态玻璃 ---------- */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+input[type="url"],
+textarea,
+select {
+  backdrop-filter: blur(var(--lg-blur-light)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--lg-blur-light)) saturate(180%);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--lg-edge-highlight-soft);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: var(--lg-transition);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: #0071E3;
+  box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.18), inset 0 1px 2px rgba(0, 0, 0, 0.04);
+  transform: translateY(-1px);
+}
+
+/* ---------- 向导面板液态玻璃 ---------- */
+.wizard-panel {
+  backdrop-filter: blur(var(--lg-blur)) saturate(200%);
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(200%);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--lg-edge-highlight-soft);
+  box-shadow: var(--lg-shadow-ambient), var(--lg-inner-glow);
+}
+
+/* ---------- Toast 液态玻璃 ---------- */
+.toast {
+  backdrop-filter: blur(var(--lg-blur-heavy)) saturate(220%);
+  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(220%);
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--lg-edge-highlight);
+  box-shadow: var(--lg-shadow-float), var(--lg-inner-glow-strong);
+}
+
+/* ---------- 标签 / 徽章液态玻璃 ---------- */
+.badge,
+.tag,
+.chip {
+  backdrop-filter: blur(var(--lg-blur-light)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--lg-blur-light)) saturate(180%);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--lg-edge-highlight-soft);
+  box-shadow: var(--lg-inner-glow);
+}
+
+/* ---------- 滚动条液态玻璃 ---------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* ---------- 响应式：移动端降低模糊强度 ---------- */
+@media (max-width: 768px) {
+  :root {
+    --lg-blur: 30px;
+    --lg-blur-heavy: 40px;
+    --lg-blur-light: 15px;
+  }
+  .card:hover,
+  .btn:hover,
+  .btn-primary:hover,
+  .btn-secondary:hover,
+  .btn-ghost:hover {
+    transform: none;
+  }
+  body::before {
+    animation: none;
+  }
+  .nav-item.active {
+    animation: none;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --lg-blur: 20px;
+    --lg-blur-heavy: 25px;
+    --lg-blur-light: 10px;
+    --lg-opacity: 0.75;
+  }
+  .card::before,
+  .card::after,
+  .btn::before,
+  .btn-primary::before,
+  .btn-secondary::before,
+  .btn-ghost::before {
+    display: none;
+  }
+}
+
+/* ---------- 无障碍：降低透明度偏好 ---------- */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --lg-blur: 0px;
+    --lg-blur-heavy: 0px;
+    --lg-blur-light: 0px;
+    --lg-opacity: 0.95;
+    --lg-opacity-hover: 0.98;
+  }
+  body::before {
+    animation: none;
+  }
+  .card,
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost,
+  .nav-item,
+  .modal,
+  .modal-content,
+  .modal-body,
+  .wizard-panel,
+  .toast {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* ---------- 无障碍：降低动态偏好 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  body::before {
+    animation: none;
+  }
+  .card,
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost,
+  .nav-item {
+    transition: none;
+    animation: none;
+  }
+  .nav-item.active {
+    animation: none;
+  }
+  .btn::before,
+  .btn-primary::before,
+  .btn-secondary::before,
+  .btn-ghost::before,
+  .card::before,
+  .card::after {
+    display: none;
+  }
+}

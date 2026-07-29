@@ -155,7 +155,7 @@ body {
   position: relative;
 }
 
-/* 苹果风格多层环境光背景 */
+/* Liquid Glass 动态极光背景（macOS 27 风格） */
 body::before {
   content: '';
   position: fixed;
@@ -164,12 +164,14 @@ body::before {
   right: 0;
   bottom: 0;
   background:
-    radial-gradient(ellipse 80% 50% at 20% 0%, rgba(0, 0, 0, 0.03), transparent 50%),
-    radial-gradient(ellipse 60% 40% at 80% 10%, rgba(0, 0, 0, 0.02), transparent 50%),
-    radial-gradient(ellipse 70% 50% at 50% 100%, rgba(0, 0, 0, 0.01), transparent 50%),
-    #fbfbfd;
+    radial-gradient(ellipse 60% 50% at 15% 10%, rgba(0, 113, 227, 0.28), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 85% 20%, rgba(94, 92, 230, 0.24), transparent 50%),
+    radial-gradient(ellipse 55% 45% at 70% 80%, rgba(100, 210, 255, 0.20), transparent 50%),
+    radial-gradient(ellipse 45% 35% at 25% 75%, rgba(48, 209, 88, 0.18), transparent 50%),
+    #f5f5f7;
   pointer-events: none;
   z-index: 0;
+  animation: lg-aurora-drift 30s ease-in-out infinite alternate;
 }
 
 /* 微妙噪点纹理（增加质感） */
@@ -1703,7 +1705,7 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 /* ============================================
-   创作向导 / 模板中心 / 场景与效果 新增样式
+   口播视频 / 模板中心 / 场景与效果 新增样式
    ============================================ */
 
 /* ---------- 向导步骤指示器 ---------- */
@@ -2278,7 +2280,7 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 /* ============================================
-   首页仪表盘 / 创作向导增强 / 进度模态框
+   首页仪表盘 / 口播视频增强 / 进度模态框
    ============================================ */
 
 /* ---------- 仪表盘 Hero 欢迎区 ---------- */
@@ -5265,7 +5267,7 @@ input[type="color"]::-webkit-color-swatch {
 
 
 
-/* 创作向导 B-roll 时间轴 */
+/* 口播视频 B-roll 时间轴 */
 #wiz-timeline { background: var(--bg-surface); border-radius: var(--radius-md); padding: 8px; }
 #wiz-timeline .timeline-ruler { position: relative; height: 24px; border-bottom: 1px solid var(--border-subtle); margin-bottom: 4px; }
 #wiz-timeline .ruler-tick { position: absolute; top: 0; font-size: 10px; color: var(--text-tertiary); transform: translateX(-50%); }

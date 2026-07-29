@@ -614,7 +614,7 @@ class EnlyAI:
             })
             seen_ids.add(vid)
 
-        # 2. MOSS-TTS-Nano 内置音色（18 个：6中文 + 5英文 + 7日文）
+        # 2. MOSS-TTS-Nano 内置音色（11 个：6中文 + 5英文）
         moss_builtin = {
             # 中文音色（6个）
             "Junhao":  {"label": "君浩（男·中文）",   "gender": "male",   "description": "沉稳男声，适合新闻播报"},
@@ -629,14 +629,6 @@ class EnlyAI:
             "Bella":   {"label": "Bella（女·英文）",  "gender": "female", "description": "英文女声，温柔亲和"},
             "Adam":    {"label": "Adam（男·英文）",   "gender": "male",   "description": "英文男声，沉稳专业"},
             "Nathan":  {"label": "Nathan（男·英文）", "gender": "male",   "description": "英文男声，浑厚有力"},
-            # 日文音色（7个）
-            "Soyo":    {"label": "Soyo（女·日文）",   "gender": "female", "description": "日文女声，温柔治愈"},
-            "Saki":    {"label": "Saki（女·日文）",   "gender": "female", "description": "日文女声，活泼明亮"},
-            "Mortis":  {"label": "Mortis（男·日文）", "gender": "male",   "description": "日文男声，低沉磁性"},
-            "Umiri":   {"label": "Umiri（女·日文）",  "gender": "female", "description": "日文女声，清澈自然"},
-            "Mei":     {"label": "Mei（女·日文）",    "gender": "female", "description": "日文女声，柔和亲切"},
-            "Anon":    {"label": "Anon（女·日文）",   "gender": "female", "description": "日文女声，清新灵动"},
-            "Arisa":   {"label": "Arisa（女·日文）",  "gender": "female", "description": "日文女声，成熟稳重"},
         }
         for vid, info in moss_builtin.items():
             if vid in seen_ids:
