@@ -32,6 +32,7 @@ USER_CONFIG_PATH = PROJECT_ROOT / "config" / "user_config.yaml"
 SENSITIVE_PATHS = {
     "llm.api_key",
     "tts.api_key",
+    "asr.api_key",
     "avatar.api_key",
     "publisher.cookies_dir",  # 路径不掩码，但 cookie 文件不返回
 }
