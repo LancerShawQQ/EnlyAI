@@ -20,7 +20,7 @@ from typing import Any, Optional
 from ..core.base_module import BaseModule, JobContext, ModuleResult
 from ..core.config import get_config
 from ..core.llm_client import LLMClient, get_llm_client
-from .tts_engine import TTSEngine
+from .tts_engine import TTSEngine, QWEN3_PRESET_VOICES
 
 
 # MOSS 内置音色清单（与 tts_engine.py 同步）
@@ -44,6 +44,12 @@ ZH_MALE_VOICES = ["Junhao", "Zhiming", "Weiguo"]
 ZH_FEMALE_VOICES = ["Xiaoyu", "Yuewen", "Lingyu"]
 EN_MALE_VOICES = ["Adam", "Trump", "Nathan"]
 EN_FEMALE_VOICES = ["Ava", "Bella"]
+
+# Qwen3-TTS 预置音色（中文 5 个：3 男 + 2 女，用于播客多角色分配）
+QWEN3_ZH_MALE_VOICES = ["Uncle_Fu", "Dylan", "Eric"]
+QWEN3_ZH_FEMALE_VOICES = ["Vivian", "Serena"]
+# Qwen3-TTS 英文音色（2 男，用于英文播客）
+QWEN3_EN_MALE_VOICES = ["Ryan", "Aiden"]
 
 # 停顿常量（秒）
 ROLE_SWITCH_PAUSE = 0.4
@@ -262,17 +268,34 @@ def auto_match_voices(
     roles: list[str],
     role_genders: dict[str, str],
     language: str = "zh",
+    tts_provider: str = "auto",
 ) -> dict[str, str]:
-    """自动为角色分配音色（优先 edge-tts，MOSS 补充）
+    """自动为角色分配音色
 
-    中文场景优先使用 edge-tts 音色（合成快约3-5秒），edge 池用完后用 MOSS 补充。
-    英文场景用 MOSS 音色（edge-tts 仅支持中文）。
+    Args:
+        tts_provider: 音色池来源
+            - "auto"（默认）：Qwen3-TTS 优先 + MOSS 补充（中文）/ MOSS 英文
+            - "qwen3_tts"：仅使用 Qwen3-TTS 预置音色池（中文 5 个 / 英文 2 个）
+            - "edge_tts"：仅使用 edge-tts 中文音色池
+            - "moss_nano"：仅使用 MOSS 音色池
 
     Returns:
         {role: voice_id}
     """
-    if language == "zh":
-        # 中文：edge-tts 优先 + MOSS 补充
+    if tts_provider == "qwen3_tts":
+        # Qwen3-TTS 音色池（中文 3男+2女 / 英文 2男）
+        if language == "zh":
+            male_pool = list(QWEN3_ZH_MALE_VOICES)
+            female_pool = list(QWEN3_ZH_FEMALE_VOICES)
+        else:
+            male_pool = list(QWEN3_EN_MALE_VOICES)
+            female_pool = []  # Qwen3-TTS 英文女声预置音色暂无
+    elif tts_provider == "auto" and language == "zh":
+        # 中文默认：Qwen3-TTS 优先 + MOSS 补充（Qwen3 为主力默认）
+        male_pool = list(QWEN3_ZH_MALE_VOICES) + list(ZH_MALE_VOICES_EDGE) + list(ZH_MALE_VOICES)
+        female_pool = list(QWEN3_ZH_FEMALE_VOICES) + list(ZH_FEMALE_VOICES_EDGE) + list(ZH_FEMALE_VOICES)
+    elif language == "zh":
+        # 中文非 qwen3：edge-tts 优先 + MOSS 补充
         male_pool = list(ZH_MALE_VOICES_EDGE) + list(ZH_MALE_VOICES)
         female_pool = list(ZH_FEMALE_VOICES_EDGE) + list(ZH_FEMALE_VOICES)
     else:
@@ -407,6 +430,7 @@ class PodcastEngine(BaseModule):
         路由规则：
         - zh-CN-* 开头 → edge_tts
         - MOSS 内置名（Junhao/Trump/...）→ moss_nano
+        - Qwen3-TTS 预置音色（Vivian/Serena/...）→ qwen3_tts
         - 克隆音色（config/voices/ 下有目录）→ moss_nano
         - 其他 → 回退到配置的默认 provider
         """
@@ -414,6 +438,9 @@ class PodcastEngine(BaseModule):
             return "edge_tts"
         if voice_id in MOSS_BUILTIN_VOICES:
             return "moss_nano"
+        # Qwen3-TTS 预置音色（9 个：Vivian/Serena/Uncle_Fu/Dylan/Eric/Ryan/Aiden/Ono_Anna/Sohee）
+        if voice_id in QWEN3_PRESET_VOICES:
+            return "qwen3_tts"
         # 克隆音色：检查 config/voices/ 下是否有对应目录
         voices_dir = Path(self.config.get("tts.voices_dir", "./config/voices"))
         if (voices_dir / voice_id).exists():
@@ -576,8 +603,12 @@ class PodcastEngine(BaseModule):
         self,
         script_text: str,
         role_genders: dict[str, str] | None = None,
+        tts_provider: str = "auto",
     ) -> dict[str, dict]:
         """根据剧本自动建议音色分配
+
+        Args:
+            tts_provider: 音色池来源（"auto"/"qwen3_tts"/"edge_tts"/"moss_nano"）
 
         Returns:
             {role: {"voice_id": str, "gender": str, "label": str}}
@@ -597,7 +628,7 @@ class PodcastEngine(BaseModule):
         all_text = " ".join(line["text"] for line in lines)
         language = detect_language(all_text)
 
-        voice_map = auto_match_voices(roles, genders, language)
+        voice_map = auto_match_voices(roles, genders, language, tts_provider=tts_provider)
 
         # 构建详细信息
         result = {}

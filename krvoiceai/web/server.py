@@ -905,6 +905,8 @@ def create_app() -> FastAPI:
                     headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=86400"},
                 )
         # 2. 无预生成样本 → 实时合成（回退，自定义克隆音色走此路径）
+        # 注意：Qwen3-TTS 音色在 CPU 下实时合成较慢（约75秒/句），
+        # 首次试听后建议运行 scripts/pregenerate_voice_samples.py 预生成样本
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,

@@ -55,6 +55,12 @@ gpu = [
 tts = [
     "edge-tts>=6.1",  # CPU 降级方案
 ]
+# Qwen3-TTS 本地高质量 TTS（0.6B，9 预置音色 + 情绪控制，Apache 2.0）
+qwen3_tts = [
+    "qwen-tts>=0.1",
+    "torch>=2.1",
+    "soundfile>=0.12",
+]
 # 本地增强层（纯 CPU 友好，MX450 2GB 显存可跑）
 local = [
     "faster-whisper>=1.0",  # 词级时间戳字幕精对齐（CPU int8，约 500MB）

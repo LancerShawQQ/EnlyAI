@@ -1,7 +1,8 @@
 """TTS 声音克隆模块
 
-五种 provider：
+六种 provider：
 - moss_nano:  本地 MOSS-TTS-Nano ONNX（CPU 声音克隆，0.1B 模型，5s 样本零克隆）
+- qwen3_tts:  本地 Qwen3-TTS（0.6B，9 预置音色 + 指令控制 + 3s 声音克隆，Apache 2.0）
 - mimo:       调用小米 MiMo TTS API（OpenAI 兼容 chat/completions 端点）
 - gpt_sovits: 调用云端 GPT-SoVITS API（声音克隆）
 - edge_tts:   使用 edge-tts 标准音色（无克隆，CPU 可跑）
@@ -41,6 +42,29 @@ EMOTION_EDGE_MAP = {
     'cheerful': {'rate': '+12%', 'pitch': '+3Hz'},   # 欢快：稍快微升（+8%→+12%，增强欢快感）
 }
 
+# Qwen3-TTS 9 个预置音色（CustomVoice 0.6B 版）
+QWEN3_PRESET_VOICES = {
+    "Vivian":    {"label": "Vivian（女·中文）",   "gender": "female", "language": "Chinese",  "description": "明亮年轻女声"},
+    "Serena":    {"label": "Serena（女·中文）",   "gender": "female", "language": "Chinese",  "description": "温暖柔和年轻女声"},
+    "Uncle_Fu":  {"label": "Uncle Fu（男·中文）", "gender": "male",   "language": "Chinese",  "description": "成熟醇厚男声"},
+    "Dylan":     {"label": "Dylan（男·北京）",    "gender": "male",   "language": "Chinese",  "description": "青春北京男声"},
+    "Eric":      {"label": "Eric（男·四川）",     "gender": "male",   "language": "Chinese",  "description": "活泼成都男声"},
+    "Ryan":      {"label": "Ryan（男·英文）",     "gender": "male",   "language": "English",  "description": "富有节奏感活力男声"},
+    "Aiden":     {"label": "Aiden（男·英文）",    "gender": "male",   "language": "English",  "description": "阳光美式男声"},
+    "Ono_Anna":  {"label": "Ono Anna（女·日文）", "gender": "female", "language": "Japanese", "description": "活泼日语女声"},
+    "Sohee":     {"label": "Sohee（女·韩文）",    "gender": "female", "language": "Korean",   "description": "温暖韩语女声"},
+}
+
+# emotion → Qwen3-TTS 自然语言指令映射（instruct 控制语气风格）
+EMOTION_QWEN3_INSTRUCT_MAP = {
+    'neutral':  '',
+    'calm':     '用平静舒缓的语气说',
+    'excited':  '用非常激动兴奋的语气说',
+    'gentle':   '用温柔轻柔的语气说',
+    'serious':  '用严肃沉稳的语气说',
+    'cheerful': '用开心欢快的语气说',
+}
+
 
 class TTSEngine(BaseModule):
     """TTS 声音克隆/合成模块"""
@@ -49,7 +73,7 @@ class TTSEngine(BaseModule):
     requires_gpu = True  # 真实模式需要 GPU（moss_nano/edge_tts/mock 可纯 CPU 运行）
 
     # 纯 CPU 可跑的 provider（不需要云端 GPU）
-    CPU_ONLY_PROVIDERS = {"moss_nano", "edge_tts", "mock"}
+    CPU_ONLY_PROVIDERS = {"moss_nano", "qwen3_tts", "edge_tts", "mock"}
 
     def __init__(self, config=None, gpu_runner: GPURunner | None = None):
         super().__init__(config)
@@ -63,6 +87,11 @@ class TTSEngine(BaseModule):
         self.gpu = gpu_runner or GPURunner()
         # MOSS-TTS-Nano 运行时（懒加载，首次 moss_nano 合成时初始化）
         self._moss_runtime = None
+        # Qwen3-TTS 模型缓存（懒加载，首次 qwen3_tts 合成时初始化）
+        self._qwen3_tts_model = None
+        self._qwen3_tts_variant = None  # "custom_voice" / "voice_clone"
+        # Qwen3-TTS Base 模型缓存（声音克隆，懒加载，首次 qwen3_tts_clone 合成时初始化）
+        self._qwen3_tts_base_model = None
         # FFmpeg 工具（用于音频后处理：静音消除/人声增强）
         self.ffmpeg = FFmpegRunner()
 
@@ -111,6 +140,14 @@ class TTSEngine(BaseModule):
             start = time.time()
             if self.provider == "moss_nano":
                 audio_path, duration, timestamps = self._synth_moss_nano(
+                    text, voice_id, output_path, speed, volume, pitch, emotion
+                )
+            elif self.provider == "qwen3_tts":
+                audio_path, duration, timestamps = self._synth_qwen3_tts(
+                    text, voice_id, output_path, speed, volume, pitch, emotion
+                )
+            elif self.provider == "qwen3_tts_clone":
+                audio_path, duration, timestamps = self._synth_qwen3_tts_clone(
                     text, voice_id, output_path, speed, volume, pitch, emotion
                 )
             elif self.provider == "mimo":
@@ -222,6 +259,10 @@ class TTSEngine(BaseModule):
         audio_opts = {"speed": speed, "volume": volume, "pitch": pitch, "emotion": emotion}
         if self.provider == "moss_nano":
             return self._synth_moss_nano(text, voice_id, output_path, **audio_opts)
+        elif self.provider == "qwen3_tts":
+            return self._synth_qwen3_tts(text, voice_id, output_path, **audio_opts)
+        elif self.provider == "qwen3_tts_clone":
+            return self._synth_qwen3_tts_clone(text, voice_id, output_path, **audio_opts)
         elif self.provider == "mimo":
             return self._synth_mimo(text, voice_id, output_path, **audio_opts)
         elif self.provider == "gpt_sovits":
@@ -290,6 +331,289 @@ class TTSEngine(BaseModule):
             f"MOSS-TTS-Nano 运行时已加载 repo={repo_dir} model_dir={model_dir}"
         )
         return self._moss_runtime
+
+    def _get_qwen3_tts_model(self):
+        """懒加载 Qwen3-TTS 模型（仅依赖 qwen_tts + torch + soundfile）
+
+        加载 CustomVoice 0.6B 版本，支持 9 预置音色 + instruct 指令控制。
+        CPU 模式用 float32，GPU 模式用 bfloat16。
+        """
+        if self._qwen3_tts_model is not None:
+            return self._qwen3_tts_model
+
+        cfg = self.config.get("tts.qwen3_tts", {}) or {}
+        device = cfg.get("device", "cpu")
+
+        try:
+            import torch
+            from qwen_tts import Qwen3TTSModel
+        except ImportError as e:
+            raise RuntimeError(
+                f"Qwen3-TTS 依赖未安装: {e}。请运行 pip install qwen-tts torch soundfile"
+            )
+
+        model_id = cfg.get(
+            "model_id",
+            "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+        )
+        # CPU 用 float32，GPU 用 bfloat16
+        dtype = torch.float32 if device == "cpu" else torch.bfloat16
+
+        self._qwen3_tts_model = Qwen3TTSModel.from_pretrained(
+            model_id,
+            device_map=device,
+            dtype=dtype,
+        )
+        self.logger.info(
+            f"Qwen3-TTS 模型已加载 model={model_id} device={device} dtype={dtype}"
+        )
+        return self._qwen3_tts_model
+
+    def _synth_qwen3_tts(
+        self, text: str, voice_id: str, output_path: Path,
+        speed: float | None = None, volume: int | None = None,
+        pitch: int | None = None, emotion: str | None = None,
+    ) -> tuple[Path, float, list[dict]]:
+        """使用本地 Qwen3-TTS 合成（0.6B CustomVoice，9 预置音色 + 指令控制）
+
+        音色选择优先级：
+        1. voice_id 在 9 预置音色中 → 用该音色 + 情绪指令
+        2. 回退到配置的 default_speaker（默认 Vivian）
+
+        情绪控制通过自然语言 instruct 实现（非 rate/pitch 参数）。
+        长文本分句合成，逐句拼接。
+        """
+        try:
+            import soundfile as sf
+        except ImportError:
+            self.logger.warning("soundfile 未安装，降级到 mock")
+            return self._synth_mock(text, voice_id, output_path)
+
+        try:
+            import numpy as np
+        except ImportError:
+            self.logger.warning("numpy 未安装，降级到 mock")
+            return self._synth_mock(text, voice_id, output_path)
+
+        model = self._get_qwen3_tts_model()
+        cfg = self.config.get("tts.qwen3_tts", {}) or {}
+
+        # 确定音色
+        actual_speaker = (
+            voice_id if voice_id in QWEN3_PRESET_VOICES
+            else cfg.get("default_speaker", "Vivian")
+        )
+        voice_info = QWEN3_PRESET_VOICES.get(actual_speaker, {})
+        language = voice_info.get("language", "Chinese")
+
+        # 情绪 → 自然语言指令
+        instruct = EMOTION_QWEN3_INSTRUCT_MAP.get(emotion or 'neutral', '')
+
+        self.logger.info(
+            f"Qwen3-TTS 合成 speaker={actual_speaker} lang={language} "
+            f"emotion={emotion} instruct='{instruct}' text_len={len(text)}"
+        )
+
+        # 分句合成（长文本稳定性）
+        segments = split_text_to_segments(text)
+        all_wavs: list = []
+        sample_rate = 24000
+
+        for seg in segments:
+            if not seg.strip():
+                continue
+            kwargs: dict = {
+                "text": seg,
+                "language": language,
+                "speaker": actual_speaker,
+            }
+            if instruct:
+                kwargs["instruct"] = instruct
+            wavs, sr = model.generate_custom_voice(**kwargs)
+            all_wavs.extend(wavs)
+            sample_rate = sr
+
+        if not all_wavs:
+            self.logger.warning("Qwen3-TTS 未生成音频，降级到 mock")
+            return self._synth_mock(text, voice_id, output_path)
+
+        # 合并音频
+        combined = np.concatenate(all_wavs) if len(all_wavs) > 1 else all_wavs[0]
+
+        # 保存 wav（16kHz mono，与 edge_tts/mimo 保持一致，适配下游 Wav2Lip）
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        sf.write(str(output_path), combined, sample_rate)
+
+        duration = len(combined) / sample_rate
+
+        # 生成分句时间戳（按各句实际音频长度分配）
+        timestamps = []
+        offset = 0.0
+        wav_idx = 0
+        for seg in segments:
+            if not seg.strip():
+                continue
+            if wav_idx < len(all_wavs):
+                seg_dur = len(all_wavs[wav_idx]) / sample_rate
+                wav_idx += 1
+            else:
+                seg_dur = estimate_speech_duration(seg)
+            timestamps.append({
+                "text": seg,
+                "start": round(offset, 3),
+                "end": round(offset + seg_dur, 3),
+            })
+            offset += seg_dur
+
+        self.logger.info(
+            f"Qwen3-TTS 合成完成 duration={duration:.2f}s segments={len(segments)} "
+            f"speaker={actual_speaker} sr={sample_rate}"
+        )
+        return output_path, duration, timestamps
+
+    def _get_qwen3_tts_base_model(self):
+        """懒加载 Qwen3-TTS Base 模型（用于声音克隆，仅依赖 qwen_tts + torch + soundfile）
+
+        加载 Base 0.6B 版本，支持 3 秒参考音频声音克隆。
+        CPU 模式用 float32，GPU 模式用 bfloat16。
+        """
+        if self._qwen3_tts_base_model is not None:
+            return self._qwen3_tts_base_model
+
+        cfg = self.config.get("tts.qwen3_tts_clone", {}) or {}
+        device = cfg.get("device", "cpu")
+
+        try:
+            import torch
+            from qwen_tts import Qwen3TTSModel
+        except ImportError as e:
+            raise RuntimeError(
+                f"Qwen3-TTS 依赖未安装: {e}。请运行 pip install qwen-tts torch soundfile"
+            )
+
+        model_id = cfg.get(
+            "model_id",
+            "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        )
+        # CPU 用 float32，GPU 用 bfloat16
+        dtype = torch.float32 if device == "cpu" else torch.bfloat16
+
+        self._qwen3_tts_base_model = Qwen3TTSModel.from_pretrained(
+            model_id,
+            device_map=device,
+            dtype=dtype,
+        )
+        self.logger.info(
+            f"Qwen3-TTS Base 模型已加载 model={model_id} device={device} dtype={dtype}"
+        )
+        return self._qwen3_tts_base_model
+
+    def _synth_qwen3_tts_clone(
+        self, text: str, voice_id: str, output_path: Path,
+        speed: float | None = None, volume: int | None = None,
+        pitch: int | None = None, emotion: str | None = None,
+    ) -> tuple[Path, float, list[dict]]:
+        """使用 Qwen3-TTS Base 模型进行声音克隆合成（3 秒参考音频）
+
+        需要在 config tts.qwen3_tts_clone 中配置 ref_audio 和 ref_text。
+        voice_id 参数在此 provider 中不用于音色选择（音色由 ref_audio 决定），
+        但会作为输出文件的标识。
+
+        长文本分句合成，逐句拼接。
+        """
+        try:
+            import soundfile as sf
+        except ImportError:
+            self.logger.warning("soundfile 未安装，降级到 mock")
+            return self._synth_mock(text, voice_id, output_path)
+
+        try:
+            import numpy as np
+        except ImportError:
+            self.logger.warning("numpy 未安装，降级到 mock")
+            return self._synth_mock(text, voice_id, output_path)
+
+        cfg = self.config.get("tts.qwen3_tts_clone", {}) or {}
+        ref_audio = cfg.get("ref_audio", "")
+        ref_text = cfg.get("ref_text", "")
+        language = cfg.get("language", "Chinese")
+
+        if not ref_audio or not ref_text:
+            self.logger.error(
+                "Qwen3-TTS 声音克隆未配置 ref_audio/ref_text，降级到 mock"
+            )
+            return self._synth_mock(text, voice_id, output_path)
+
+        ref_audio_path = Path(ref_audio)
+        if not ref_audio_path.is_absolute():
+            # 相对路径基于 PROJECT_ROOT 解析
+            from ..core.config import PROJECT_ROOT
+            ref_audio_path = PROJECT_ROOT / ref_audio_path
+        if not ref_audio_path.exists():
+            self.logger.error(f"参考音频不存在: {ref_audio_path}，降级到 mock")
+            return self._synth_mock(text, voice_id, output_path)
+
+        model = self._get_qwen3_tts_base_model()
+
+        self.logger.info(
+            f"Qwen3-TTS 克隆合成 ref_audio={ref_audio_path.name} "
+            f"lang={language} text_len={len(text)}"
+        )
+
+        # 分句合成（长文本稳定性）
+        segments = split_text_to_segments(text)
+        all_wavs: list = []
+        sample_rate = 24000
+
+        for seg in segments:
+            if not seg.strip():
+                continue
+            wavs, sr = model.generate_voice_clone(
+                text=seg,
+                language=language,
+                ref_audio=str(ref_audio_path),
+                ref_text=ref_text,
+            )
+            all_wavs.extend(wavs)
+            sample_rate = sr
+
+        if not all_wavs:
+            self.logger.warning("Qwen3-TTS 克隆未生成音频，降级到 mock")
+            return self._synth_mock(text, voice_id, output_path)
+
+        # 合并音频
+        combined = np.concatenate(all_wavs) if len(all_wavs) > 1 else all_wavs[0]
+
+        # 保存 wav
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        sf.write(str(output_path), combined, sample_rate)
+
+        duration = len(combined) / sample_rate
+
+        # 生成分句时间戳
+        timestamps = []
+        offset = 0.0
+        wav_idx = 0
+        for seg in segments:
+            if not seg.strip():
+                continue
+            if wav_idx < len(all_wavs):
+                seg_dur = len(all_wavs[wav_idx]) / sample_rate
+                wav_idx += 1
+            else:
+                seg_dur = estimate_speech_duration(seg)
+            timestamps.append({
+                "text": seg,
+                "start": round(offset, 3),
+                "end": round(offset + seg_dur, 3),
+            })
+            offset += seg_dur
+
+        self.logger.info(
+            f"Qwen3-TTS 克隆合成完成 duration={duration:.2f}s segments={len(segments)} "
+            f"sr={sample_rate}"
+        )
+        return output_path, duration, timestamps
 
     def _synth_moss_nano(
         self, text: str, voice_id: str, output_path: Path,

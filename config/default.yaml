@@ -30,7 +30,7 @@ llm:
 
 # TTS 配置（声音克隆）
 tts:
-  provider: moss_nano  # moss_nano(本地克隆,6内置音色) / edge_tts(免费,10音色) / mimo / gpt_sovits / mock
+  provider: qwen3_tts  # qwen3_tts(默认,9预置音色+情绪) / qwen3_tts_clone(声音克隆) / moss_nano(CPU降级) / edge_tts(免费) / mimo / gpt_sovits / mock
   # GPT-SoVITS 云端服务地址
   api_base: http://localhost:9880
   api_key: ""
@@ -65,6 +65,28 @@ tts:
     max_new_frames: 375
     # 实时流式解码（更快）
     realtime_streaming: true
+  # Qwen3-TTS 配置（provider=qwen3_tts 时使用，本地 0.6B 模型，9 预置音色 + 指令控制）
+  qwen3_tts:
+    # 模型 ID（HuggingFace/ModelScope，默认 0.6B CustomVoice 版）
+    # 已通过 ModelScope 下载到本地，指向本地路径避免重复下载
+    model_id: D:/cursor_project/koubo/KrVoiceAI/models/models/Qwen--Qwen3-TTS-12Hz-0.6B-CustomVoice/snapshots/master
+    # 推理设备：cpu / cuda:0
+    device: cpu
+    # 默认音色（9 预置音色：Vivian/Serena/Uncle_Fu/Dylan/Eric/Ryan/Aiden/Ono_Anna/Sohee）
+    default_speaker: Vivian
+  # Qwen3-TTS 声音克隆配置（provider=qwen3_tts_clone 时使用，0.6B Base 模型，3 秒参考音频克隆）
+  qwen3_tts_clone:
+    # 模型 ID（Base 版，支持声音克隆）
+    # 已通过 ModelScope 下载到本地，指向本地路径避免重复下载
+    model_id: D:/cursor_project/koubo/KrVoiceAI/models/models/Qwen--Qwen3-TTS-12Hz-0.6B-Base/snapshots/master
+    # 推理设备：cpu / cuda:0
+    device: cpu
+    # 参考音频路径（3 秒以上清晰人声样本，相对路径基于 PROJECT_ROOT）
+    ref_audio: ""
+    # 参考音频对应文本（与音频内容一致，提升克隆精度）
+    ref_text: ""
+    # 合成语言：Chinese / English / Japanese / Korean 等
+    language: Chinese
 
 # 语音博客配置
 podcast:

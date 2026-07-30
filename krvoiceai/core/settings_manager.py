@@ -92,6 +92,18 @@ PROVIDER_PRESETS = {
             "models": ["mimo-v2.5-tts", "mimo-v2.5-tts-voicedesign", "mimo-v2.5-tts-voiceclone"],
             "voices": ["mimo_default"],
         },
+        "qwen3_tts": {
+            "label": "Qwen3-TTS（本地 0.6B，9 预置音色 + 情绪控制，Apache 2.0）",
+            "needs_api_base": False,
+            "needs_api_key": False,
+            "voices": ["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan", "Aiden", "Ono_Anna", "Sohee"],
+        },
+        "qwen3_tts_clone": {
+            "label": "Qwen3-TTS 声音克隆（本地 0.6B Base，3 秒样本克隆，Apache 2.0）",
+            "needs_api_base": False,
+            "needs_api_key": False,
+            "voices": [],
+        },
         "gpt_sovits": {
             "label": "GPT-SoVITS 云端（声音克隆）",
             "needs_api_base": True,

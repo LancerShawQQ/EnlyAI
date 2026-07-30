@@ -2131,7 +2131,9 @@
               <div class="form-group">
                 <label class="form-label">服务提供商</label>
                 <select class="form-select" id="tts-provider" onchange="onTTSProviderChange()">
-                  <option value="moss_nano">MOSS NANO（本地声音克隆，6中文+5英文）</option>
+                  <option value="qwen3_tts">Qwen3-TTS 预置音色（本地0.6B，9音色+情绪控制，推荐）</option>
+                  <option value="qwen3_tts_clone">Qwen3-TTS 声音克隆（本地0.6B Base，3秒样本克隆）</option>
+                  <option value="moss_nano">MOSS NANO（本地CPU降级，6中文+5英文，快速预览）</option>
                   <option value="edge_tts">Edge TTS（微软标准音色，免费，7中文）</option>
                   <option value="mimo">MiMo TTS（小米云端，需API凭证）</option>
                   <option value="gpt_sovits">GPT-SoVITS 云端（声音克隆）</option>
@@ -2155,6 +2157,35 @@
                   </select>
                   <button class="btn btn-secondary" id="tts-moss-preview-btn" type="button" title="试听当前音色"><i data-lucide="play" style="width:14px;height:14px"></i></button>
                 </div>
+              </div>
+              <div class="form-group" id="tts-qwen3-voice-group" style="display:none">
+                <label class="form-label">Qwen3-TTS 音色</label>
+                <div style="display:flex;gap:8px">
+                  <select class="form-select" id="tts-qwen3-voice" style="flex:1">
+                    <!-- 由 settings.js 动态加载，数据源 /api/voices -->
+                  </select>
+                  <button class="btn btn-secondary" id="tts-qwen3-preview-btn" type="button" title="试听当前音色"><i data-lucide="play" style="width:14px;height:14px"></i></button>
+                </div>
+              </div>
+            </div>
+            <!-- Qwen3-TTS 声音克隆配置区（provider=qwen3_tts_clone 时显示） -->
+            <div id="tts-qwen3-clone-group" style="display:none">
+              <div class="form-group">
+                <label class="form-label">参考音频路径 <span class="hint">3秒以上清晰人声样本</span></label>
+                <input class="form-input" id="tts-qwen3-clone-ref-audio" placeholder="例如：config/voices/sample.wav（相对项目根目录）">
+              </div>
+              <div class="form-group">
+                <label class="form-label">参考音频对应文本 <span class="hint">与音频内容一致，提升克隆精度</span></label>
+                <textarea class="form-input" id="tts-qwen3-clone-ref-text" rows="2" placeholder="输入参考音频中说的那句话"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">合成语言</label>
+                <select class="form-select" id="tts-qwen3-clone-lang">
+                  <option value="Chinese">中文</option>
+                  <option value="English">英文</option>
+                  <option value="Japanese">日文</option>
+                  <option value="Korean">韩文</option>
+                </select>
               </div>
             </div>
             <div class="form-group" id="tts-api-base-group">

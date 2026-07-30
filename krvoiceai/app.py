@@ -644,7 +644,23 @@ class EnlyAI:
             })
             seen_ids.add(vid)
 
-        # 3. 已注册的自定义克隆音色（provider=moss_nano 零样本克隆）
+        # 3. Qwen3-TTS 预置音色（9 个：5中文 + 2英文 + 1日文 + 1韩文）
+        from .modules.tts_engine import QWEN3_PRESET_VOICES
+        for vid, info in QWEN3_PRESET_VOICES.items():
+            if vid in seen_ids:
+                continue
+            result.append({
+                "voice_id": vid,
+                "label": info["label"],
+                "gender": info["gender"],
+                "description": info.get("description", ""),
+                "type": "preset",
+                "provider": "qwen3_tts",
+                "supports_emotion": True,  # Qwen3-TTS 支持 instruct 情绪控制
+            })
+            seen_ids.add(vid)
+
+        # 4. 已注册的自定义克隆音色（provider=moss_nano 零样本克隆）
         if voices_dir.exists():
             for d in sorted(voices_dir.iterdir()):
                 if not d.is_dir():

@@ -257,6 +257,7 @@ async function loadVoicesIntoSettings() {
     // 按 provider 分组
     const edgeVoices = voices.filter(v => v.provider === 'edge_tts');
     const mossVoices = voices.filter(v => v.provider === 'moss_nano' && v.type === 'preset');
+    const qwen3Voices = voices.filter(v => v.provider === 'qwen3_tts' && v.type === 'preset');
 
     // 填充 Edge TTS 下拉框
     const edgeSel = document.getElementById('tts-edge-voice');
@@ -273,6 +274,14 @@ async function loadVoicesIntoSettings() {
         `<option value="${v.voice_id}">${v.label}</option>`
       ).join('');
     }
+
+    // 填充 Qwen3-TTS 下拉框
+    const qwen3Sel = document.getElementById('tts-qwen3-voice');
+    if (qwen3Sel) {
+      qwen3Sel.innerHTML = qwen3Voices.map(v =>
+        `<option value="${v.voice_id}">${v.label}</option>`
+      ).join('');
+    }
     return voices;
   } catch (e) {
     console.error('加载音色列表失败:', e);
@@ -282,13 +291,19 @@ async function loadVoicesIntoSettings() {
 
 /**
  * 试听音色（设置中心专用，复用 app.js 的 playVoicePreview）
+ * Qwen3-TTS 音色在 CPU 下首次试听较慢（约75秒），给出提示
  */
 function previewSettingsVoice(voiceId, btn) {
+  if (!voiceId) return;
+  // Qwen3-TTS 预置音色在 CPU 下首次试听较慢
+  const qwen3Voices = ['Vivian', 'Serena', 'Uncle_Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee'];
+  if (qwen3Voices.includes(voiceId)) {
+    toast('Qwen3-TTS CPU 首次试听约需 75 秒，请耐心等待（GPU 约 5 秒）', 'info');
+  }
   if (typeof playVoicePreview === 'function') {
     playVoicePreview(voiceId, btn);
   } else {
     // 回退：直接播放音频
-    if (!voiceId) return;
     const audio = new Audio(`/api/voice/preview/${encodeURIComponent(voiceId)}`);
     if (btn) {
       const originalHTML = btn.innerHTML;
@@ -316,6 +331,18 @@ async function loadTTSSettings() {
   const mossVoice = (tts.moss_nano && tts.moss_nano.builtin_voice) || tts.default_voice || 'Junhao';
   const mossSel = document.getElementById('tts-moss-voice');
   if (mossSel) mossSel.value = mossVoice;
+  // Qwen3-TTS 音色回填
+  const qwen3Voice = (tts.qwen3_tts && tts.qwen3_tts.default_speaker) || tts.default_voice || 'Vivian';
+  const qwen3Sel = document.getElementById('tts-qwen3-voice');
+  if (qwen3Sel) qwen3Sel.value = qwen3Voice;
+  // Qwen3-TTS 声音克隆配置回填
+  const cloneCfg = tts.qwen3_tts_clone || {};
+  const cloneRefAudio = document.getElementById('tts-qwen3-clone-ref-audio');
+  const cloneRefText = document.getElementById('tts-qwen3-clone-ref-text');
+  const cloneLang = document.getElementById('tts-qwen3-clone-lang');
+  if (cloneRefAudio) cloneRefAudio.value = cloneCfg.ref_audio || '';
+  if (cloneRefText) cloneRefText.value = cloneCfg.ref_text || '';
+  if (cloneLang) cloneLang.value = cloneCfg.language || 'Chinese';
   document.getElementById('tts-default-voice').value = tts.default_voice || 'Junhao';
   document.getElementById('tts-timeout').value = tts.timeout || 120;
 
@@ -336,18 +363,30 @@ async function loadTTSSettings() {
       previewSettingsVoice(v, mossPreviewBtn);
     });
   }
+  const qwen3PreviewBtn = document.getElementById('tts-qwen3-preview-btn');
+  if (qwen3PreviewBtn && !qwen3PreviewBtn._bound) {
+    qwen3PreviewBtn._bound = true;
+    qwen3PreviewBtn.addEventListener('click', () => {
+      const v = document.getElementById('tts-qwen3-voice').value;
+      previewSettingsVoice(v, qwen3PreviewBtn);
+    });
+  }
 }
 
 function onTTSProviderChange() {
   const provider = document.getElementById('tts-provider').value;
   const edgeGroup = document.getElementById('tts-edge-voice-group');
   const mossGroup = document.getElementById('tts-moss-voice-group');
+  const qwen3Group = document.getElementById('tts-qwen3-voice-group');
+  const qwen3CloneGroup = document.getElementById('tts-qwen3-clone-group');
   const apiBaseGroup = document.getElementById('tts-api-base-group');
   const apiKeyGroup = document.getElementById('tts-api-key-group');
   const defaultVoiceInput = document.getElementById('tts-default-voice');
 
   edgeGroup.style.display = provider === 'edge_tts' ? 'block' : 'none';
   mossGroup.style.display = provider === 'moss_nano' ? 'block' : 'none';
+  qwen3Group.style.display = provider === 'qwen3_tts' ? 'block' : 'none';
+  qwen3CloneGroup.style.display = provider === 'qwen3_tts_clone' ? 'block' : 'none';
   apiBaseGroup.style.display = (provider === 'gpt_sovits' || provider === 'mimo') ? 'block' : 'none';
   apiKeyGroup.style.display = (provider === 'gpt_sovits' || provider === 'mimo') ? 'block' : 'none';
 
@@ -356,6 +395,11 @@ function onTTSProviderChange() {
     defaultVoiceInput.value = document.getElementById('tts-edge-voice').value;
   } else if (provider === 'moss_nano') {
     defaultVoiceInput.value = document.getElementById('tts-moss-voice').value;
+  } else if (provider === 'qwen3_tts') {
+    defaultVoiceInput.value = document.getElementById('tts-qwen3-voice').value;
+  } else if (provider === 'qwen3_tts_clone') {
+    // 声音克隆模式 default_voice 留空（音色由 ref_audio 决定）
+    defaultVoiceInput.value = '';
   }
 
   // 音色下拉变化时同步 default_voice
@@ -365,6 +409,12 @@ function onTTSProviderChange() {
   document.getElementById('tts-moss-voice').onchange = () => {
     if (document.getElementById('tts-provider').value === 'moss_nano') defaultVoiceInput.value = document.getElementById('tts-moss-voice').value;
   };
+  const qwen3Sel = document.getElementById('tts-qwen3-voice');
+  if (qwen3Sel) {
+    qwen3Sel.onchange = () => {
+      if (document.getElementById('tts-provider').value === 'qwen3_tts') defaultVoiceInput.value = qwen3Sel.value;
+    };
+  }
 
   // 自动填充默认地址
   if (_presets && _presets.tts[provider]) {
@@ -384,6 +434,8 @@ async function saveTTSSettings() {
     defaultVoice = document.getElementById('tts-edge-voice').value;
   } else if (provider === 'moss_nano') {
     defaultVoice = document.getElementById('tts-moss-voice').value;
+  } else if (provider === 'qwen3_tts') {
+    defaultVoice = document.getElementById('tts-qwen3-voice').value;
   }
   const data = {
     provider: provider,
@@ -396,6 +448,18 @@ async function saveTTSSettings() {
   // MOSS NANO 额外保存 builtin_voice
   if (provider === 'moss_nano') {
     data.moss_nano = { builtin_voice: document.getElementById('tts-moss-voice').value };
+  }
+  // Qwen3-TTS 额外保存 default_speaker
+  if (provider === 'qwen3_tts') {
+    data.qwen3_tts = { default_speaker: document.getElementById('tts-qwen3-voice').value };
+  }
+  // Qwen3-TTS 声音克隆额外保存 ref_audio/ref_text/language
+  if (provider === 'qwen3_tts_clone') {
+    data.qwen3_tts_clone = {
+      ref_audio: document.getElementById('tts-qwen3-clone-ref-audio').value.trim(),
+      ref_text: document.getElementById('tts-qwen3-clone-ref-text').value.trim(),
+      language: document.getElementById('tts-qwen3-clone-lang').value,
+    };
   }
   try {
     const result = await api('/api/settings/tts', {
