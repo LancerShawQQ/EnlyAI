@@ -328,7 +328,7 @@ async function loadTTSSettings() {
   document.getElementById('tts-api-key').value = tts.api_key || '';
   document.getElementById('tts-edge-voice').value = tts.edge_voice || 'zh-CN-XiaoxiaoNeural';
   // MOSS NANO 内置音色回填
-  const mossVoice = (tts.moss_nano && tts.moss_nano.builtin_voice) || tts.default_voice || 'Junhao';
+  const mossVoice = (tts.moss_nano && tts.moss_nano.builtin_voice) || tts.default_voice || 'Zhiming';
   const mossSel = document.getElementById('tts-moss-voice');
   if (mossSel) mossSel.value = mossVoice;
   // Qwen3-TTS 音色回填
@@ -343,7 +343,7 @@ async function loadTTSSettings() {
   if (cloneRefAudio) cloneRefAudio.value = cloneCfg.ref_audio || '';
   if (cloneRefText) cloneRefText.value = cloneCfg.ref_text || '';
   if (cloneLang) cloneLang.value = cloneCfg.language || 'Chinese';
-  document.getElementById('tts-default-voice').value = tts.default_voice || 'Junhao';
+  document.getElementById('tts-default-voice').value = tts.default_voice || 'Zhiming';
   document.getElementById('tts-timeout').value = tts.timeout || 120;
 
   // 绑定试听按钮事件

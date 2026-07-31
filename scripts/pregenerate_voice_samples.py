@@ -1,10 +1,10 @@
 """预生成内置音色试听样本
 
-为 MOSS-TTS-Nano 的 18 个内置音色 + edge-tts 的 17 个中文音色生成试听音频，
+为 MOSS-TTS-Nano 的 18 个内置音色 + edge-tts 的 17 个中文音色 + Qwen3-TTS 的 9 个预置音色生成试听音频，
 保存到 config/voices/samples/{voice_id}.wav。
 
 运行后，前端点击试听按钮时直接返回预生成文件（<1秒），
-无需每次实时合成（MOSS 约80秒，edge-tts 约3-5秒）。
+无需每次实时合成（MOSS 约80秒，edge-tts 约3-5秒，Qwen3-TTS CPU 约75秒）。
 
 用法：
   cd KrVoiceAI
@@ -12,6 +12,7 @@
   python scripts/pregenerate_voice_samples.py --force  # 强制重新生成
   python scripts/pregenerate_voice_samples.py --edge   # 仅生成 edge-tts 音色
   python scripts/pregenerate_voice_samples.py --moss   # 仅生成 MOSS 音色
+  python scripts/pregenerate_voice_samples.py --qwen3  # 仅生成 Qwen3-TTS 音色
 """
 import sys
 import shutil
@@ -63,6 +64,24 @@ EDGE_VOICES = {
     "zh-CN-XiaoxuanNeural":   SAMPLE_TEXT_ZH,
     "zh-CN-YunxiaNeural":     SAMPLE_TEXT_ZH,
 }
+
+# Qwen3-TTS 9 个预置音色（与 tts_engine.py QWEN3_PRESET_VOICES 同步）
+# CPU 下约 75 秒/句，首次生成耗时较长（约 11 分钟）
+QWEN3_VOICES = {
+    # 中文（5 个：3 男 + 2 女）
+    "Vivian":    SAMPLE_TEXT_ZH,
+    "Serena":    SAMPLE_TEXT_ZH,
+    "Uncle_Fu":  SAMPLE_TEXT_ZH,
+    "Dylan":     SAMPLE_TEXT_ZH,
+    "Eric":      SAMPLE_TEXT_ZH,
+    # 英文（2 男）
+    "Ryan":      SAMPLE_TEXT_EN,
+    "Aiden":     SAMPLE_TEXT_EN,
+    # 日文（1 女）
+    "Ono_Anna":  SAMPLE_TEXT_JA,
+    # 韩文（1 女）
+    "Sohee":     "안녕하세요, 이번 팟캐스트에 오신 것을 환영합니다. 오늘은 흥미로운 주제를 이야기해 봅시다.",
+}
 SAMPLES_DIR = project_root / "config" / "voices" / "samples"
 
 
@@ -70,6 +89,7 @@ def main():
     force = "--force" in sys.argv or "-f" in sys.argv
     only_edge = "--edge" in sys.argv
     only_moss = "--moss" in sys.argv
+    only_qwen3 = "--qwen3" in sys.argv
 
     # 确定要生成的音色集合
     voices_to_gen = {}
@@ -77,19 +97,24 @@ def main():
         voices_to_gen.update(EDGE_VOICES)
     elif only_moss:
         voices_to_gen.update(MOSS_VOICES)
+    elif only_qwen3:
+        voices_to_gen.update(QWEN3_VOICES)
     else:
         voices_to_gen.update(MOSS_VOICES)
         voices_to_gen.update(EDGE_VOICES)
+        voices_to_gen.update(QWEN3_VOICES)
 
     all_voices = list(voices_to_gen.keys())
     print("=" * 60)
-    print(f"预生成音色试听样本（共 {len(all_voices)} 个：MOSS {len(MOSS_VOICES)} + edge-tts {len(EDGE_VOICES)}）")
+    print(f"预生成音色试听样本（共 {len(all_voices)} 个：MOSS {len(MOSS_VOICES)} + edge-tts {len(EDGE_VOICES)} + Qwen3-TTS {len(QWEN3_VOICES)}）")
     print(f"样本目录: {SAMPLES_DIR}")
     print(f"强制重新生成: {force}")
     if only_edge:
         print("模式: 仅 edge-tts 音色")
     elif only_moss:
         print("模式: 仅 MOSS 音色")
+    elif only_qwen3:
+        print("模式: 仅 Qwen3-TTS 音色（CPU 下约 75 秒/个，预计 11 分钟）")
     print("=" * 60)
 
     SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
@@ -123,24 +148,32 @@ def main():
             print(f"  [跳过] {voice_id} 已存在")
             continue
 
-        # edge-tts 音色需要切换 provider
+        # 判断音色类型并选择 provider
         is_edge = voice_id.startswith("zh-")
-        provider_tag = "edge_tts" if is_edge else "moss_nano"
-        print(f"  [生成] {voice_id} ({provider_tag})...", end=" ", flush=True)
+        is_qwen3 = voice_id in QWEN3_VOICES
+        if is_edge:
+            provider_tag = "edge_tts"
+        elif is_qwen3:
+            provider_tag = "qwen3_tts"
+        else:
+            provider_tag = "moss_nano"
+        # Qwen3-TTS CPU 下较慢，额外提示
+        slow_hint = " [CPU 约75秒]" if is_qwen3 else ""
+        print(f"  [生成] {voice_id} ({provider_tag}){slow_hint}...", end=" ", flush=True)
         t0 = time.time()
         try:
             tmp_path = project_root / "workspace_data" / "tmp" / f"voice_sample_{voice_id}.wav"
             tmp_path.parent.mkdir(parents=True, exist_ok=True)
 
-            if is_edge:
-                # edge-tts 音色：临时切换 provider 合成
+            if is_edge or is_qwen3:
+                # edge-tts / Qwen3-TTS 音色：临时切换 provider 合成
                 import copy
                 from krvoiceai.core.config import Config
                 raw_data = copy.deepcopy(app.config._data)
-                raw_data.setdefault("tts", {})["provider"] = "edge_tts"
-                edge_engine = engine.__class__(config=Config(raw_data))
-                edge_engine.setup()
-                audio_path, duration, _ = edge_engine.synthesize(
+                raw_data.setdefault("tts", {})["provider"] = provider_tag
+                tmp_engine = engine.__class__(config=Config(raw_data))
+                tmp_engine.setup()
+                audio_path, duration, _ = tmp_engine.synthesize(
                     sample_text, voice_id, tmp_path,
                 )
             else:

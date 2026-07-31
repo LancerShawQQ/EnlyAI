@@ -1408,12 +1408,22 @@ async function playVoicePreview(voiceId, btn) {
   btn.innerHTML = '<span class="spinner"></span>';
   if (window.lucide) lucide.createIcons();
   _currentPreviewBtn = btn;
+  // Qwen3-TTS 预置音色在 CPU 下首次实时合成约 75 秒，给出明确提示
+  const qwen3Voices = ['Vivian', 'Serena', 'Uncle_Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee'];
+  if (qwen3Voices.includes(voiceId)) {
+    toast('Qwen3-TTS 首次试听约需 75 秒（CPU 合成），已预生成样本后即时返回', 'info');
+  }
+  // 加载超时定时器（90 秒，覆盖 Qwen3-TTS CPU 合成时间）
+  let loadTimer = setTimeout(() => {
+    toast('试听加载超时，请检查网络或稍后重试', 'error');
+  }, 90000);
   try {
     // 直接请求预生成试听样本（内置音色即时返回，自定义音色回退实时合成）
     const audio = new Audio(`/api/voice/preview/${encodeURIComponent(voiceId)}`);
     _currentPreviewAudio = audio;
     // 音频加载完成后才切到 pause 图标
     audio.addEventListener('canplay', () => {
+      clearTimeout(loadTimer);
       setBtnIcon(btn, 'pause', '');
     });
     audio.addEventListener('ended', () => {
@@ -1423,6 +1433,7 @@ async function playVoicePreview(voiceId, btn) {
       _currentPreviewBtn = null;
     });
     audio.addEventListener('error', () => {
+      clearTimeout(loadTimer);
       btn.classList.remove('playing');
       setBtnIcon(btn, 'play', '');
       _currentPreviewAudio = null;
@@ -1431,6 +1442,7 @@ async function playVoicePreview(voiceId, btn) {
     });
     await audio.play();
   } catch (e) {
+    clearTimeout(loadTimer);
     btn.classList.remove('playing');
     setBtnIcon(btn, 'play', '');
     _currentPreviewAudio = null;
@@ -4757,7 +4769,16 @@ function renderPodcastVoiceList() {
       const voiceId = v.id || v.voice_id || v.name;
       const label = v.label || v.name || voiceId;
       const gender = v.gender ? `（${v.gender}）` : '';
-      return `<option value="${escapeHtml(voiceId)}" ${currentVoice === voiceId ? 'selected' : ''}>${escapeHtml(label)}${gender}</option>`;
+      // 标注 TTS 来源，让用户了解音色对应关系
+      const providerMap = {
+        'qwen3_tts': '[Qwen3]',
+        'moss_nano': '[MOSS]',
+        'edge_tts': '[Edge]',
+        'mimo': '[MiMo]',
+        'gpt_sovits': '[SoVITS]',
+      };
+      const providerLabel = providerMap[v.provider] || (v.provider ? `[${v.provider}]` : '');
+      return `<option value="${escapeHtml(voiceId)}" ${currentVoice === voiceId ? 'selected' : ''}>${escapeHtml(label)}${gender} ${providerLabel}</option>`;
     }).join('');
     return `
       <div class="voice-assign-row" style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border-light)">

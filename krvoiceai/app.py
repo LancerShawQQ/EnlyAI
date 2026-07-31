@@ -614,10 +614,10 @@ class EnlyAI:
             })
             seen_ids.add(vid)
 
-        # 2. MOSS-TTS-Nano 内置音色（11 个：6中文 + 5英文）
+        # 2. MOSS-TTS-Nano 内置音色（10 个：5中文 + 5英文）
+        # 注：Junhao 已从音色列表移除（默认替换为 Zhiming），但 MOSS 模型本身仍支持，如需启用可通过 default_voice 配置
         moss_builtin = {
-            # 中文音色（6个）
-            "Junhao":  {"label": "君浩（男·中文）",   "gender": "male",   "description": "沉稳男声，适合新闻播报"},
+            # 中文音色（5个）
             "Zhiming": {"label": "志明（男·中文）",   "gender": "male",   "description": "温和男声，适合对话叙事"},
             "Weiguo":  {"label": "建国（男·中文）",   "gender": "male",   "description": "浑厚男声，适合知识分享"},
             "Xiaoyu":  {"label": "小语（女·中文）",   "gender": "female", "description": "清亮女声，适合日常对话"},

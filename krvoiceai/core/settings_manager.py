@@ -475,7 +475,7 @@ class SettingsManager:
         audio_payload = {
             "emotion": style.get("emotion", "neutral"),
             "speed": style.get("speech_speed", 1.0),
-            "default_voice": style.get("voice", current_audio.get("default_voice", "Junhao")),
+            "default_voice": style.get("voice", current_audio.get("default_voice", "Zhiming")),
             "bgm": {
                 "enabled": current_bgm.get("enabled", True),
                 "track": style.get("bgm_track", "soft_piano"),

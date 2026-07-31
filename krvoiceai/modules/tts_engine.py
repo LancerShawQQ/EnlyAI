@@ -624,21 +624,21 @@ class TTSEngine(BaseModule):
 
         音色选择优先级：
         1. voice_id 对应目录下有 sample 音频 → 用该音频做零样本声音克隆
-        2. voice_id 是 MOSS 内置音色（Junhao/Trump/Ava/Bella/Adam/Nathan）→ 用该内置音色
-        3. 回退到 config 的 builtin_voice（默认 Junhao）
+        2. voice_id 是 MOSS 内置音色（Zhiming/Weiguo/Xiaoyu/Yuewen/Lingyu/Trump/Ava/Bella/Adam/Nathan）→ 用该内置音色
+        3. 回退到 config 的 builtin_voice（默认 Zhiming）
         """
         # emotion 暂不支持，仅 edge_tts 支持情感映射
         runtime = self._get_moss_runtime()
         cfg = self.config.get("tts.moss_nano", {}) or {}
 
-        # MOSS 内置音色清单（11 个：6 中文 + 5 英文）
+        # MOSS 内置音色清单（11 个：6 中文 + 5 英文，Junhao 保留兼容但 UI 不展示）
         MOSS_BUILTIN_VOICES = {
-            # 中文音色
+            # 中文音色（Junhao 已从音色列表移除，但 MOSS 模型仍支持，保留以便兼容旧配置）
             "Junhao", "Zhiming", "Weiguo", "Xiaoyu", "Yuewen", "Lingyu",
             # 英文音色
             "Trump", "Ava", "Bella", "Adam", "Nathan",
         }
-        config_builtin = cfg.get("builtin_voice", "Junhao")
+        config_builtin = cfg.get("builtin_voice", "Zhiming")
 
         # 查找该音色的参考音频（用于声音克隆）
         prompt_audio_path = None

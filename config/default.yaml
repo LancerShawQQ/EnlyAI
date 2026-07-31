@@ -41,8 +41,9 @@ tts:
   edge_voice: zh-CN-XiaoxiaoNeural
   # 音色库目录
   voices_dir: ./config/voices
-  # 默认音色（edge_tts: zh-CN-XiaoxiaoNeural 等10个；moss_nano: Junhao/Trump/Ava/Bella/Adam/Nathan）
-  default_voice: Junhao
+  # 默认音色（edge_tts: zh-CN-XiaoxiaoNeural 等10个；moss_nano: Zhiming/Trump/Ava/Bella/Adam/Nathan）
+  # 注：Junhao 已从音色列表移除，默认替换为 Zhiming（同为中文男声）
+  default_voice: Zhiming
   # MOSS-TTS-Nano 配置（provider=moss_nano 时使用，本地 CPU 声音克隆）
   moss_nano:
     # MOSS-TTS-Nano 仓库根目录（含 onnx_tts_runtime.py）
@@ -53,8 +54,9 @@ tts:
     cpu_threads: 4
     # 执行后端：cpu / cuda
     execution_provider: cpu
-    # 内置音色（无参考音频时使用）：Junhao / Trump / Ava / Bella / Adam / Nathan
-    builtin_voice: Junhao
+    # 内置音色（无参考音频时使用）：Zhiming / Trump / Ava / Bella / Adam / Nathan
+    # 注：Junhao 已移除，默认替换为 Zhiming
+    builtin_voice: Zhiming
     # 文本归一化是否启用 WeTextProcessing（需 pynini，已安装启用）
     enable_wetext: true
     # 是否启用 robust normalizer
@@ -316,7 +318,8 @@ audio:
   # 音高（-12 到 +12 半音）
   pitch: 0
   # 默认音色（向后兼容字段；TTS 引擎实际读取 tts.default_voice）
-  default_voice: Junhao
+  # 注：Junhao 已移除，默认替换为 Zhiming
+  default_voice: Zhiming
   # 情感：neutral / calm / excited / gentle / serious / cheerful
   emotion: neutral
   # 句间停顿（秒）

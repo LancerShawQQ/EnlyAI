@@ -621,8 +621,8 @@ def _build_ui() -> "gr.Blocks":
                         )
                         tts_threads = gr.Slider(label="CPU 线程数", minimum=1, maximum=16, value=cur_moss.get("cpu_threads", 4))
                         moss_builtin = gr.Dropdown(
-                            label="内置音色", choices=["Junhao", "Trump", "Ava", "Bella", "Adam", "Nathan"],
-                            value=cur_moss.get("builtin_voice", "Junhao"),
+                            label="内置音色", choices=["Zhiming", "Weiguo", "Xiaoyu", "Yuewen", "Lingyu", "Trump", "Ava", "Bella", "Adam", "Nathan"],
+                            value=cur_moss.get("builtin_voice", "Zhiming"),
                         )
                     with gr.Row():
                         wav2lip_python = gr.Textbox(label="Wav2Lip Python 路径",

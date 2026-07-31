@@ -78,7 +78,7 @@ templates:
       filter: none
       transition: fade
       speech_speed: 0.95
-      voice: Junhao
+      voice: Zhiming
       avatar: standard
     avatar_scene:
       pose: half_body
@@ -120,7 +120,7 @@ templates:
       filter: none
       transition: fade
       speech_speed: 0.95
-      voice: Junhao
+      voice: Zhiming
       avatar: standard
     avatar_scene:
       pose: half_body
@@ -241,7 +241,7 @@ templates:
       filter: none
       transition: fade
       speech_speed: 0.95
-      voice: Junhao
+      voice: Zhiming
       avatar: standard
     avatar_scene:
       pose: half_body
@@ -364,7 +364,7 @@ templates:
       filter: vintage
       transition: fade
       speech_speed: 0.9
-      voice: Junhao
+      voice: Zhiming
       avatar: standard
     avatar_scene:
       pose: half_body
@@ -406,7 +406,7 @@ templates:
       filter: none
       transition: fade
       speech_speed: 1.0
-      voice: Junhao
+      voice: Zhiming
       avatar: standard
     avatar_scene:
       pose: half_body

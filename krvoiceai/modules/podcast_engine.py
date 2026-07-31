@@ -24,9 +24,10 @@ from .tts_engine import TTSEngine, QWEN3_PRESET_VOICES
 
 
 # MOSS 内置音色清单（与 tts_engine.py 同步）
+# 注：Junhao 已从音色列表移除（默认替换为 Zhiming），MOSS 模型本身仍支持
 MOSS_BUILTIN_VOICES = {
     # 中文音色
-    "Junhao", "Zhiming", "Weiguo", "Xiaoyu", "Yuewen", "Lingyu",
+    "Zhiming", "Weiguo", "Xiaoyu", "Yuewen", "Lingyu",
     # 英文音色
     "Trump", "Ava", "Bella", "Adam", "Nathan",
 }
@@ -38,8 +39,8 @@ ZH_MALE_VOICES_EDGE = ["zh-CN-YunxiNeural", "zh-CN-YunjianNeural", "zh-CN-Yunyan
                         "zh-CN-YunxiaNeural"]
 # edge-tts 中文女声（仅保留实测可用的音色）
 ZH_FEMALE_VOICES_EDGE = ["zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-XiaoxuanNeural"]
-# MOSS 中文男声（补充）
-ZH_MALE_VOICES = ["Junhao", "Zhiming", "Weiguo"]
+# MOSS 中文男声（补充，Junhao 已移除）
+ZH_MALE_VOICES = ["Zhiming", "Weiguo"]
 # MOSS 中文女声（补充）
 ZH_FEMALE_VOICES = ["Xiaoyu", "Yuewen", "Lingyu"]
 EN_MALE_VOICES = ["Adam", "Trump", "Nathan"]
@@ -633,7 +634,7 @@ class PodcastEngine(BaseModule):
         # 构建详细信息
         result = {}
         for role in roles:
-            voice_id = voice_map.get(role, "Junhao")
+            voice_id = voice_map.get(role, "Zhiming")
             gender = genders.get(role, "unknown")
             result[role] = {
                 "voice_id": voice_id,
@@ -646,7 +647,6 @@ class PodcastEngine(BaseModule):
         """获取音色的中文标签"""
         labels = {
             # 中文
-            "Junhao": "君浩（男·中文）",
             "Zhiming": "志明（男·中文）",
             "Weiguo": "建国（男·中文）",
             "Xiaoyu": "小语（女·中文）",
@@ -748,7 +748,7 @@ class PodcastEngine(BaseModule):
         for i, line in enumerate(lines):
             role = line["role"]
             text = line["text"]
-            voice_id = voice_map.get(role, "Junhao")
+            voice_id = voice_map.get(role, "Zhiming")
 
             # 计算停顿
             if prev_role is None:
