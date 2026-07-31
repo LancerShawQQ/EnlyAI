@@ -616,6 +616,8 @@ class SettingsManager:
                 self._user_data.get(section, {}), payload
             )
             self._save_user_config()
+            # 同步到 .env（避免环境变量覆盖 user_config.yaml，确保持久化生效）
+            self._sync_env_file(section)
 
         # 热更新全局配置
         get_config(reload=True)
@@ -684,6 +686,55 @@ class SettingsManager:
                 allow_unicode=True, default_flow_style=False, sort_keys=False,
             )
         logger.info(f"用户配置已保存: {USER_CONFIG_PATH}")
+
+    def _sync_env_file(self, section: str) -> None:
+        """保存配置后同步更新 .env 文件，避免环境变量覆盖 user_config.yaml
+
+        只同步一级标量字段（section.key → KRVOICEAI_SECTION_KEY），
+        嵌套字典（如 tts.moss_nano.*）不同步到 .env。
+        确保用户在 UI 修改的配置能持久化到 .env，重启后依然生效。
+        """
+        env_path = PROJECT_ROOT / ".env"
+        if not env_path.exists():
+            return
+
+        section_data = self._user_data.get(section, {})
+        if not isinstance(section_data, dict) or not section_data:
+            return
+
+        # 构建需要更新的环境变量映射
+        prefix = f"KRVOICEAI_{section.upper()}_"
+        updates: dict[str, str] = {}
+        for key, val in section_data.items():
+            if isinstance(val, (str, int, float, bool)):
+                env_key = f"{prefix}{key.upper()}"
+                updates[env_key] = str(val)
+
+        if not updates:
+            return
+
+        # 读取 .env 并逐行更新（保留注释和无关行）
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+        updated_keys: set[str] = set()
+        new_lines: list[str] = []
+        for line in lines:
+            matched = False
+            for env_key, env_val in updates.items():
+                if line.startswith(f"{env_key}="):
+                    new_lines.append(f"{env_key}={env_val}")
+                    updated_keys.add(env_key)
+                    matched = True
+                    break
+            if not matched:
+                new_lines.append(line)
+
+        # 添加 .env 中不存在但 user_config 中有的新变量
+        for env_key, env_val in updates.items():
+            if env_key not in updated_keys:
+                new_lines.append(f"{env_key}={env_val}")
+
+        env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+        logger.info(f".env 已同步更新: {list(updates.keys())}")
 
     # ============ 监听器（热更新） ============
 
