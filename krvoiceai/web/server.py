@@ -171,10 +171,17 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # 静态文件（Web UI）
+    # 静态文件（Web UI）— 禁用浏览器缓存，确保代码更新后立即生效
     static_dir = Path(__file__).parent / "static"
     if static_dir.exists():
-        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+        class _NoCacheStaticFiles(StaticFiles):
+            async def get_response(self, path: str, scope):
+                response = await super().get_response(path, scope)
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+                return response
+        app.mount("/static", _NoCacheStaticFiles(directory=str(static_dir)), name="static")
 
     # 启动时预初始化 EnlyAI，避免首次请求被懒加载阻塞 5 秒
     @app.on_event("startup")
