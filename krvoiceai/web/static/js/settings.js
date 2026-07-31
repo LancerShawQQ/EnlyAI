@@ -60,12 +60,12 @@ function updateModelStatusBadges() {
   const llmBadge = document.getElementById('llm-status-badge');
   if (llmBadge && _currentSettings) {
     const llm = _currentSettings.llm || {};
-    if (llm.provider === 'mock' || !llm.api_key_configured) {
+    if (!llm.api_key_configured) {
       llmBadge.className = 'badge badge-warning';
       llmBadge.textContent = 'Mock 模式';
     } else {
       llmBadge.className = 'badge badge-success';
-      llmBadge.textContent = `${llm.provider} · ${llm.model || ''}`;
+      llmBadge.textContent = llm.model || '已配置';
     }
   }
   // TTS 状态
@@ -99,22 +99,8 @@ function updateModelStatusBadges() {
 function loadLLMSettings() {
   if (!_currentSettings) return;
   const llm = _currentSettings.llm || {};
-  document.getElementById('llm-provider').value = llm.provider || 'mock';
-  onLLMProviderChange();
-  // 模型
-  const modelSelect = document.getElementById('llm-model');
-  const preset = _presets.llm[llm.provider];
-  if (preset && preset.models) {
-    modelSelect.innerHTML = preset.models.map(m =>
-      `<option value="${m}" ${m === llm.model ? 'selected' : ''}>${m}</option>`
-    ).join('') + '<option value="__custom__">自定义...</option>';
-    if (llm.model && !preset.models.includes(llm.model)) {
-      modelSelect.value = '__custom__';
-      const customInput = document.getElementById('llm-model-custom');
-      customInput.style.display = 'block';
-      customInput.value = llm.model;
-    }
-  }
+  // 模型名称（直接输入框，不再依赖 provider 下拉）
+  document.getElementById('llm-model').value = llm.model || '';
   // API Key
   document.getElementById('llm-api-key').value = llm.api_key || '';
   document.getElementById('llm-key-hint').textContent = llm.api_key_configured ? '已配置' : '未配置';
@@ -127,54 +113,11 @@ function loadLLMSettings() {
   document.getElementById('llm-timeout').value = llm.timeout || 60;
 }
 
-function onLLMProviderChange() {
-  const provider = document.getElementById('llm-provider').value;
-  const preset = _presets?.llm?.[provider];
-  const modelSelect = document.getElementById('llm-model');
-  const customInput = document.getElementById('llm-model-custom');
-  customInput.style.display = 'none';
-
-  if (preset) {
-    if (preset.models && preset.models.length) {
-      modelSelect.innerHTML = preset.models.map(m => `<option value="${m}">${m}</option>`).join('') + '<option value="__custom__">自定义...</option>';
-    } else {
-      modelSelect.innerHTML = '<option value="">无需选择模型</option>';
-    }
-    // 自动填充 base_url
-    if (preset.base_url) {
-      document.getElementById('llm-base-url').value = preset.base_url;
-    }
-    // API Key 获取链接
-    const urlEl = document.getElementById('llm-key-url');
-    if (preset.api_key_url) {
-      urlEl.innerHTML = `🔗 <a href="${preset.api_key_url}" target="_blank" style="color:var(--accent-primary)">点击获取 API Key</a>`;
-    } else {
-      urlEl.innerHTML = '';
-    }
-  }
-  // model select change 处理
-  modelSelect.onchange = () => {
-    if (modelSelect.value === '__custom__') {
-      customInput.style.display = 'block';
-      customInput.focus();
-    } else {
-      customInput.style.display = 'none';
-    }
-  };
-}
-
 async function saveLLMSettings() {
-  const provider = document.getElementById('llm-provider').value;
-  const modelSelect = document.getElementById('llm-model');
-  let model = modelSelect.value;
-  if (model === '__custom__') {
-    model = document.getElementById('llm-model-custom').value;
-  }
   const data = {
-    provider,
-    model,
+    model: document.getElementById('llm-model').value.trim(),
     api_key: document.getElementById('llm-api-key').value,
-    base_url: document.getElementById('llm-base-url').value,
+    base_url: document.getElementById('llm-base-url').value.trim(),
     temperature: parseFloat(document.getElementById('llm-temperature').value),
     max_tokens: parseInt(document.getElementById('llm-max-tokens').value),
     timeout: parseInt(document.getElementById('llm-timeout').value),
@@ -210,17 +153,10 @@ async function resetLLMSettings() {
 }
 
 async function testLLMConnection() {
-  const provider = document.getElementById('llm-provider').value;
-  const modelSelect = document.getElementById('llm-model');
-  let model = modelSelect.value;
-  if (model === '__custom__') {
-    model = document.getElementById('llm-model-custom').value;
-  }
   const payload = {
-    provider,
     api_key: document.getElementById('llm-api-key').value,
-    base_url: document.getElementById('llm-base-url').value,
-    model,
+    base_url: document.getElementById('llm-base-url').value.trim(),
+    model: document.getElementById('llm-model').value.trim(),
   };
   const btn = document.getElementById('llm-test-btn');
   btn.disabled = true;

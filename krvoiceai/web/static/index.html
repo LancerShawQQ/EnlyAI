@@ -2063,35 +2063,21 @@
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label class="form-label">服务提供商</label>
-                <select class="form-select" id="llm-provider" onchange="onLLMProviderChange()">
-                  <option value="mock">Mock 模式（无需 API Key）</option>
-                  <option value="deepseek">DeepSeek 深度求索</option>
-                  <option value="qwen">通义千问 (DashScope)</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="moonshot">Moonshot Kimi</option>
-                  <option value="zhipu">智谱 GLM</option>
-                </select>
+                <label class="form-label">模型名称</label>
+                <input class="form-input" id="llm-model" placeholder="如 agnes-2.5-flash / deepseek-chat / gpt-4o">
               </div>
               <div class="form-group">
-                <label class="form-label">模型名称</label>
-                <select class="form-select" id="llm-model">
-                  <option value="">请先选择提供商</option>
-                </select>
-                <input class="form-input" id="llm-model-custom" style="margin-top:8px;display:none" placeholder="或手动输入模型名">
+                <label class="form-label">API Base URL</label>
+                <input class="form-input" id="llm-base-url" placeholder="https://api.example.com/v1">
               </div>
             </div>
             <div class="form-group">
               <label class="form-label">API Key <span class="hint" id="llm-key-hint">未配置</span></label>
               <div style="display:flex;gap:8px">
-                <input class="form-input" id="llm-api-key" type="password" placeholder="sk-...">
+                <input class="form-input" id="llm-api-key" type="password" placeholder="sk-...（留空则走 Mock 模式）">
                 <button class="btn btn-secondary" id="llm-toggle-key" type="button"><i data-lucide="eye"></i></button>
               </div>
               <div class="hint" id="llm-key-url" style="margin-top:6px"></div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">API Base URL</label>
-              <input class="form-input" id="llm-base-url" placeholder="https://api.example.com/v1">
             </div>
             <div class="form-row">
               <div class="form-group">

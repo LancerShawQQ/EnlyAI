@@ -28,7 +28,7 @@ class LLMClient:
 
     def __init__(self, provider: str | None = None):
         cfg = get_config()
-        self.provider = provider or cfg.get("llm.provider", "mock")
+        self.provider = provider or cfg.get("llm.provider", "") or ""
         self.api_key = cfg.get("llm.api_key", "") or ""
         self.base_url = cfg.get("llm.base_url", "")
         self.model = cfg.get("llm.model", "")
@@ -39,7 +39,8 @@ class LLMClient:
 
     @property
     def is_mock(self) -> bool:
-        return self.provider == "mock" or not self.api_key
+        # api_key 为空时自动走 Mock 模式（无需显式指定 provider=mock）
+        return self.provider == "mock" or not self.api_key or not self.base_url
 
     def chat(
         self,

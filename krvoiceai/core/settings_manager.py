@@ -703,17 +703,14 @@ class SettingsManager:
     def test_llm(self, payload: dict[str, Any]) -> dict[str, Any]:
         """测试 LLM 连接
 
-        payload: {provider, api_key, base_url, model}
+        payload: {api_key, base_url, model}
         """
-        provider = payload.get("provider", "mock")
         api_key = payload.get("api_key", "")
         base_url = (payload.get("base_url") or "").rstrip("/")
         model = payload.get("model", "")
 
-        if provider == "mock":
-            return {"success": True, "message": "Mock 模式无需测试，始终可用"}
         if not api_key:
-            return {"success": False, "message": "API Key 未填写"}
+            return {"success": False, "message": "API Key 未填写（留空将走 Mock 模式）"}
         if not base_url:
             return {"success": False, "message": "base_url 未填写"}
         if not model:
