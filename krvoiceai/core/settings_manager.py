@@ -41,9 +41,9 @@ SENSITIVE_PATHS = {
 PROVIDER_PRESETS = {
     "llm": {
         "agnes": {
-            "label": "Agnes AI（免费，agnes-2.0-flash）",
-            "base_url": "https://apihub.agnes-ai.com/v1",
-            "models": ["agnes-2.0-flash", "agnes-1.5-flash"],
+            "label": "Agnes AI（免费，agnes-2.5-flash）",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
+            "models": ["agnes-2.5-flash", "agnes-2.0-flash", "agnes-1.5-flash"],
             "api_key_url": "https://platform.agnes-ai.com",
         },
         "deepseek": {

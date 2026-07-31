@@ -140,8 +140,8 @@ print("\n--- [6] 连接测试 API ---")
 r = client.post("/api/settings/test/llm", json={
     "provider": "agnes",
     "api_key": "****",
-    "base_url": "https://apihub.agnes-ai.com/v1",
-    "model": "agnes-2.0-flash",
+    "base_url": "https://apihub.agnes-ai.cn/v1",
+    "model": "agnes-2.5-flash",
 })
 print(f"  POST /api/settings/test/llm -> {r.status_code}")
 if r.status_code == 200:
