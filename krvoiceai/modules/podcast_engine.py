@@ -1,4 +1,4 @@
-"""语音博客生成模块
+"""语音播客生成模块
 
 支持多角色播客音频生成，功能包括：
 - 剧本解析（角色名: 台词 格式）
@@ -394,7 +394,7 @@ def estimate_line_count(duration_minutes: int) -> int:
 # ============ 主模块 ============
 
 class PodcastEngine(BaseModule):
-    """语音博客生成引擎
+    """语音播客生成引擎
 
     提供独立的播客生成流水线，不依赖数字人/视频合成模块。
     复用 TTSEngine 进行语音合成，复用 LLMClient 进行剧本改写。
@@ -666,6 +666,16 @@ class PodcastEngine(BaseModule):
             "Mei": "Mei（女·日文）",
             "Anon": "Anon（女·日文）",
             "Arisa": "Arisa（女·日文）",
+            # Qwen3-TTS 预置音色（中文别名，voice_id 为模型内置 ID）
+            "Vivian": "薇薇（女·中文）",
+            "Serena": "诗韵（女·中文）",
+            "Uncle_Fu": "傅叔（男·中文）",
+            "Dylan": "迪伦（男·北京）",
+            "Eric": "毅行（男·四川）",
+            "Ryan": "Ryan（男·英文）",
+            "Aiden": "Aiden（男·英文）",
+            "Ono_Anna": "Ono Anna（女·日文）",
+            "Sohee": "Sohee（女·韩文）",
         }
         return labels.get(voice_id, voice_id)
 

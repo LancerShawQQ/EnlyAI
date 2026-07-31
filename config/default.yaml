@@ -90,7 +90,7 @@ tts:
     # 合成语言：Chinese / English / Japanese / Korean 等
     language: Chinese
 
-# 语音博客配置
+# 语音播客配置
 podcast:
   # 默认角色切换停顿（秒）
   role_switch_pause: 0.4

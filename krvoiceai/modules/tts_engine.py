@@ -43,12 +43,13 @@ EMOTION_EDGE_MAP = {
 }
 
 # Qwen3-TTS 9 个预置音色（CustomVoice 0.6B 版）
+# 注：voice_id 为模型内置 ID 不可改；label 使用中文别名便于用户识别
 QWEN3_PRESET_VOICES = {
-    "Vivian":    {"label": "Vivian（女·中文）",   "gender": "female", "language": "Chinese",  "description": "明亮年轻女声"},
-    "Serena":    {"label": "Serena（女·中文）",   "gender": "female", "language": "Chinese",  "description": "温暖柔和年轻女声"},
-    "Uncle_Fu":  {"label": "Uncle Fu（男·中文）", "gender": "male",   "language": "Chinese",  "description": "成熟醇厚男声"},
-    "Dylan":     {"label": "Dylan（男·北京）",    "gender": "male",   "language": "Chinese",  "description": "青春北京男声"},
-    "Eric":      {"label": "Eric（男·四川）",     "gender": "male",   "language": "Chinese",  "description": "活泼成都男声"},
+    "Vivian":    {"label": "薇薇（女·中文）",     "gender": "female", "language": "Chinese",  "description": "明亮年轻女声"},
+    "Serena":    {"label": "诗韵（女·中文）",     "gender": "female", "language": "Chinese",  "description": "温暖柔和年轻女声"},
+    "Uncle_Fu":  {"label": "傅叔（男·中文）",     "gender": "male",   "language": "Chinese",  "description": "成熟醇厚男声"},
+    "Dylan":     {"label": "迪伦（男·北京）",     "gender": "male",   "language": "Chinese",  "description": "青春北京男声"},
+    "Eric":      {"label": "毅行（男·四川）",     "gender": "male",   "language": "Chinese",  "description": "活泼成都男声"},
     "Ryan":      {"label": "Ryan（男·英文）",     "gender": "male",   "language": "English",  "description": "富有节奏感活力男声"},
     "Aiden":     {"label": "Aiden（男·英文）",    "gender": "male",   "language": "English",  "description": "阳光美式男声"},
     "Ono_Anna":  {"label": "Ono Anna（女·日文）", "gender": "female", "language": "Japanese", "description": "活泼日语女声"},

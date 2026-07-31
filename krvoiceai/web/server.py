@@ -131,7 +131,7 @@ class TemplateApplyRequest(BaseModel):
     template_id: str
 
 
-# ============ 语音博客请求模型 ============
+# ============ 语音播客请求模型 ============
 
 class PodcastRewriteRequest(BaseModel):
     """播客剧本改写请求"""
@@ -1393,7 +1393,7 @@ def create_app() -> FastAPI:
             },
         }
 
-    # ============ 语音博客 API ============
+    # ============ 语音播客 API ============
 
     # 模块级播客任务进度存储（重启后丢失，适合轻量级场景）
     _podcast_jobs: dict[str, dict[str, Any]] = {}

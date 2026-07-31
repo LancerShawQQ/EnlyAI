@@ -809,7 +809,7 @@ class EnlyAI:
         self.logger.info(f"已删除音色: {voice_id}")
         return True
 
-    # ============ 语音博客 ============
+    # ============ 语音播客 ============
 
     def get_podcast_engine(self) -> PodcastEngine:
         """获取播客引擎实例（懒加载 TTS/LLM）"""
