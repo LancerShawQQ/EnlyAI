@@ -349,6 +349,15 @@ class PipelineOrchestrator:
             self.logger.warning(
                 f"步骤 {step_def.name} 第 {attempt} 次失败: {result.error}"
             )
+            # 防呆：超时和 Face not detected 类错误不重试（重试只会让用户多等几倍时间）
+            error_lower = (result.error or "").lower()
+            no_retry_keywords = ["timed out", "timeout", "face not detected",
+                                 "无法连接", "connection", "oom", "out of memory"]
+            if any(kw in error_lower for kw in no_retry_keywords):
+                self.logger.warning(
+                    f"步骤 {step_def.name} 错误类型为不可重试（{result.error[:50]}），跳过重试"
+                )
+                break
             if progress_callback:
                 progress_callback(step_def.name, "retry", {
                     "attempt": attempt, "error": result.error,

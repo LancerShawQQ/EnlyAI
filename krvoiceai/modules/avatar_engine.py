@@ -972,6 +972,30 @@ class AvatarEngine(BaseModule):
             f"res={self.latentsync_resolution} seed={self.latentsync_seed}"
         )
 
+        # 防呆：根据音频时长动态调整超时和推理步数
+        # 经验值：15步 × 256分辨率，每秒音频约需 16s 推理（含 face detect + restore）
+        audio_dur = ctx.audio_duration or 5.0
+        estimated_inference_time = audio_dur * 18 * (self.latentsync_inference_steps / 15.0)
+        # 动态超时 = 预估时间 × 1.5 倍安全系数 + 60s 模型加载缓冲，最少 300s
+        dynamic_timeout = max(300, int(estimated_inference_time * 1.5) + 60)
+
+        # 长音频自动降级：超过 60s 的音频降到 10 步推理（质量微降但避免超时）
+        actual_steps = self.latentsync_inference_steps
+        if audio_dur > 60 and actual_steps > 10:
+            actual_steps = 10
+            self.logger.warning(
+                f"音频较长（{audio_dur:.0f}s），自动降级 inference_steps {self.latentsync_inference_steps}→10 "
+                f"以防超时（预估 {estimated_inference_time:.0f}s → 降级后约 {estimated_inference_time*10/15:.0f}s）"
+            )
+            # 降级后重新计算超时
+            estimated_inference_time = audio_dur * 18 * (10 / 15.0)
+            dynamic_timeout = max(300, int(estimated_inference_time * 1.5) + 60)
+
+        self.logger.info(
+            f"LatentSync 预估推理时间: {estimated_inference_time:.0f}s, "
+            f"动态超时: {dynamic_timeout}s, 实际步数: {actual_steps}"
+        )
+
         # 准备音频（LatentSync 建议 16000Hz wav）
         audio_path = ctx.audio_path
         if audio_path.suffix.lower() != ".wav":
@@ -1003,7 +1027,7 @@ class AvatarEngine(BaseModule):
         }
         data = {
             "config": self.latentsync_config_name,
-            "inference_steps": str(self.latentsync_inference_steps),
+            "inference_steps": str(actual_steps),
             "resolution": str(self.latentsync_resolution),
             "seed": str(self.latentsync_seed),
         }
@@ -1017,7 +1041,8 @@ class AvatarEngine(BaseModule):
 
         try:
             start = time.time()
-            with httpx.Client(timeout=self.latentsync_timeout) as client:
+            # 使用动态超时（根据音频时长计算），而非固定 latentsync_timeout
+            with httpx.Client(timeout=dynamic_timeout) as client:
                 with client.stream(
                     "POST",
                     f"{self.latentsync_server_url}/api/avatar/generate",
