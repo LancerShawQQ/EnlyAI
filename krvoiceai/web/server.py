@@ -1590,12 +1590,18 @@ def create_app() -> FastAPI:
 
     @app.post("/api/podcast/jobs/{job_id}/cancel")
     async def podcast_cancel_job(job_id: str):
-        """取消播客生成任务（标记为 cancelled，后台线程会在下次检查时退出）"""
+        """取消播客生成任务（通知引擎在逐句检查点退出）"""
         job = _podcast_jobs.get(job_id)
         if job is None:
             return JSONResponse({"error": "任务不存在"}, status_code=404)
         if job["status"] in ("success", "failed", "cancelled"):
             return {"status": job["status"], "message": "任务已结束"}
+        # 通知引擎取消（逐句循环在检查点抛出中断）
+        try:
+            engine = _get_app().get_podcast_engine()
+            engine.cancel()
+        except Exception as e:
+            logger.warning(f"通知播客引擎取消失败: {e}")
         job["status"] = "cancelled"
         job["error"] = "用户取消任务"
         return {"status": "cancelled", "message": "任务已取消"}

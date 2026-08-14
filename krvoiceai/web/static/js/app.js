@@ -2641,7 +2641,7 @@ async function _pollJobLoop(jobId) {
   _lastProgressTime = Date.now();
   _tierAlerts = { avatar_enter: false, min30: false, min60: false, stale: false };
 
-  // 启动已用时计时器（每秒更新，显示当前步骤名）
+  // 启动已用时计时器（每秒更新，显示当前步骤名 + 激活权重预估剩余时间）
   if (_progressTimerId) clearInterval(_progressTimerId);
   _progressTimerId = setInterval(() => {
     const elapsed = Math.floor((Date.now() - _progressStartTime) / 1000);
@@ -2650,7 +2650,24 @@ async function _pollJobLoop(jobId) {
     const etaEl = document.getElementById('progress-eta');
     if (etaEl && !etaEl.textContent.includes('已完成') && !etaEl.textContent.includes('失败')) {
       const stepName = _currentRunningStep ? (STEP_INFO[_currentRunningStep]?.name || _currentRunningStep) : '初始化';
-      etaEl.textContent = `已用时 ${m}分${s}秒 · 正在执行：${stepName}`;
+      // 预计剩余：当前步骤剩余权重（按已等待时间折半）+ 后续未执行步骤权重总和
+      let remainSec = 0;
+      if (_currentRunningStep) {
+        const curW = STEP_ETA_WEIGHTS[_currentRunningStep] || 30;
+        // 当前步骤已运行多久没有单独计时，用总 elapsed 的一半近似（保守）
+        remainSec += Math.max(0, curW - Math.floor(elapsed / 2));
+      }
+      for (const [step, w] of Object.entries(STEP_ETA_WEIGHTS)) {
+        if (step === _currentRunningStep) continue;
+        const stEl = document.querySelector(`.progress-stage[data-step="${step}"]`);
+        if (stEl && !stEl.classList.contains('success') && !stEl.classList.contains('failed')) {
+          remainSec += w;
+        }
+      }
+      const rm = Math.floor(remainSec / 60);
+      const rs = remainSec % 60;
+      const etaPart = remainSec > 5 ? ` · 预计剩余约 ${rm > 0 ? rm + '分' : ''}${rs}秒` : '';
+      etaEl.textContent = `已用时 ${m}分${s}秒${etaPart} · 正在执行：${stepName}`;
     }
   }, 1000);
 

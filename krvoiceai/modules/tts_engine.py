@@ -124,14 +124,15 @@ COSYVOICE_PRESET_VOICES = {
 }
 
 # emotion → CosyVoice3 instruct 指令映射（自然语言控制语气/情绪/语速）
-# CosyVoice3 instruct2 支持丰富指令：方言、情绪、语速、音量
+# neutral → 空 = 走零样本克隆（韵律直接继承参考音频，配合富表现力参考样本最自然）；
+# 非 neutral → instruct2 文本指令控制情绪（指令越具体韵律越自然，加入语速/场景修饰）
 EMOTION_COSYVOICE_INSTRUCT_MAP = {
     'neutral':  '',
-    'calm':     '请用平静舒缓的语气说',
-    'excited':  '请用非常激动兴奋的语气说',
-    'gentle':   '请用温柔轻柔的语气说',
-    'serious':  '请用严肃沉稳的语气说',
-    'cheerful': '请用开心欢快的语气说',
+    'calm':     '请用平静舒缓的语气说，语速稍慢，从容不迫，像在讲述一段故事',
+    'excited':  '请用热情饱满的语气说，语速稍快，充满感染力，像在激动地分享好消息',
+    'gentle':   '请用温柔轻柔的语气说，语速舒缓，柔和细腻，像在轻声安慰朋友',
+    'serious':  '请用严肃沉稳的语气说，语速适中，庄重而有分量，像在播报重要新闻',
+    'cheerful': '请用开心明快的语气说，语速适中偏快，轻松活泼，像在和朋友开心聊天',
 }
 
 
@@ -164,6 +165,19 @@ class TTSEngine(BaseModule):
         self._qwen3_tts_base_model = None
         # FFmpeg 工具（用于音频后处理：静音消除/人声增强）
         self.ffmpeg = FFmpegRunner()
+
+    # 类级共享 HTTP 客户端：流水线/播客/试听多个引擎实例复用同一组 keep-alive 连接
+    _cosyvoice_client_instance: "httpx.Client | None" = None
+
+    @classmethod
+    def _cosyvoice_http_client(cls) -> "httpx.Client":
+        """共享的 CosyVoice HTTP 客户端（keep-alive 连接复用，省去每段 TCP 握手）"""
+        if cls._cosyvoice_client_instance is None:
+            cls._cosyvoice_client_instance = httpx.Client(
+                timeout=180.0,
+                limits=httpx.Limits(max_keepalive_connections=4, keepalive_expiry=300.0),
+            )
+        return cls._cosyvoice_client_instance
 
     def setup(self) -> None:
         # 判断真实可用性
@@ -210,7 +224,8 @@ class TTSEngine(BaseModule):
             start = time.time()
             if self.provider == "cosyvoice":
                 audio_path, duration, timestamps = self._synth_cosyvoice(
-                    text, voice_id, output_path, speed, volume, pitch, emotion
+                    text, voice_id, output_path, speed, volume, pitch, emotion,
+                    pause_duration=float(audio_cfg.get("pause_duration", 0.5) or 0),
                 )
             elif self.provider == "moss_nano":
                 audio_path, duration, timestamps = self._synth_moss_nano(
@@ -334,6 +349,10 @@ class TTSEngine(BaseModule):
         self.logger.info(f"synthesize called provider={repr(self.provider)} voice_id={voice_id} text_len={len(text)}")
         if self.provider == "cosyvoice":
             self.logger.info("→ routing to _synth_cosyvoice")
+            # 试听路径也应用句间停顿（与流水线一致的自然节奏）
+            audio_opts["pause_duration"] = float(
+                self.config.get("audio.pause_duration", 0.5) or 0
+            )
             return self._synth_cosyvoice(text, voice_id, output_path, **audio_opts)
         elif self.provider == "moss_nano":
             return self._synth_moss_nano(text, voice_id, output_path, **audio_opts)
@@ -697,6 +716,7 @@ class TTSEngine(BaseModule):
         self, text: str, voice_id: str, output_path: Path,
         speed: float | None = None, volume: int | None = None,
         pitch: int | None = None, emotion: str | None = None,
+        pause_duration: float | None = None,
     ) -> tuple[Path, float, list[dict]]:
         """使用本地 CosyVoice3 服务合成（HTTP 调用 cosyvoice_server.py）
 
@@ -776,7 +796,10 @@ class TTSEngine(BaseModule):
                 combined_audio.append(data)
                 sample_rate = sr
 
-            combined = np.concatenate(combined_audio) if len(combined_audio) > 1 else combined_audio[0]
+            combined, seg_durations = self._concat_tts_segments(
+                combined_audio, sample_rate, segments,
+                pause_duration=0.5 if pause_duration is None else float(pause_duration),
+            )
         except Exception as e:
             self.logger.warning(f"音频合并失败，直接写第一段: {e}")
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -791,15 +814,15 @@ class TTSEngine(BaseModule):
 
         duration = len(combined) / sample_rate
 
-        # 生成分句时间戳
+        # 生成分句时间戳（含句间停顿的真实时长）
         timestamps = []
         offset = 0.0
         wav_idx = 0
         for seg in segments:
             if not seg.strip():
                 continue
-            if wav_idx < len(combined_audio):
-                seg_dur = len(combined_audio[wav_idx]) / sample_rate
+            if wav_idx < len(seg_durations):
+                seg_dur = seg_durations[wav_idx]
                 wav_idx += 1
             else:
                 seg_dur = estimate_speech_duration(seg)
@@ -815,6 +838,54 @@ class TTSEngine(BaseModule):
             f"sr={sample_rate}"
         )
         return output_path, duration, timestamps
+
+    @staticmethod
+    def _concat_tts_segments(
+        seg_audios: list, sample_rate: int, segments: list[str],
+        pause_duration: float = 0.5,
+    ) -> tuple:
+        """专业级 TTS 分段拼接：边缘淡化 + 句间停顿
+
+        - 每段头部 20ms / 尾部 50ms 线性淡化：消除段边界的爆音与能量跳变
+        - 句末为 。！？ 的段后插入 pause_duration 静音：自然呼吸感（此前该参数是假的）
+        - 返回 (拼接音频, 每段真实时长列表含停顿)，供字幕时间戳精确对齐
+        """
+        import numpy as np
+
+        fade_in_n = max(1, int(sample_rate * 0.020))
+        fade_out_n = max(1, int(sample_rate * 0.050))
+        pause_n = max(0, int(sample_rate * max(0.0, min(pause_duration, 3.0))))
+
+        pieces = []
+        seg_durations = []
+        for idx, data in enumerate(seg_audios):
+            if data is None or len(data) == 0:
+                continue
+            seg = data.copy()
+            n = len(seg)
+            # 头部淡入（段间衔接处；首段保留原始起音）
+            if idx > 0 and n > fade_in_n:
+                seg[:fade_in_n] *= np.linspace(0.0, 1.0, fade_in_n, dtype=np.float32)
+            # 尾部淡出
+            if n > fade_out_n:
+                seg[-fade_out_n:] *= np.linspace(1.0, 0.0, fade_out_n, dtype=np.float32)
+            pieces.append(seg)
+            seg_durations.append(n / sample_rate)
+
+            # 句间停顿：句末为句号/叹号/问号且非最后一段
+            if pause_n > 0 and idx < len(seg_audios) - 1:
+                seg_text = segments[idx].rstrip() if idx < len(segments) else ""
+                if seg_text and seg_text[-1] in "。！？!?":
+                    pieces.append(np.zeros(pause_n, dtype=np.float32))
+                    seg_durations[-1] += pause_n / sample_rate
+
+        if not pieces:
+            import numpy as _np
+            return _np.zeros(0, dtype=_np.float32), []
+        if len(pieces) == 1:
+            return pieces[0], seg_durations
+        import numpy as _np
+        return _np.concatenate(pieces), seg_durations
 
     def _resolve_cosyvoice_voice(
         self, voice_id: str, cfg: dict
@@ -903,7 +974,10 @@ class TTSEngine(BaseModule):
                     f"instruct='{instruct}' file={prompt_audio_path.name} "
                     f"file_size={prompt_audio_path.stat().st_size}"
                 )
-                r = httpx.post(url, files=files, data=data, timeout=timeout)
+                # 共享 Client（keep-alive 连接复用）：多段文本合成时省去每段 TCP 握手
+                r = self._cosyvoice_http_client().post(
+                    url, files=files, data=data, timeout=timeout
+                )
 
             if r.status_code == 200:
                 return r.content

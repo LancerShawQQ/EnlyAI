@@ -412,11 +412,17 @@ class PodcastEngine(BaseModule):
         super().__init__(config)
         self._tts = tts_engine
         self._llm = llm_client
-        # TTS 缓存目录（相同文本+音色组合复用音频）
+        # TTS 缓存目录（相同文本+音色+情感+语速组合复用音频）
         self._cache_dir = Path(self.config.get("project.work_root", "./workspace_data")) / "tts_cache"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         # 按 provider 缓存的 TTSEngine 实例（避免每句都新建实例）
         self._tts_pool: dict[str, TTSEngine] = {}
+        # 取消标志（cancel() 置位后逐句循环在检查点退出）
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        """请求取消正在进行的播客生成（逐句循环在检查点退出）"""
+        self._cancelled = True
 
     @property
     def tts(self) -> TTSEngine:
@@ -726,6 +732,7 @@ class PodcastEngine(BaseModule):
         """
         output_dir = Path(output_dir).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
+        self._cancelled = False  # 新一轮生成重置取消标志
 
         # 解析剧本
         lines, _ = parse_script(script_text)
@@ -759,14 +766,87 @@ class PodcastEngine(BaseModule):
             try:
                 first_moss_voice = next(iter(moss_voice_ids))
                 moss_engine = self._get_tts_for_voice(first_moss_voice)
-                # 触发 MOSS 模型加载（首次约 60 秨）
+                # 触发 MOSS 模型加载（首次约 60 秒）
                 if hasattr(moss_engine, '_get_moss_runtime'):
                     moss_engine._get_moss_runtime()
                 self.logger.info("MOSS 运行时预热完成")
             except Exception as e:
                 self.logger.warning(f"MOSS 运行时预热失败: {e}")
 
+        # 播客也应用全局音频设置（语速/情感——此前被完全绕过，用户设置无效）
+        audio_cfg = self.config.get("audio", {}) or {}
+        pod_speed = audio_cfg.get("speed")
+        pod_emotion = audio_cfg.get("emotion")
+        try:
+            pod_speed = float(pod_speed) if pod_speed is not None else None
+        except (TypeError, ValueError):
+            pod_speed = None
+
+        # CosyVoice 预热：GPU 分时复用后模型可能已卸载（重载约 50s），
+        # 用一句极短请求触发懒加载，避免首句合成计入 50s 冷启动
+        cosyvoice_used = any(
+            self._detect_provider_by_voice(v) == "cosyvoice"
+            for v in voice_map.values()
+        )
+        if cosyvoice_used:
+            try:
+                import httpx as _hx
+                cosy_url = (self.config.get("tts.cosyvoice.server_url", "")
+                            or "http://localhost:8012").rstrip("/")
+                health = _hx.get(f"{cosy_url}/api/health", timeout=3)
+                if health.status_code == 200 and not health.json().get("model_loaded"):
+                    if progress_callback:
+                        progress_callback(0, len(lines), "正在加载 TTS 引擎...")
+                    self.logger.info("CosyVoice 模型未加载，预热触发懒加载...")
+                    _hx.post(f"{cosy_url}/api/load", timeout=120)
+            except Exception as e:
+                self.logger.debug(f"CosyVoice 预热跳过: {e}")
+
+        # edge_tts 句子预并行合成（云端支持并发）：先批量填充缓存，
+        # 主循环全部缓存命中——不改主循环逻辑/顺序/时间戳，零风险
+        edge_pairs = []
+        seen_texts = set()
+        for line in lines:
+            vid = voice_map.get(line["role"], "Zhiming")
+            if self._detect_provider_by_voice(vid) == "edge_tts":
+                key = self._get_cache_key(line["text"], vid, emotion=pod_emotion, speed=pod_speed)
+                if key not in seen_texts and not (self._cache_dir / f"{key}.wav").exists():
+                    seen_texts.add(key)
+                    edge_pairs.append((line["text"], vid))
+        if edge_pairs:
+            self.logger.info(f"edge_tts 预并行合成 {len(edge_pairs)} 句（4 worker）")
+            if progress_callback:
+                progress_callback(0, len(lines), f"并行合成 {len(edge_pairs)} 句语音...")
+            from concurrent.futures import ThreadPoolExecutor
+            import tempfile as _tf
+
+            def _synth_one(pair):
+                text, vid = pair
+                tmp = Path(_tf.mktemp(suffix=".wav", dir=str(self._cache_dir.parent / "tmp")))
+                tmp.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    eng = self._get_tts_for_voice(vid)
+                    audio_path, _, _ = eng.synthesize(
+                        text=text, voice_id=vid, output_path=tmp,
+                        speed=pod_speed, emotion=pod_emotion,
+                    )
+                    actual = Path(audio_path) if audio_path else tmp
+                    key = self._get_cache_key(text, vid, emotion=pod_emotion, speed=pod_speed)
+                    import shutil as _sh
+                    _sh.copy2(str(actual), str(self._cache_dir / f"{key}.wav"))
+                except Exception as e:
+                    self.logger.warning(f"edge 预合成失败（留给主循环重试）: {e}")
+                finally:
+                    tmp.unlink(missing_ok=True)
+
+            with ThreadPoolExecutor(max_workers=4) as ex:
+                list(ex.map(_synth_one, edge_pairs))
+
         for i, line in enumerate(lines):
+            # 取消检查点：用户点取消后逐句循环及时退出（此前取消只改状态不停止合成）
+            if self._cancelled:
+                self.logger.info("检测到取消请求，播客生成中止")
+                raise RuntimeError("播客生成已被用户取消")
             role = line["role"]
             text = line["text"]
             voice_id = voice_map.get(role, "Zhiming")
@@ -793,7 +873,7 @@ class PodcastEngine(BaseModule):
                 progress_callback(i + 1, len(lines), f"合成第 {i+1}/{len(lines)} 句：{role}")
 
             # TTS 合成（带缓存 + 超时保护）
-            cache_key = self._get_cache_key(text, voice_id)
+            cache_key = self._get_cache_key(text, voice_id, emotion=pod_emotion, speed=pod_speed)
             cache_path = self._cache_dir / f"{cache_key}.wav"
             seg_audio: np.ndarray | None = None
             duration = 0.0
@@ -822,6 +902,7 @@ class PodcastEngine(BaseModule):
                     tts_engine = self._get_tts_for_voice(voice_id)
                     audio_path, duration, _ = tts_engine.synthesize(
                         text=text, voice_id=voice_id, output_path=tmp_path,
+                        speed=pod_speed, emotion=pod_emotion,
                     )
 
                     # 关键修复：使用 synthesize() 返回的 audio_path 而非 tmp_path
@@ -990,10 +1071,16 @@ class PodcastEngine(BaseModule):
             "bgm_volume": bgm_volume if bgm_track else 0.0,
         }
 
-    def _get_cache_key(self, text: str, voice_id: str) -> str:
-        """生成 TTS 缓存键（基于文本+音色的 hash）"""
+    def _get_cache_key(
+        self, text: str, voice_id: str,
+        emotion: str | None = None, speed: float | None = None,
+    ) -> str:
+        """生成 TTS 缓存键（文本+音色+情感+语速的 hash）
+
+        情感/语速会改变合成结果，必须纳入键——否则用户改了设置仍命中旧缓存。
+        """
         import hashlib
-        content = f"{voice_id}|{text}"
+        content = f"{voice_id}|{emotion or ''}|{speed or ''}|{text}"
         return hashlib.md5(content.encode("utf-8")).hexdigest()[:16]
 
     def _get_wav_duration(self, path: Path) -> float:
@@ -1121,10 +1208,15 @@ class PodcastEngine(BaseModule):
             bgm_data = bgm_data[:target_len]
 
             # 4. 混音：语音 + BGM * vol
-            # 注意：float32 音频范围是 [-1.0, 1.0]，直接相加可能超过 1.0 导致削波
-            # 使用 soft clipping（tanh）防止削波
-            mixed = voice_data + bgm_data * vol
-            mixed = np.tanh(mixed).astype(np.float32)  # soft clip 防止削波
+            # 限幅策略：只在真正超标的采样点做软限幅（|x|>0.95 区域），
+            # 不用全局 tanh——全局非线性会给整段人声加谐波失真（听感发闷）
+            mixed = (voice_data + bgm_data * vol).astype(np.float32)
+            over = np.abs(mixed) > 0.95
+            if np.any(over):
+                sign = np.sign(mixed[over])
+                excess = np.abs(mixed[over]) - 0.95
+                # 超出部分用平滑压缩（0.05 可用区间内软拐点），未超标样本完全不受影响
+                mixed[over] = sign * (0.95 + 0.049 * np.tanh(excess / 0.049))
 
             # 5. 写入输出文件
             sf.write(str(output_path), mixed, sample_rate, subtype="PCM_16")

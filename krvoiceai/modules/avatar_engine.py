@@ -91,10 +91,12 @@ class AvatarEngine(BaseModule):
         )
         self.latentsync_api_key = self.latentsync_cfg.get("api_key", "")
         self.latentsync_config_name = self.latentsync_cfg.get("config", "high_quality")
-        self.latentsync_inference_steps = self.latentsync_cfg.get("inference_steps", 25)
+        self.latentsync_inference_steps = self.latentsync_cfg.get("inference_steps", 12)
         self.latentsync_resolution = self.latentsync_cfg.get("resolution", 256)
         self.latentsync_seed = self.latentsync_cfg.get("seed", -1)
         self.latentsync_timeout = self.latentsync_cfg.get("timeout", 600)
+        # CFG 引导强度（1.0=关闭，U-Net 计算减半；1.5=官方默认，唇形引导更强）
+        self.latentsync_guidance_scale = float(self.latentsync_cfg.get("guidance_scale", 1.5))
         # 环境检测缓存（进程内只检测一次，避免每次 run() 重复等待 torch import）
         self._env_check_result: tuple[bool, str] | None = None
 
@@ -973,11 +975,16 @@ class AvatarEngine(BaseModule):
         )
 
         # 防呆：根据音频时长动态调整超时和推理步数
-        # 经验值：15步 × 256分辨率，每秒音频约需 16s 推理（含 face detect + restore）
+        # 经验值：15步 × 256分辨率 × CFG1.5，每秒音频约需 18s 推理（含 face detect + restore）
         audio_dur = ctx.audio_duration or 5.0
-        estimated_inference_time = audio_dur * 18 * (self.latentsync_inference_steps / 15.0)
-        # 动态超时 = 预估时间 × 1.5 倍安全系数 + 60s 模型加载缓冲，最少 300s
-        dynamic_timeout = max(300, int(estimated_inference_time * 1.5) + 60)
+        # CFG 关闭（guidance_scale≤1.0）时 U-Net 计算减半，推理时间约 ×0.55
+        cfg_factor = 1.0 if self.latentsync_guidance_scale > 1.0 else 0.55
+        estimated_inference_time = (
+            audio_dur * 18 * (self.latentsync_inference_steps / 15.0) * cfg_factor
+        )
+        # 动态超时 = 预估 × 1.5 安全系数 + 150s 固定缓冲（GPU 分时复用下管线懒加载
+        # 重启需 60-100s，加上 Ollama 等其他 GPU 进程争用的余量），最少 400s
+        dynamic_timeout = max(400, int(estimated_inference_time * 1.5) + 150)
 
         # 长音频自动降级：超过 60s 的音频降到 10 步推理（质量微降但避免超时）
         actual_steps = self.latentsync_inference_steps
@@ -985,15 +992,18 @@ class AvatarEngine(BaseModule):
             actual_steps = 10
             self.logger.warning(
                 f"音频较长（{audio_dur:.0f}s），自动降级 inference_steps {self.latentsync_inference_steps}→10 "
-                f"以防超时（预估 {estimated_inference_time:.0f}s → 降级后约 {estimated_inference_time*10/15:.0f}s）"
+                f"以防超时（预估 {estimated_inference_time:.0f}s → 降级后约 {estimated_inference_time*10/self.latentsync_inference_steps:.0f}s）"
             )
             # 降级后重新计算超时
-            estimated_inference_time = audio_dur * 18 * (10 / 15.0)
-            dynamic_timeout = max(300, int(estimated_inference_time * 1.5) + 60)
+            estimated_inference_time = (
+                audio_dur * 18 * (10 / 15.0) * cfg_factor
+            )
+            dynamic_timeout = max(400, int(estimated_inference_time * 1.5) + 150)
 
         self.logger.info(
             f"LatentSync 预估推理时间: {estimated_inference_time:.0f}s, "
-            f"动态超时: {dynamic_timeout}s, 实际步数: {actual_steps}"
+            f"动态超时: {dynamic_timeout}s, 实际步数: {actual_steps}, "
+            f"CFG: {self.latentsync_guidance_scale}"
         )
 
         # 准备音频（LatentSync 建议 16000Hz wav）
@@ -1030,6 +1040,8 @@ class AvatarEngine(BaseModule):
             "inference_steps": str(actual_steps),
             "resolution": str(self.latentsync_resolution),
             "seed": str(self.latentsync_seed),
+            # CFG 引导强度：1.0=关闭（U-Net 计算减半，快速档）；1.5=官方默认（高质量/平衡档）
+            "guidance_scale": str(self.latentsync_guidance_scale),
         }
         headers = {"Accept": "video/mp4"}
         if self.latentsync_api_key:
@@ -1076,9 +1088,25 @@ class AvatarEngine(BaseModule):
         finally:
             for _, fobj, _ in files.values():
                 fobj.close()
-            # 恢复 CosyVoice 服务（如果之前暂停了）
+            # GPU 双向分时复用（均后台线程执行，不阻塞 title/cover/compose 后续步骤）：
+            # 1. LatentSync 推理完成即卸载管线释放 ~5GB 显存（懒加载，下次请求自动重建）
+            # 2. 恢复此前被暂停的 CosyVoice（否则下一任务的 TTS 要付 50s 冷启动）
+            import threading
             if _cosyvoice_paused:
-                self._resume_cosyvoice()
+                threading.Thread(target=self._resume_cosyvoice, daemon=True).start()
+            threading.Thread(target=self._unload_latentsync_after_use, daemon=True).start()
+
+    def _unload_latentsync_after_use(self) -> None:
+        """推理完成后卸载 LatentSync 管线，把显存让给 CosyVoice/Ollama"""
+        import httpx
+        try:
+            r = httpx.post(
+                f"{self.latentsync_server_url.rstrip('/')}/api/unload", timeout=30
+            )
+            if r.status_code == 200:
+                self.logger.info("GPU 分时复用：LatentSync 管线已卸载，显存让出")
+        except Exception as e:
+            self.logger.debug(f"LatentSync 卸载跳过: {e}")
 
     def _generate_mock(
         self, ctx: JobContext, avatar_id: str, output_path: Path

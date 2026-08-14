@@ -27,7 +27,8 @@ curl -s --max-time 3 http://localhost:11434/api/tags >nul 2>&1
 if %ERRORLEVEL%==0 (
     echo   ✅ Ollama 已在运行
 ) else (
-    echo   ⚠️  Ollama 未运行，尝试启动...
+    echo   ⚠️  Ollama 未运行，尝试启动（KEEP_ALIVE=0：LLM 调用后释放显存给 TTS/数字人）...
+    set OLLAMA_KEEP_ALIVE=0
     start "" "ollama" serve
     timeout /t 5 /nobreak >nul
     curl -s --max-time 3 http://localhost:11434/api/tags >nul 2>&1
@@ -36,6 +37,7 @@ if %ERRORLEVEL%==0 (
     ) else (
         echo   ❌ Ollama 启动失败，请手动运行: ollama serve
         echo   💡 拉取模型: ollama pull qwen3:8b
+        echo   💡 建议设置环境变量 OLLAMA_KEEP_ALIVE=0（8GB 显存三方分时复用）
     )
 )
 echo.

@@ -293,7 +293,7 @@ async def inference_zero_shot(
             def gen():
                 try:
                     for chunk in model.inference_zero_shot(
-                        tts_text, prompt_text, prompt_path, stream=True
+                        tts_text, prompt_text, prompt_path, stream=True, speed=speed
                     ):
                         yield _wav_to_bytes(chunk["tts_speech"], _sample_rate)
                 finally:
@@ -303,7 +303,7 @@ async def inference_zero_shot(
             # 非流式：收集所有 chunk 合并为单个 WAV
             all_wavs = []
             for chunk in model.inference_zero_shot(
-                tts_text, prompt_text, prompt_path, stream=False
+                tts_text, prompt_text, prompt_path, stream=False, speed=speed
             ):
                 all_wavs.append(chunk["tts_speech"])
 
@@ -371,7 +371,7 @@ async def inference_instruct(
             def gen():
                 try:
                     for chunk in model.inference_instruct2(
-                        tts_text, instruct_text, prompt_path, stream=True
+                        tts_text, instruct_text, prompt_path, stream=True, speed=speed
                     ):
                         yield _wav_to_bytes(chunk["tts_speech"], _sample_rate)
                 finally:
@@ -380,7 +380,7 @@ async def inference_instruct(
         else:
             all_wavs = []
             for chunk in model.inference_instruct2(
-                tts_text, instruct_text, prompt_path, stream=False
+                tts_text, instruct_text, prompt_path, stream=False, speed=speed
             ):
                 all_wavs.append(chunk["tts_speech"])
 

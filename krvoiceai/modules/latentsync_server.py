@@ -33,6 +33,7 @@ API：
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import sys
 import tempfile
@@ -127,6 +128,8 @@ _patch_whisper_audio_loader()
 _current_audio_duration: float = 0.0
 # ffmpeg 可执行文件路径（由 _inject_ffmpeg_into_path 设置）
 _ffmpeg_exe: str = "ffmpeg"
+# 参考视频标准化缓存目录（同形象重复生成时跳过 ffmpeg 转码）
+_NORM_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp", "norm_cache")
 
 
 def _patch_read_video_temp():
@@ -136,50 +139,60 @@ def _patch_read_video_temp():
     1. 手机视频含 displaymatrix 旋转元数据（如小米 90°），decord/cv2 不会自动应用
        → ffmpeg 标准化时自动旋转到正确方向
     2. 颜色通道：ffmpeg 输出标准 yuv420p → decord 转 RGB，颜色正确
-    3. 性能：标准化后预裁剪到音频时长，减少不必要的帧解码
+    3. 性能：标准化结果按（文件路径+mtime+时长上限）缓存，同形象重复生成免转码；
+       转码加 -preset veryfast 并按音频时长预裁剪
     """
     try:
         from latentsync.utils import util as ls_util
         import tempfile
+        import hashlib
+
+        os.makedirs(_NORM_CACHE_DIR, exist_ok=True)
 
         def _read_video_safe(video_path: str, change_fps=True, use_decord=True):
-            """用 ffmpeg 标准化（旋转+25fps）后用 decord 读取"""
+            """用 ffmpeg 标准化（旋转+25fps，带缓存）后用 decord 读取"""
             print(f"[LatentSync] read_video: {video_path}")
 
-            # Step 1: 用 ffmpeg 标准化视频（自动应用旋转元数据 + 转 25fps + libx264）
-            # 这与 LatentSync 原版 read_video 的 ffmpeg 步骤一致，确保旋转和颜色正确
-            tmp_dir = tempfile.mkdtemp(prefix="latentsync_norm_")
-            norm_path = os.path.join(tmp_dir, "normalized.mp4")
-
-            # 按音频时长裁剪视频（减少标准化和后续处理的耗时）
             global _current_audio_duration
+            # 按音频时长裁剪视频（减少标准化和后续处理的耗时）
             duration_arg = []
-            if _current_audio_duration > 0:
-                duration_arg = ["-t", str(_current_audio_duration + 0.5)]
+            trim_secs = _current_audio_duration + 0.5 if _current_audio_duration > 0 else 0
+            if trim_secs > 0:
+                duration_arg = ["-t", str(trim_secs)]
                 print(f"[LatentSync] 预裁剪到 {_current_audio_duration:.1f}s + 0.5s 余量")
 
-            ff_cmd = [
-                _ffmpeg_exe, "-y", "-loglevel", "error", "-nostdin",
-                "-i", str(video_path),
-            ] + duration_arg + [
-                "-r", "25",                    # 统一 25fps（LatentSync 标准）
-                "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",  # 确保偶数尺寸
-                "-c:v", "libx264", "-crf", "18",
-                "-an",                         # 不需要音频
-                norm_path,
-            ]
-            import subprocess
-            result = subprocess.run(ff_cmd, capture_output=True, text=True, timeout=120)
-            if result.returncode != 0 or not os.path.exists(norm_path):
-                # ffmpeg 标准化失败，回退到 decord 直读
-                print(f"[LatentSync] ffmpeg 标准化失败，回退 decord 直读: {result.stderr[-200:]}")
-                from decord import VideoReader
-                vr = VideoReader(video_path)
-                video_frames = vr[:].asnumpy()
-                vr.seek(0)
-                return video_frames
+            # 缓存键：源文件路径 + mtime + 裁剪时长（向上取整到 10s 桶，提高复命中率）
+            src_stat = os.stat(video_path)
+            bucket = int(math.ceil(trim_secs / 10.0)) * 10 if trim_secs > 0 else 0
+            key_src = f"{os.path.abspath(video_path)}|{int(src_stat.st_mtime)}|{bucket}"
+            cache_key = hashlib.md5(key_src.encode("utf-8")).hexdigest()[:20]
+            norm_path = os.path.join(_NORM_CACHE_DIR, f"{cache_key}.mp4")
 
-            print(f"[LatentSync] ffmpeg 标准化完成（旋转校正 + 25fps）")
+            if os.path.exists(norm_path) and os.path.getsize(norm_path) > 10000:
+                print(f"[LatentSync] 标准化缓存命中: {os.path.basename(norm_path)}")
+            else:
+                # Step 1: 用 ffmpeg 标准化视频（自动应用旋转元数据 + 转 25fps）
+                ff_cmd = [
+                    _ffmpeg_exe, "-y", "-loglevel", "error", "-nostdin",
+                    "-i", str(video_path),
+                ] + duration_arg + [
+                    "-r", "25",                    # 统一 25fps（LatentSync 标准）
+                    "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",  # 确保偶数尺寸
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+                    "-an",                         # 不需要音频
+                    norm_path,
+                ]
+                import subprocess
+                result = subprocess.run(ff_cmd, capture_output=True, text=True, timeout=120)
+                if result.returncode != 0 or not os.path.exists(norm_path):
+                    # ffmpeg 标准化失败，回退到 decord 直读
+                    print(f"[LatentSync] ffmpeg 标准化失败，回退 decord 直读: {result.stderr[-200:]}")
+                    from decord import VideoReader
+                    vr = VideoReader(video_path)
+                    video_frames = vr[:].asnumpy()
+                    vr.seek(0)
+                    return video_frames
+                print(f"[LatentSync] ffmpeg 标准化完成（旋转校正 + 25fps，已写入缓存）")
 
             # Step 2: 用 decord 读取标准化后的视频
             from decord import VideoReader
@@ -187,18 +200,11 @@ def _patch_read_video_temp():
             video_frames = vr[:].asnumpy()
             vr.seek(0)
 
-            # 清理临时文件
-            try:
-                os.unlink(norm_path)
-                os.rmdir(tmp_dir)
-            except Exception:
-                pass
-
             print(f"[LatentSync] decord 读取完成: {len(video_frames)} 帧, shape={video_frames.shape}")
             return video_frames
 
         ls_util.read_video = _read_video_safe
-        print("[LatentSync] 已 patch read_video -> ffmpeg 标准化 + decord 读取")
+        print("[LatentSync] 已 patch read_video -> ffmpeg 标准化(带缓存) + decord 读取")
     except Exception as e:
         print(f"[LatentSync] 警告：patch read_video 失败: {e}")
 
@@ -347,6 +353,39 @@ async def health():
         "resolution": _resolution,
         "inference_steps": _inference_steps,
     }
+
+
+@app.post("/api/unload")
+async def unload_model():
+    """卸载管线释放显存（GPU 双向分时复用：推理完成后让出 GPU 给 CosyVoice/Ollama）
+
+    管线为懒加载（首次请求自动重建），卸载后下一次生成请求会重新加载（约 30-60s），
+    但标准化缓存与人脸检测器配置仍在，重载后处理速度不变。
+    """
+    global _pipeline
+    if _pipeline is None:
+        return {"status": "ok", "message": "pipeline already unloaded"}
+    del _pipeline
+    _pipeline = None
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    print("[LatentSync] 管线已卸载，显存已释放")
+    return {"status": "ok", "message": "pipeline unloaded, VRAM released"}
+
+
+@app.post("/api/load")
+async def load_model_api():
+    """预加载管线（可选：下一次生成前提前暖机）"""
+    global _pipeline
+    if _pipeline is not None:
+        return {"status": "ok", "message": "pipeline already loaded"}
+    try:
+        load_pipeline(resolution=_resolution)
+        return {"status": "ok", "message": "pipeline loaded"}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 @app.post("/api/avatar/generate")

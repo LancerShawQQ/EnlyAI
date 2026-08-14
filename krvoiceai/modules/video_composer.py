@@ -287,21 +287,20 @@ class VideoComposer(BaseModule):
         )
 
         # 构建输入与音频处理
-        # 关键：avatar_output.mp4 已内嵌了 LatentSync/Wav2Lip 对齐过的 TTS 音频，
-        # 唇形与音轨完全同步。直接使用视频自带的音轨可确保唇形同步精度。
-        # 仅当需要混 BGM 或音轨延迟补偿时才单独引入 voice_audio。
+        # 音轨策略：始终使用原始 TTS 24kHz 音轨（voice_audio）作为人声源——
+        # avatar_output 内嵌音轨经 LatentSync 内部 16kHz 重采样（带宽损失一档），
+        # 而原始 TTS 音轨与唇形在同一时间轴上（LatentSync 就是用它驱动的），
+        # 替换只提升音质、不影响同步。
         inputs = ["-i", str(main_video)]
         audio_filter = None
-        voice_input_idx = 0  # 默认用主视频（avatar_output）自带的已对齐音频
 
-        # 仅在需要 BGM 混音时才单独引入 voice_audio（用于音量控制）
-        # 无 BGM 时直接用 avatar_output 内嵌音频，保持唇形同步最优
-        need_voice_input = bool(bgm and Path(bgm).exists() and voice_audio and Path(voice_audio).exists())
-        if need_voice_input:
+        have_voice = bool(voice_audio and Path(voice_audio).exists())
+        voice_input_idx = 0
+        if have_voice:
             inputs += ["-i", str(voice_audio)]
-            voice_input_idx = len(inputs) // 2 - 1  # 刚加的输入索引
+            voice_input_idx = len(inputs) // 2 - 1
 
-        # 构建人声滤镜链（含延迟补偿）
+        # 构建人声滤镜链（含封面延迟补偿）
         def _voice_chain(out_label: str) -> str:
             chain = f"[{voice_input_idx}:a]volume=1.0"
             if cover_delay_ms > 0:
@@ -325,7 +324,7 @@ class VideoComposer(BaseModule):
                     bgm_chain += f",afade=t=out:st={fade_out_st:.2f}:d={self.bgm_fade_out}"
             bgm_chain += "[bgm]"
             # 人声(TTS,含封面延迟) + BGM 混音
-            # amix 后加 loudnorm 做最终响度归一化，避免人声被 BGM 压制或出现嗡嗡声
+            # amix 后加 loudnorm 做最终响度归一化（全链路唯一一次 loudnorm）
             # dropout_transition=0 避免某一路静音时另一路音量突增
             audio_filter = (
                 _voice_chain("voice") + ";"
@@ -333,12 +332,11 @@ class VideoComposer(BaseModule):
                 f"[voice][bgm]amix=inputs=2:duration=first:dropout_transition=0,"
                 f"loudnorm=I=-16:TP=-1.5:LRA=11[aout]"
             )
-        elif need_voice_input and cover_delay_ms > 0:
-            # 只有人声，无 BGM，但需要封面延迟补偿
+        elif have_voice:
+            # 只有人声无 BGM：用原始 24kHz TTS 轨（含封面延迟补偿）
             audio_filter = _voice_chain("aout")
         else:
-            # 无 BGM 无需延迟补偿：直接使用 avatar_output 自带的已对齐音频
-            # 保持唇形与声音的精确同步（LatentSync 已完成对齐）
+            # 无 voice_audio（异常兜底）：使用 avatar_output 自带音轨
             audio_filter = None
 
         # Logo 叠加输入（scene 配置）：在音频输入之后追加，索引动态计算
@@ -396,7 +394,7 @@ class VideoComposer(BaseModule):
             *self._vextra,
             # 码率控制：无论硬编（QSV/NVENC）还是软编（libx264）都加 maxrate 限制
             # 修复 QSV 模式下无码率控制导致 final_video bitrate 仅 575kbps 的问题
-            *(["-crf", "20"] if self._vcodec == "libx264" else []),
+            *(["-crf", "18"] if self._vcodec == "libx264" else []),
             "-maxrate", self.video_bitrate,
             "-bufsize", self.video_bitrate,
             "-pix_fmt", "yuv420p",
@@ -440,7 +438,7 @@ class VideoComposer(BaseModule):
             else:  # center
                 x_offset, y_offset = "(ow-iw)/2", "(oh-ih)/2"
             filters.append(
-                f"scale={scaled_w}:{scaled_h}:force_original_aspect_ratio=decrease"
+                f"scale={scaled_w}:{scaled_h}:force_original_aspect_ratio=decrease:flags=lanczos"
             )
             # pad 颜色：使用 scene.background_color（如模板配置的彩色背景），替代硬编码 black
             # #RRGGBB → 0xRRGGBB
@@ -449,7 +447,7 @@ class VideoComposer(BaseModule):
         else:
             # scale=1.0 时保持原有铺满逻辑
             filters.append(
-                f"scale={w}:{h}:force_original_aspect_ratio=decrease"
+                f"scale={w}:{h}:force_original_aspect_ratio=decrease:flags=lanczos"
             )
             filters.append(f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2")
         filters.append(f"fps={self.output_fps}")

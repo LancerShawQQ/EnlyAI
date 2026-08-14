@@ -193,7 +193,8 @@ avatar:
     server_url: http://localhost:8011  # LatentSync 本地服务地址
     api_key: ""                       # API Key 鉴权（可选）
     config: high_quality  # 兼容字段（服务端按 resolution 自动选配置）
-    inference_steps: 15   # 扩散步数（15 平衡速度与质量，25 更高质量，10 最快）
+    inference_steps: 12   # 扩散步数（12 平衡档；15 高质量；10 最快）
+    guidance_scale: 1.5   # CFG 引导强度（1.5 官方默认唇形引导最强；1.0 关闭=U-Net 减半提速，唇形引导略降）
     resolution: 256       # 处理分辨率（256 适配 8GB 显存，512 需 12GB+）
     seed: -1              # 随机种子（-1 随机）
     timeout: 600          # 请求超时秒数
@@ -469,8 +470,8 @@ bgm_library:
 # 视频合成配置
 composer:
   ffmpeg_path: ffmpeg  # 可指定绝对路径
-  # 输出参数
-  output_fps: 30
+  # 输出参数（fps 对齐 LatentSync 输出的 25fps，避免 dup 帧抖动）
+  output_fps: 25
   output_resolution: [720, 1280]
   video_bitrate: "8M"
   audio_bitrate: "192k"

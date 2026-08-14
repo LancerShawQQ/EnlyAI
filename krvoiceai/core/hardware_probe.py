@@ -200,10 +200,10 @@ def get_video_encoder() -> tuple[str, str, list[str]]:
         - extra_args: 额外 FFmpeg 参数（如 -rc -cq 等）
     """
     if detect_nvenc():
-        # NVENC: p4 预设质量与 libx264 medium 相当，速度 3-5 倍
-        # VBR + CQ 模式保证质量（CQ 20 ≈ CRF 20）
-        return ("h264_nvenc", "p4",
-                ["-rc", "vbr", "-cq", "20", "-b:v", "0"])
+        # NVENC: p6 质量优先预设（p4 速度优先但嘴部细节损失明显）
+        # VBR + CQ 模式保证质量（CQ 18 ≈ CRF 18，口播人像高质量档）
+        return ("h264_nvenc", "p6",
+                ["-rc", "vbr", "-cq", "18", "-b:v", "0"])
     if detect_qsv():
         # QSV: veryfast 预设，关闭 look_ahead 降低延迟
         return ("h264_qsv", "veryfast", ["-look_ahead", "0"])

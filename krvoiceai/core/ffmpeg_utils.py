@@ -273,22 +273,22 @@ class FFmpegRunner:
 
         if remove_silence:
             # silenceremove: 消除首尾静音 + 过长停顿
-            # start_threshold: -40dB（更严格，避免误切低音量字，-50dB会切掉开头正常的低音量语音）
-            # start_duration: 0.3秒（缩短，只切纯静音段，保留正常起音）
+            # start_duration: 0.5s 只切纯静音段——0.3s 会吃掉句首 100-300ms 的自然起音
             # stop_duration: 中间超过1.5秒的静音才处理（避免误切正常停顿）
             filters.append(
-                "silenceremove=start_periods=1:start_duration=0.3:"
-                "start_threshold=-40dB:"
+                "silenceremove=start_periods=1:start_duration=0.5:"
+                "start_threshold=-45dB:"
                 "stop_periods=-1:stop_duration=1.5:"
                 "stop_threshold=-40dB:"
                 "window=0.05"
             )
 
         if voice_enhance:
-            # 人声增强：高通滤波(去低频隆隆声) + 轻度压缩 + 响度归一化
+            # 人声增强：高通滤波 + 极轻压缩。
+            # 注意：不做 loudnorm——响度归一化统一由 video_composer 末级（amix 后）
+            # 执行一次；两级 loudnorm + 重压缩叠加会产生"广播腔/机械感"。
             filters.append("highpass=f=80")          # 去除80Hz以下低频噪声
-            filters.append("acompressor=threshold=-20dB:ratio=3:attack=5:release=50")  # 轻度压缩
-            filters.append("loudnorm=I=-16:TP=-1.5:LRA=11")  # 响度归一化(播客标准)
+            filters.append("acompressor=threshold=-20dB:ratio=2:attack=10:release=80")  # 极轻压缩保留动态
 
         # 句间停顿：通过在句子间插入静音实现
         # 注意：pause_duration 需要在 TTS 合成时处理（在句号后插入静音），
