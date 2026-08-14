@@ -1,0 +1,1943 @@
+"""EnlyAI Web Server - FastAPI + 精美 Web UI
+
+提供 REST API 和静态文件服务，替代 Gradio 作为主 UI。
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import shutil
+import tempfile
+import time
+from pathlib import Path
+from typing import Any, Optional
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from ..app import EnlyAI
+from ..core.logger import get_logger
+from ..core.settings_manager import get_settings_manager
+from ..modules.script_extractor import ScriptExtractor
+
+logger = get_logger().bind(component="web_server")
+
+# 全局 app 实例（懒加载）
+_app_instance: Optional[EnlyAI] = None
+
+
+def _get_app() -> EnlyAI:
+    global _app_instance
+    if _app_instance is None:
+        _app_instance = EnlyAI()
+    return _app_instance
+
+
+def _add_absolute_paths(job: dict) -> None:
+    """在 job 的 output 中补充绝对路径字段，供前端复制使用"""
+    from ..core.config import PROJECT_ROOT
+    output = job.get("output")
+    if not output:
+        return
+    for key in ("final_video", "video_path", "raw_video_path"):
+        rel = output.get(key)
+        if rel:
+            abs_path = str(Path(PROJECT_ROOT) / rel).replace("\\", "/")
+            output[f"{key}_absolute"] = abs_path
+
+
+# ============ 请求模型 ============
+
+class GenerateRequest(BaseModel):
+    script: str = ""
+    reference_video_url: Optional[str] = None
+    avatar_id: str = "default"
+    voice_id: str = "default"
+    script_mode: str = "polish"
+    platform: str = "douyin"
+    auto_publish: bool = False
+    publish_platforms: Optional[list[str]] = None  # 多平台一键发布（覆盖 platform 单选）
+    broll_clips: Optional[list] = None  # B-roll 画中画/插播片段
+
+
+class ModuleRunRequest(BaseModel):
+    module_name: str
+    script: str = ""
+    reference_video_url: Optional[str] = None
+    avatar_id: str = "default"
+    voice_id: str = "default"
+    script_mode: str = "polish"
+    platform: str = "douyin"
+    broll_clips: Optional[list] = None
+
+
+class SettingsUpdateRequest(BaseModel):
+    section: str
+    data: dict[str, Any]
+
+
+class TestLLMRequest(BaseModel):
+    provider: str = "mock"
+    api_key: str = ""
+    base_url: str = ""
+    model: str = ""
+
+
+class TestTTSRequest(BaseModel):
+    provider: str = "mock"
+    api_base: str = ""
+    api_key: str = ""
+
+
+class TestAvatarRequest(BaseModel):
+    provider: str = "mock"
+    api_base: str = ""
+
+
+class ScriptProcessRequest(BaseModel):
+    """文案 AI 处理请求"""
+    script: str = ""
+    action: str = "polish"  # polish/rewrite/expand/shorten/style/extract/generate
+    style: Optional[str] = None  # 幽默/严肃/活泼/专业/口语化
+    topic: Optional[str] = None  # generate 模式下的主题
+    reference_url: Optional[str] = None  # extract 模式下的参考视频链接
+    template_id: Optional[str] = None  # generate 模式下使用的爆款模板 ID
+
+
+class ParseShareTextRequest(BaseModel):
+    """分享文本轻量解析请求（仅解析 URL + 描述，不触发下载/ASR）"""
+    text: str = ""
+
+
+class BatchGenerateItem(BaseModel):
+    script: str = ""
+    reference_video_url: Optional[str] = None
+    avatar_id: str = "default"
+    voice_id: str = "default"
+    script_mode: str = "polish"
+    platform: str = "douyin"
+    auto_publish: bool = False
+
+
+class BatchGenerateRequest(BaseModel):
+    items: list[BatchGenerateItem]
+    parallel: int = 1  # 并发数（目前仅支持 1）
+
+
+class TemplateApplyRequest(BaseModel):
+    template_id: str
+
+
+# ============ 语音播客请求模型 ============
+
+class PodcastRewriteRequest(BaseModel):
+    """播客剧本改写请求"""
+    content: str = ""                  # 原始内容（文章文本）或主题描述
+    mode: str = "polish"               # polish（口语润色）| expand（丰富扩展）| condense（精简提炼）| generate（AI创作）
+    role_count: int = 3                # 角色数量（0=自动，1-10）
+    style: str = "轻松对话"            # 风格
+    duration_minutes: int = 5          # 目标时长（分钟）
+    role_desc: str = ""                # 角色描述
+
+
+class PodcastSuggestVoicesRequest(BaseModel):
+    """播客音色建议请求"""
+    script: str = ""
+
+
+class PodcastGenerateRequest(BaseModel):
+    """播客生成请求"""
+    script: str = ""                   # 播客剧本文本
+    voice_map: dict[str, str] = {}     # {角色名: 音色ID}
+    output_name: str = ""              # 输出目录名（可选）
+    bgm_track: str = ""                # BGM 曲目名（为空则不混入 BGM）
+    bgm_volume: float = 0.15           # BGM 音量（0-1）
+    output_format: str = "wav"         # 输出音频格式：wav / mp3
+
+
+# ============ FastAPI 应用 ============
+
+def create_app() -> FastAPI:
+    app = FastAPI(title="EnlyAI", version="0.3.0")
+
+    # CORS — 允许本地开发访问（不再全开 *，安全收敛）
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+            "http://localhost:3000",  # 前端开发服务器（如需）
+        ],
+        allow_methods=["*"],
+        allow_headers=["*"],
+        allow_credentials=True,
+    )
+
+    # 全局异常处理 — 统一错误响应格式，避免泄露内部堆栈
+    from fastapi.responses import JSONResponse as _JSONResponse
+    from fastapi.exceptions import RequestValidationError as _ValidationError
+
+    @app.exception_handler(Exception)
+    async def _global_exception_handler(request, exc):
+        import logging
+        logging.getLogger("krvoiceai.web").exception(
+            f"未捕获异常: {request.method} {request.url.path}: {exc}"
+        )
+        # 对用户隐藏内部细节，返回友好错误信息
+        return _JSONResponse(
+            status_code=500,
+            content={"success": False, "error": f"服务器内部错误: {type(exc).__name__}"},
+        )
+
+    @app.exception_handler(_ValidationError)
+    async def _validation_exception_handler(request, exc):
+        return _JSONResponse(
+            status_code=422,
+            content={"success": False, "error": "请求参数校验失败", "details": str(exc)[:500]},
+        )
+
+    # 静态文件（Web UI）— 禁用浏览器缓存，确保代码更新后立即生效
+    static_dir = Path(__file__).parent / "static"
+    if static_dir.exists():
+        class _NoCacheStaticFiles(StaticFiles):
+            async def get_response(self, path: str, scope):
+                response = await super().get_response(path, scope)
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+                return response
+        app.mount("/static", _NoCacheStaticFiles(directory=str(static_dir)), name="static")
+
+    # 启动时预初始化 EnlyAI，避免首次请求被懒加载阻塞 5 秒
+    @app.on_event("startup")
+    async def _preinit_app():
+        _get_app()
+        # 清理上次服务异常退出时卡在 running/pending 状态的任务
+        # 这些任务的子进程（如 Wav2Lip）已随服务进程一起被杀，无法继续执行
+        try:
+            app_obj = _get_app()
+            if hasattr(app_obj, 'orchestrator') and app_obj.orchestrator:
+                app_obj.orchestrator.cleanup_stale_jobs()
+        except Exception as e:
+            logger.warning(f"清理卡住任务时异常: {e}")
+
+    # ============ 页面路由 ============
+
+    @app.get("/")
+    async def index():
+        index_file = static_dir / "index.html"
+        if index_file.exists():
+            return FileResponse(
+                str(index_file),
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
+        return JSONResponse({"error": "UI 文件未找到"}, status_code=404)
+
+    # ============ API 路由 ============
+
+    @app.get("/api/health")
+    async def health():
+        data = _get_app().health_check()
+        # 附加 GPU 硬件加速能力（CUDA / NVENC / 编码器）
+        try:
+            from ..core.hardware_probe import (
+                detect_cuda, detect_nvenc, get_acceleration_summary, get_video_encoder,
+            )
+            data["gpu"] = {
+                "cuda_available": detect_cuda(),
+                "nvenc_available": detect_nvenc(),
+                "encoder": get_video_encoder()[0],
+                "summary": get_acceleration_summary(),
+            }
+        except Exception as e:
+            data["gpu"] = {"error": str(e)}
+        return data
+
+    @app.get("/api/debug/tts")
+    async def debug_tts():
+        """临时调试端点：检查 TTS 引擎状态"""
+        krvoice = _get_app()
+        engine = krvoice.modules.get("tts")
+        if engine is None:
+            return {"error": "TTS engine not initialized"}
+        cfg = engine.config.get("tts.cosyvoice", {}) or {}
+        prompt_audio, prompt_text = engine._resolve_cosyvoice_voice("anchor_female", cfg)
+        result = {
+            "engine.provider": engine.provider,
+            "tts.provider": engine.config.get("tts.provider"),
+            "tts.cosyvoice": cfg,
+            "prompt_audio": str(prompt_audio) if prompt_audio else None,
+            "prompt_text": prompt_text,
+        }
+        # 尝试 API 调用
+        if prompt_audio and engine.provider == "cosyvoice":
+            try:
+                server_url = cfg.get("server_url", "http://localhost:8012")
+                wav_bytes = engine._call_cosyvoice_api(
+                    server_url, "测试", prompt_audio, prompt_text,
+                    instruct="", timeout=60,
+                )
+                result["api_result"] = f"{len(wav_bytes)} bytes" if wav_bytes else "None"
+            except Exception as e:
+                result["api_error"] = str(e)
+        return result
+
+    @app.post("/api/generate")
+    async def generate(req: GenerateRequest):
+        """一键生成视频（全流程）"""
+        krvoice = _get_app()
+        # publish_platforms 透传到 metadata
+        _extra_meta = {}
+        if req.publish_platforms:
+            _extra_meta["publish_platforms"] = req.publish_platforms
+        elif req.platform and req.platform != "douyin":
+            _extra_meta["publish_platforms"] = [req.platform]
+        # 在线程池中运行（避免阻塞事件循环）
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: krvoice.submit_and_run(
+                script=req.script,
+                reference_video_url=req.reference_video_url,
+                avatar_id=req.avatar_id,
+                voice_id=req.voice_id,
+                script_mode=req.script_mode,
+                platform=req.platform,
+                auto_publish=req.auto_publish,
+                metadata=_extra_meta if _extra_meta else None,
+                broll_clips=req.broll_clips,
+            )
+        )
+        return result
+
+    @app.post("/api/generate/async")
+    async def generate_async(req: GenerateRequest):
+        """异步提交视频生成任务，立即返回 job_id，前端轮询 /api/jobs/{job_id} 获取进度"""
+        krvoice = _get_app()
+        # avatar_id 为 "default" 时，从配置读取 default_id（如 e2e_anchor）
+        avatar_id = req.avatar_id
+        if avatar_id == "default":
+            avatar_id = krvoice.config.get("avatar.default_avatar", "default")
+        # 提交任务（仅创建，不阻塞）
+        # publish_platforms 优先于 platform（支持多平台一键发布）
+        _meta = {"platform": req.platform, "auto_publish": req.auto_publish}
+        if req.publish_platforms:
+            _meta["publish_platforms"] = req.publish_platforms
+        elif req.platform and req.platform != "douyin":
+            # 向后兼容：单选 platform 也写入 publish_platforms
+            _meta["publish_platforms"] = [req.platform]
+        job_id = krvoice.orchestrator.submit_job(
+            script=req.script,
+            reference_video_url=req.reference_video_url,
+            avatar_id=avatar_id,
+            voice_id=req.voice_id,
+            script_mode=req.script_mode,
+            metadata=_meta,
+            broll_clips=req.broll_clips,
+        )
+        # 在后台线程中运行任务（不等待完成）
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(
+            None,
+            lambda: krvoice.orchestrator.run_job(job_id),
+        )
+        return {"job_id": job_id, "status": "pending"}
+
+    @app.post("/api/module/run")
+    async def run_module(req: ModuleRunRequest):
+        """单模块执行"""
+        krvoice = _get_app()
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: krvoice.run_single_module(
+                module_name=req.module_name,
+                script=req.script,
+                reference_video_url=req.reference_video_url,
+                avatar_id=req.avatar_id,
+                voice_id=req.voice_id,
+                script_mode=req.script_mode,
+                platform=req.platform,
+                broll_clips=req.broll_clips,
+            )
+        )
+        return result
+
+    @app.get("/api/jobs")
+    async def list_jobs(limit: int = 50):
+        return _get_app().list_jobs(limit)
+
+    @app.get("/api/jobs/{job_id}")
+    async def get_job(job_id: str):
+        job = _get_app().get_job(job_id)
+        if not job:
+            raise HTTPException(404, "任务不存在")
+        # 补充绝对路径（前端复制路径时需要完整路径）
+        _add_absolute_paths(job)
+        return job
+
+    @app.delete("/api/jobs/{job_id}")
+    async def delete_job(job_id: str):
+        ok = _get_app().delete_job(job_id)
+        return {"deleted": ok}
+
+    @app.post("/api/jobs/{job_id}/rerun")
+    async def rerun_job(job_id: str):
+        loop = asyncio.get_event_loop()
+        ok = await loop.run_in_executor(
+            None, lambda: _get_app().rerun_job(job_id)
+        )
+        return {"success": ok}
+
+    @app.post("/api/jobs/{job_id}/rerun/async")
+    async def rerun_job_async(job_id: str):
+        """异步重跑任务（断点续跑），立即返回，前端轮询 /api/jobs/{job_id} 获取进度
+
+        与 /api/generate/async 对称：在后台线程运行任务，不阻塞 HTTP 响应。
+        供前端"重跑此任务"按钮调用，避免长时间等待。
+        """
+        krvoice = _get_app()
+        job = krvoice.get_job(job_id)
+        if not job:
+            raise HTTPException(404, "任务不存在")
+        # 在后台线程中运行任务（不等待完成），orchestrator.run_job 支持断点续跑
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(
+            None,
+            lambda: krvoice.orchestrator.run_job(job_id),
+        )
+        return {"job_id": job_id, "status": "pending"}
+
+    @app.post("/api/jobs/{job_id}/open-folder")
+    async def open_job_folder(job_id: str):
+        """打开任务工作目录（跨平台）
+
+        供前端"打开目录"按钮调用，方便用户查看 job 的中间产物、日志、最终视频等。
+        路径安全：只允许打开 workspace_data/jobs/{job_id} 目录。
+        """
+        import os
+        import sys
+
+        from ..core.config import PROJECT_ROOT
+
+        # 简单校验 job_id（防止路径穿越，如 ../../etc）
+        if not job_id or "/" in job_id or "\\" in job_id or ".." in job_id:
+            raise HTTPException(400, "非法的 job_id")
+
+        job_dir = Path(PROJECT_ROOT) / "workspace_data" / "jobs" / job_id
+        if not job_dir.exists():
+            raise HTTPException(404, f"任务目录不存在: {job_id}")
+
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(job_dir))
+            elif sys.platform == "darwin":
+                import subprocess
+                subprocess.Popen(["open", str(job_dir)])
+            else:
+                import subprocess
+                subprocess.Popen(["xdg-open", str(job_dir)])
+            return {"success": True, "job_id": job_id, "path": str(job_dir)}
+        except Exception as e:
+            logger.error(f"打开任务目录失败 job_id={job_id}: {e}")
+            raise HTTPException(500, f"打开目录失败: {e}")
+
+    @app.get("/api/avatars")
+    async def list_avatars():
+        return _get_app().list_avatars()
+
+    @app.get("/api/avatars/{avatar_id}/preview")
+    async def get_avatar_preview(avatar_id: str):
+        """获取数字人参考图预览"""
+        avatars_dir = Path(_get_app().config.get("avatar.avatars_dir", "./config/avatars"))
+        avatar_dir = avatars_dir / avatar_id
+        if not avatar_dir.exists():
+            raise HTTPException(404, "形象不存在")
+        # 查找参考图
+        for name in ("reference.jpg", "reference.png", "preview.jpg", "placeholder.jpg"):
+            p = avatar_dir / name
+            if p.exists():
+                return FileResponse(str(p))
+        raise HTTPException(404, "无参考图")
+
+    # ============ B-roll 画中画素材管理 ============
+
+    @app.post("/api/broll/upload")
+    async def upload_broll(file: UploadFile = File(...)):
+        """上传 B-roll 素材（视频/图片），返回可引用的路径"""
+        broll_dir = Path("./config/broll_assets")
+        broll_dir.mkdir(parents=True, exist_ok=True)
+        suffix = Path(file.filename or "asset").suffix or ".mp4"
+        # 生成唯一文件名
+        import time as _t
+        filename = f"broll_{int(_t.time())}_{file.filename}"
+        # 清理文件名中的危险字符
+        filename = "".join(c for c in filename if c.isalnum() or c in "._-")
+        save_path = broll_dir / filename
+        with open(save_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        return {
+            "success": True,
+            "path": str(save_path),
+            "filename": filename,
+            "size": save_path.stat().st_size,
+        }
+
+    @app.get("/api/broll/assets")
+    async def list_broll_assets():
+        """列出所有已上传的 B-roll 素材"""
+        broll_dir = Path("./config/broll_assets")
+        if not broll_dir.exists():
+            return []
+        assets = []
+        for f in sorted(broll_dir.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+            if f.is_file():
+                ext = f.suffix.lower()
+                kind = "video" if ext in (".mp4", ".mov", ".avi", ".mkv", ".webm") else "image"
+                assets.append({
+                    "path": str(f),
+                    "filename": f.name,
+                    "kind": kind,
+                    "size": f.stat().st_size,
+                })
+        return assets
+
+    @app.get("/api/broll/assets/{filename}")
+    async def get_broll_asset(filename: str):
+        """获取 B-roll 素材文件（用于预览）"""
+        broll_dir = Path("./config/broll_assets")
+        # 防止路径穿越
+        safe_name = Path(filename).name
+        p = broll_dir / safe_name
+        if not p.exists() or not p.is_file():
+            raise HTTPException(404, "素材不存在")
+        return FileResponse(str(p))
+
+    @app.post("/api/broll/apply")
+    async def apply_broll(
+        video_path: str = Form(...),
+        clips_json: str = Form(...),
+    ):
+        """对已有视频应用 B-roll（独立调用，不经过完整流水线）
+
+        Args:
+            video_path: 输入视频路径
+            clips_json: B-roll 片段列表 JSON 字符串
+        """
+        import json
+        from ..modules.broll_engine import BRollEngine
+        loop = asyncio.get_event_loop()
+
+        def _apply():
+            video = Path(video_path)
+            if not video.exists():
+                return {"success": False, "error": "视频不存在"}
+            try:
+                clips = json.loads(clips_json)
+            except Exception as e:
+                return {"success": False, "error": f"clips_json 解析失败: {e}"}
+            engine = BRollEngine()
+            engine.setup()
+            output = video.parent / "broll_applied.mp4"
+            result = engine.apply_broll_to_existing_video(video, clips, output)
+            return {
+                "success": True,
+                "output_path": str(result),
+                "size": result.stat().st_size,
+            }
+
+        return await loop.run_in_executor(None, _apply)
+
+    @app.post("/api/broll/suggest")
+    async def suggest_broll_clips(req: dict):
+        """B-roll 智能推荐（对标剪映智能匹配素材）
+
+        Body: {"job_id": "xxx", "max_clips": 5}
+        从 job 上下文读取文案+字幕时间戳，结合素材库生成 B-roll 推荐片段
+        """
+        import json as _json
+        from ..modules.broll_engine import BRollEngine
+        loop = asyncio.get_event_loop()
+
+        job_id = req.get("job_id", "")
+        max_clips = int(req.get("max_clips", 5))
+        if not job_id:
+            raise HTTPException(400, "缺少 job_id")
+
+        def _suggest():
+            # 1. 读 job context
+            ctx_file = Path("workspace_data") / "jobs" / job_id / "context.json"
+            if not ctx_file.exists():
+                return {"success": False, "error": "任务上下文不存在"}
+            try:
+                ctx = _json.loads(ctx_file.read_text(encoding="utf-8"))
+            except Exception as e:
+                return {"success": False, "error": f"读取上下文失败: {e}"}
+
+            # 2. 提取 script / subtitle_segments / video_duration
+            input_data = ctx.get("input_data", {}) or {}
+            metadata = ctx.get("metadata", {}) or {}
+            script = (
+                input_data.get("script")
+                or metadata.get("script_text")
+                or metadata.get("script")
+                or metadata.get("extracted_script")
+                or ""
+            )
+            subtitle_segments = (
+                metadata.get("subtitle_segments")
+                or input_data.get("subtitle_segments")
+                or []
+            )
+            video_duration = float(metadata.get("video_duration") or 0)
+            if not video_duration and subtitle_segments:
+                video_duration = float(subtitle_segments[-1].get("end", 0))
+
+            # 3. 读素材库
+            broll_dir = Path("./config/broll_assets")
+            assets = []
+            if broll_dir.exists():
+                for f in sorted(broll_dir.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+                    if f.is_file():
+                        ext = f.suffix.lower()
+                        if ext in (".mp4", ".mov", ".avi", ".mkv", ".webm",
+                                   ".jpg", ".jpeg", ".png", ".webp", ".bmp"):
+                            kind = "video" if ext in (".mp4", ".mov", ".avi", ".mkv", ".webm") else "image"
+                            assets.append({
+                                "path": str(f),
+                                "filename": f.name,
+                                "kind": kind,
+                                "size": f.stat().st_size,
+                            })
+
+            if not assets:
+                return {"success": False, "error": "素材库为空，请先上传 B-roll 素材"}
+            if not script and not subtitle_segments:
+                return {"success": False, "error": "任务无文案和字幕，无法智能推荐"}
+
+            # 4. 调用智能推荐
+            engine = BRollEngine()
+            engine.setup()
+            suggestions = engine.suggest_broll_clips(
+                script=script,
+                subtitle_segments=subtitle_segments,
+                assets=assets,
+                video_duration=video_duration,
+                max_clips=max_clips,
+            )
+            return {
+                "success": True,
+                "suggestions": suggestions,
+                "meta": {
+                    "script_length": len(script),
+                    "subtitle_count": len(subtitle_segments),
+                    "asset_count": len(assets),
+                    "video_duration": video_duration,
+                },
+            }
+
+        return await loop.run_in_executor(None, _suggest)
+
+    @app.post("/api/video/quick-edit")
+    async def quick_edit_video(
+        video_path: str = Form(...),
+        action: str = Form(...),
+        params_json: str = Form(""),
+    ):
+        """快捷剪辑：裁剪/音量/淡入淡出
+
+        Args:
+            video_path: 输入视频路径
+            action: 操作类型 trim / volume / fade
+            params_json: 操作参数 JSON
+                - trim: {start, end}
+                - volume: {volume}
+                - fade: {fade_in, fade_out}
+        """
+        import json
+        from ..core.ffmpeg_utils import FFmpegRunner
+        loop = asyncio.get_event_loop()
+
+        def _edit():
+            video = Path(video_path)
+            if not video.exists():
+                return {"success": False, "error": "视频不存在"}
+            try:
+                params = json.loads(params_json) if params_json else {}
+            except Exception as e:
+                return {"success": False, "error": f"params_json 解析失败: {e}"}
+            ff = FFmpegRunner()
+            if not ff.available():
+                return {"success": False, "error": "FFmpeg 不可用"}
+            stem = video.stem
+            suffix = video.suffix
+            if action == "trim":
+                start = float(params.get("start", 0))
+                end = params.get("end")
+                end = float(end) if end is not None else None
+                out = video.parent / f"{stem}_trimmed{suffix}"
+                ff.trim_video(video, out, start=start, end=end)
+            elif action == "volume":
+                vol = float(params.get("volume", 1.0))
+                out = video.parent / f"{stem}_vol{suffix}"
+                ff.adjust_volume(video, out, volume=vol)
+            elif action == "fade":
+                fi = float(params.get("fade_in", 0))
+                fo = float(params.get("fade_out", 0))
+                out = video.parent / f"{stem}_fade{suffix}"
+                ff.add_fade(video, out, fade_in=fi, fade_out=fo)
+            else:
+                return {"success": False, "error": f"未知操作: {action}"}
+            return {
+                "success": True,
+                "output_path": str(out),
+                "size": out.stat().st_size if out.exists() else 0,
+            }
+
+        return await loop.run_in_executor(None, _edit)
+
+    @app.post("/api/avatars/register")
+    async def register_avatar(
+        avatar_id: str = Form(...),
+        file: UploadFile = File(...),
+    ):
+        # 保存上传文件到临时位置
+        suffix = Path(file.filename or "ref.mp4").suffix or ".mp4"
+        tmp = Path(tempfile.mktemp(suffix=suffix))
+        with open(tmp, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        ok = _get_app().register_avatar(avatar_id, tmp)
+        tmp.unlink(missing_ok=True)
+        return {"success": ok, "avatar_id": avatar_id}
+
+    @app.post("/api/avatar/longcat/test")
+    async def test_longcat_connection(req: dict):
+        """测试 LongCat 云端服务连通性
+
+        Request body: {"server_url": "http://xxx:8000", "api_key": ""}
+        Response: {"ok": true/false, "message": "...", "gpu": "...", "model_loaded": bool}
+        """
+        server_url = req.get("server_url", "").rstrip("/")
+        api_key = req.get("api_key", "")
+        if not server_url:
+            return {"ok": False, "message": "未配置服务器地址"}
+
+        from ..modules.longcat_avatar_engine import LongCatAvatarClient
+        client = LongCatAvatarClient(server_url=server_url, api_key=api_key)
+        ok, msg = client.health_check()
+        return {"ok": ok, "message": msg}
+
+    @app.post("/api/avatar/musetalk/test")
+    async def test_musetalk_connection(req: dict):
+        """测试 MuseTalk 服务连通性
+
+        Request body: {"server_url": "http://localhost:8010", "api_key": ""}
+        Response: {"ok": true/false, "message": "..."}
+        """
+        server_url = req.get("server_url", "").rstrip("/")
+        api_key = req.get("api_key", "")
+        if not server_url:
+            return {"ok": False, "message": "未配置服务器地址"}
+
+        from ..modules.musetalk_avatar_engine import MuseTalkAvatarClient
+        client = MuseTalkAvatarClient(server_url=server_url, api_key=api_key)
+        ok, msg = client.health_check()
+        return {"ok": ok, "message": msg}
+
+    @app.get("/api/voices")
+    async def list_voices():
+        return _get_app().list_voices()
+
+    @app.post("/api/voices/register")
+    async def register_voice(
+        voice_id: str = Form(...),
+        file: UploadFile = File(...),
+    ):
+        suffix = Path(file.filename or "sample.wav").suffix or ".wav"
+        tmp = Path(tempfile.mktemp(suffix=suffix))
+        with open(tmp, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        result = _get_app().register_voice(voice_id, tmp)
+        tmp.unlink(missing_ok=True)
+        # 兼容旧返回类型（bool）：若返回 True/False 视为成功/失败
+        if isinstance(result, bool):
+            ok = result
+            quality_report = None
+        else:
+            ok = bool(result.get("success", False))
+            quality_report = result.get("quality_report")
+        response = {
+            "success": ok,
+            "voice_id": voice_id,
+            "message": "音色已注册，试听样本正在后台生成中（约1-2分钟），稍后即可即时试听" if ok else "注册失败",
+        }
+        if quality_report:
+            response["quality_report"] = quality_report
+        return response
+
+    @app.delete("/api/avatars/{avatar_id}")
+    async def delete_avatar(avatar_id: str):
+        """删除已注册形象（不允许删除 default）"""
+        ok = _get_app().delete_avatar(avatar_id)
+        if not ok:
+            raise HTTPException(400, "删除失败（可能不存在或为默认形象）")
+        return {"success": True, "avatar_id": avatar_id}
+
+    @app.delete("/api/voices/{voice_id}")
+    async def delete_voice(voice_id: str):
+        """删除已注册克隆音色（预制音色不可删除）"""
+        ok = _get_app().delete_voice(voice_id)
+        if not ok:
+            raise HTTPException(400, "删除失败（可能不存在或为预制音色）")
+        return {"success": True, "voice_id": voice_id}
+
+    # 文件下载（视频/封面等）
+    @app.get("/api/files")
+    async def get_file(path: str):
+        p = Path(path)
+        if not p.exists() or not p.is_file():
+            raise HTTPException(404, "文件不存在")
+        # 安全检查：只允许访问 workspace_data 目录
+        if "workspace_data" not in str(p.resolve()) and "tmp" not in str(p.resolve()):
+            raise HTTPException(403, "无权访问")
+        return FileResponse(str(p))
+
+    # ============ 设置中心 API ============
+
+    @app.get("/api/settings")
+    async def get_settings():
+        """获取全部配置（敏感字段掩码）"""
+        return get_settings_manager().get_all(mask_sensitive=True)
+
+    @app.get("/api/settings/{section}")
+    async def get_settings_section(section: str):
+        """获取某段配置"""
+        if section not in ("llm", "tts", "avatar", "asr", "composer",
+                           "cover", "publisher", "pipeline", "project", "logging",
+                           "subtitle", "scene", "audio", "effects"):
+            raise HTTPException(400, f"无效的配置段: {section}")
+        return get_settings_manager().get_section(section, mask_sensitive=True)
+
+    @app.put("/api/settings/{section}")
+    async def update_settings_section(section: str, req: SettingsUpdateRequest):
+        """更新某段配置（持久化 + 热更新）"""
+        if req.section != section:
+            raise HTTPException(400, "section 不一致")
+        return get_settings_manager().update_section(section, req.data)
+
+    @app.delete("/api/settings/{section}")
+    async def reset_settings_section(section: str):
+        """重置某段为默认"""
+        return get_settings_manager().reset_section(section)
+
+    @app.delete("/api/settings")
+    async def reset_all_settings():
+        """重置全部用户配置"""
+        return get_settings_manager().reset_all()
+
+    @app.get("/api/settings/presets/all")
+    async def get_presets():
+        """获取 provider 预设（供前端下拉）"""
+        return get_settings_manager().get_provider_presets()
+
+    @app.get("/api/creative/presets")
+    async def get_creative_presets():
+        """获取创作预设（字幕样式/动画/情感/姿态/滤镜/转场）"""
+        return get_settings_manager().get_creative_presets()
+
+    @app.get("/api/cover/styles")
+    async def get_cover_styles():
+        """获取封面样式预设列表（对标剪映封面模板库）"""
+        from ..modules.cover_generator import COVER_STYLE_PRESETS
+        # 返回精简版（不含内部颜色元组，前端不需要）
+        styles = [
+            {
+                "id": s["id"],
+                "name": s["name"],
+                "icon": s["icon"],
+                "desc": s["desc"],
+            }
+            for s in COVER_STYLE_PRESETS
+        ]
+        return {"success": True, "styles": styles}
+
+    @app.post("/api/cover/preview")
+    async def cover_preview(req: dict):
+        """生成封面预览图（不走流水线，供 UI 实时预览/重新生成）
+
+        Body: {"title": "封面标题", "style_id": "deep_blue"}
+        """
+        from ..modules.cover_generator import CoverGenerator
+        from pathlib import Path
+        import time as _time
+
+        title = (req.get("title") or "口播视频").strip()
+        style_id = req.get("style_id", "deep_blue")
+        if len(title) > 30:
+            title = title[:30]
+
+        loop = asyncio.get_event_loop()
+
+        def _gen():
+            # 输出到 workspace_data 目录，使前端可通过 /api/files 访问（/api/files 安全检查仅允许 workspace_data/tmp）
+            output_dir = Path("workspace_data") / "cover_previews"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output = output_dir / f"cover_preview_{int(_time.time())}.jpg"
+            engine = CoverGenerator()
+            engine.setup()
+            engine.preview(title, output, style_id=style_id)
+            return output
+
+        output_path = await loop.run_in_executor(None, _gen)
+        # 返回 posix 风格路径，避免 Windows 反斜杠在前端 URL 编码时出问题
+        return {"success": True, "cover_path": output_path.as_posix()}
+
+    @app.get("/api/templates")
+    async def get_templates():
+        """获取创作模板列表"""
+        return get_settings_manager().get_templates()
+
+    @app.post("/api/templates/apply")
+    async def apply_template(req: TemplateApplyRequest):
+        """一键应用创作模板"""
+        return get_settings_manager().apply_template(req.template_id)
+
+    @app.get("/api/bgm/library")
+    async def get_bgm_library():
+        """获取 BGM 素材库"""
+        cfg = _get_app().config
+        return cfg.get("bgm_library", {}) or {}
+
+    @app.get("/api/bgm/preview/{track}")
+    async def preview_bgm(track: str):
+        """预览 BGM 文件（用于 UI 试听按钮）
+
+        直接返回本地文件，浏览器通过 Range 请求流式播放，5秒内出声。
+        """
+        from pathlib import Path as _Path
+        bgm_dir = _Path(_get_app().config.get("composer.bgm_dir", "./config/bgm"))
+        for ext in (".mp3", ".m4a", ".wav"):
+            p = bgm_dir / f"{track}{ext}"
+            if p.exists():
+                return FileResponse(
+                    str(p), media_type="audio/mpeg",
+                    headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=3600"},
+                )
+        return JSONResponse({"error": "BGM not found"}, status_code=404)
+
+    # ============ 音色试听 API ============
+
+    @app.get("/api/voice/preview/{voice_id}")
+    async def preview_voice(voice_id: str):
+        """音色试听：优先返回预生成样本（即时），无样本时实时合成（回退）
+
+        预生成样本存放在 config/voices/samples/{voice_id}.wav，
+        由 scripts/pregenerate_voice_samples.py 一次性生成。
+        内置音色（Junhao/Trump/Ava/Bella/Adam/Nathan）均有预生成样本。
+        自定义克隆音色无预生成样本，回退到实时 TTS（约30-60s）。
+        """
+        from pathlib import Path as _Path
+
+        def _detect_media_type(file_path: _Path) -> str:
+            """根据文件头 magic bytes 判断音频格式（避免 mp3 被误标为 wav）"""
+            try:
+                with open(file_path, "rb") as f:
+                    header = f.read(12)
+                if header[:4] == b"RIFF" and header[8:12] == b"WAVE":
+                    return "audio/wav"
+                if header[:3] == b"ID3" or (len(header) >= 2 and header[0] == 0xFF and (header[1] & 0xE0) == 0xE0):
+                    return "audio/mpeg"
+            except Exception:
+                pass
+            # 回退：按扩展名判断
+            return "audio/mpeg" if file_path.suffix.lower() == ".mp3" else "audio/wav"
+
+        # 1. 检查预生成样本
+        # 1a. 扁平结构：config/voices/samples/{voice_id}.wav（MOSS/edge-tts 音色）
+        samples_dir = _Path("./config/voices/samples")
+        for ext in (".wav", ".mp3"):
+            sample = samples_dir / f"{voice_id}{ext}"
+            if sample.exists():
+                return FileResponse(
+                    str(sample), media_type=_detect_media_type(sample),
+                    headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=86400"},
+                )
+        # 1b. 嵌套结构：config/voices/{voice_id}/sample.wav（CosyVoice 预置音色）
+        cosyvoice_sample = _Path("./config/voices") / voice_id / "sample.wav"
+        if cosyvoice_sample.exists():
+            return FileResponse(
+                str(cosyvoice_sample), media_type="audio/wav",
+                headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=86400"},
+            )
+        # 2. 无预生成样本 → 实时合成（回退，自定义克隆音色走此路径）
+        # 注意：Qwen3-TTS 音色在 CPU 下实时合成较慢（约75秒/句），
+        # 首次试听后建议运行 scripts/pregenerate_voice_samples.py 预生成样本
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: _get_app().preview_tts(
+                "你好，这是音色试听", voice_id,
+            ),
+        )
+        if result.get("success") and result.get("audio_path"):
+            audio_p = _Path(result["audio_path"])
+            return FileResponse(
+                result["audio_path"], media_type=_detect_media_type(audio_p),
+                headers={"Accept-Ranges": "bytes"},
+            )
+        return JSONResponse(
+            {"error": result.get("error", "试听生成失败")},
+            status_code=500,
+        )
+
+    # ============ 场景化预制模板 API（对标腾讯智影/万兴播爆） ============
+
+    @app.get("/api/scene/templates")
+    async def get_scene_templates():
+        """获取场景化预制模板列表（含文案骨架、样式推荐、形象/音色推荐）"""
+        import yaml
+        from pathlib import Path as _Path
+        tpl_file = _Path("./config/presets/scene_templates.yaml")
+        if not tpl_file.exists():
+            return {"templates": {}}
+        with open(tpl_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        templates = data.get("templates", {})
+        # 返回精简信息（不含完整文案骨架，按需获取）
+        result = {}
+        for tid, tpl in templates.items():
+            result[tid] = {
+                "label": tpl.get("label", tid),
+                "icon": tpl.get("icon", "📋"),
+                "category": tpl.get("category", "其他"),
+                "description": tpl.get("description", ""),
+                "placeholders": list(tpl.get("placeholders", {}).keys()),
+                "style": tpl.get("style", {}),
+                "avatar_scene": tpl.get("avatar_scene", {}),
+            }
+        return {"templates": result}
+
+    @app.get("/api/scene/templates/{template_id}")
+    async def get_scene_template_detail(template_id: str):
+        """获取单个场景模板详情（含完整文案骨架）"""
+        import yaml
+        from pathlib import Path as _Path
+        tpl_file = _Path("./config/presets/scene_templates.yaml")
+        if not tpl_file.exists():
+            return {"success": False, "error": "模板文件不存在"}
+        with open(tpl_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        templates = data.get("templates", {})
+        if template_id not in templates:
+            return {"success": False, "error": f"模板 {template_id} 不存在"}
+        return {"success": True, "template": templates[template_id]}
+
+    @app.post("/api/scene/fill-script")
+    async def fill_scene_script(req: dict):
+        """根据场景模板和占位符填充值，生成完整文案
+
+        Body: {"template_id": "product_selling", "values": {"product_name": "蓝牙耳机", ...}}
+        """
+        import yaml
+        from pathlib import Path as _Path
+        tpl_file = _Path("./config/presets/scene_templates.yaml")
+        if not tpl_file.exists():
+            return {"success": False, "error": "模板文件不存在"}
+        with open(tpl_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        templates = data.get("templates", {})
+        template_id = req.get("template_id", "")
+        values = req.get("values", {})
+        if template_id not in templates:
+            return {"success": False, "error": f"模板 {template_id} 不存在"}
+        tpl = templates[template_id]
+        script = tpl.get("script_template", "")
+        # 替换占位符 {key} -> values[key]
+        for key, val in values.items():
+            script = script.replace(f"{{{key}}}", str(val))
+        # 检查未填充的占位符
+        import re
+        unfilled = re.findall(r"\{(\w+)\}", script)
+        return {
+            "success": True,
+            "script": script.strip(),
+            "unfilled_placeholders": unfilled,
+            "template_id": template_id,
+        }
+
+    @app.post("/api/scene/apply")
+    async def apply_scene_template(req: dict):
+        """一键应用场景模板：复用 settings_manager.apply_template（5 段全应用）
+
+        与 /api/templates/apply 一致，应用 subtitle/audio/effects/avatar/scene 五段配置。
+        保留本端点以兼容首页"场景模板"卡片的前端调用（返回 applied_sections 字段名）。
+
+        Body: {"template_id": "product_selling"}
+        """
+        template_id = req.get("template_id", "")
+        if not template_id:
+            return {"success": False, "error": "template_id 未填写"}
+        sm = get_settings_manager()
+        result = sm.apply_template(template_id)
+        # 字段映射：apply_template 返回 applied(dict)，前端期望 applied_sections(list)
+        success = result.get("success", False)
+        applied_dict = result.get("applied", {}) or {}
+        resp = {
+            "success": success,
+            "template_id": template_id,
+            "applied_sections": list(applied_dict.keys()) if isinstance(applied_dict, dict) else (applied_dict or []),
+            "message": result.get("message", ""),
+        }
+        if not success:
+            # 失败时前端读取 data.error，做兼容映射
+            resp["error"] = result.get("message", "应用失败")
+        return resp
+
+    @app.get("/api/presets/avatars")
+    async def get_preset_avatars():
+        """获取预制数字人形象库"""
+        import yaml
+        from pathlib import Path as _Path
+        lib_file = _Path("./config/presets/avatar_voice_library.yaml")
+        if not lib_file.exists():
+            return {"avatars": {}}
+        with open(lib_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return {"avatars": data.get("avatars", {})}
+
+    @app.get("/api/presets/avatars/{avatar_id}/image")
+    async def get_preset_avatar_image(avatar_id: str):
+        """获取预制形象占位图"""
+        from pathlib import Path as _Path
+        from fastapi.responses import FileResponse
+        img_path = _Path(f"./config/presets/avatars/{avatar_id}.jpg")
+        if not img_path.exists():
+            return {"success": False, "error": "形象图不存在"}
+        return FileResponse(str(img_path), media_type="image/jpeg")
+
+    @app.post("/api/presets/avatars/{avatar_id}/register")
+    async def register_preset_avatar(avatar_id: str):
+        """将预制形象注册为用户形象（对标万兴播爆"一键使用模板形象"）
+
+        将 config/presets/avatars/{avatar_id}.jpg 复制到 avatars 目录，
+        使用户可直接在向导中选择该形象。
+        """
+        from pathlib import Path as _Path
+        import shutil
+        src = _Path(f"./config/presets/avatars/{avatar_id}.jpg")
+        if not src.exists():
+            return {"success": False, "error": "预制形象图不存在"}
+        target_id = f"preset_{avatar_id}"
+        ok = _get_app().register_avatar(target_id, src)
+        return {"success": ok, "avatar_id": target_id}
+
+    @app.get("/api/presets/voices")
+    async def get_preset_voices():
+        """获取预制音色库"""
+        import yaml
+        from pathlib import Path as _Path
+        lib_file = _Path("./config/presets/avatar_voice_library.yaml")
+        if not lib_file.exists():
+            return {"voices": {}}
+        with open(lib_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return {"voices": data.get("voices", {})}
+
+    @app.post("/api/settings/test/llm")
+    async def test_llm(req: TestLLMRequest):
+        """测试 LLM 连接"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, lambda: get_settings_manager().test_llm(req.model_dump())
+        )
+
+    @app.post("/api/settings/test/tts")
+    async def test_tts(req: TestTTSRequest):
+        """测试 TTS 连接"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, lambda: get_settings_manager().test_tts(req.model_dump())
+        )
+
+    @app.post("/api/settings/test/avatar")
+    async def test_avatar(req: TestAvatarRequest):
+        """测试数字人服务连接"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, lambda: get_settings_manager().test_avatar(req.model_dump())
+        )
+
+    # ============ 文案试听 API ============
+
+    @app.post("/api/preview/tts")
+    async def preview_tts(req: dict):
+        """文案试听：合成任意文本片段，返回音频文件路径
+
+        用于文案编辑区实时试听，支持选中文本或全文前 200 字。
+        可选传入 speed/volume/pitch/emotion 实时预览不同语音效果。
+        """
+        krvoice = _get_app()
+        text = (req.get("text") or "").strip()
+        voice_id = req.get("voice_id", "default")
+        if not text:
+            return {"success": False, "error": "无文案可试听"}
+        # 限制试听长度（避免长时间等待）
+        if len(text) > 200:
+            text = text[:200]
+            logger.info(f"文案试听：截断到 200 字")
+        # 可选音频参数（语速/音量/音高/情感）
+        speed = req.get("speed")
+        volume = req.get("volume")
+        pitch = req.get("pitch")
+        emotion = req.get("emotion")
+        # 类型转换
+        try:
+            speed = float(speed) if speed is not None else None
+        except (TypeError, ValueError):
+            speed = None
+        try:
+            volume = int(volume) if volume is not None else None
+        except (TypeError, ValueError):
+            volume = None
+        try:
+            pitch = int(pitch) if pitch is not None else None
+        except (TypeError, ValueError):
+            pitch = None
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: krvoice.preview_tts(
+                text, voice_id, speed=speed, volume=volume,
+                pitch=pitch, emotion=emotion,
+            ),
+        )
+        return result
+
+    # ============ 文案 AI 处理 API ============
+
+    @app.get("/api/script/templates")
+    async def get_script_templates():
+        """获取文案爆款模板列表"""
+        from ..app import SCRIPT_TEMPLATES
+        return {"success": True, "templates": SCRIPT_TEMPLATES}
+
+    @app.post("/api/script/process")
+    async def process_script(req: ScriptProcessRequest):
+        """AI 文案处理：润色/仿写/扩写/缩写/风格转换/生成/提取"""
+        krvoice = _get_app()
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: krvoice.process_script(
+                script=req.script, action=req.action,
+                style=req.style, topic=req.topic,
+                reference_url=req.reference_url,
+                template_id=req.template_id,
+            )
+        )
+        return result
+
+    @app.post("/api/script/parse")
+    async def parse_share_text(req: ParseShareTextRequest):
+        """轻量解析分享文本：返回识别到的 URL 和描述（不触发下载/ASR）
+
+        用于前端实时预览：用户粘贴抖音/快手分享文本时，
+        立即显示识别到的 URL 和文案描述，确认无误后再点"提取文案"。
+        """
+        text = (req.text or "").strip()
+        if not text:
+            return {"success": True, "url": "", "desc": ""}
+        try:
+            url = ScriptExtractor._extract_url_from_text(text)
+            desc = ScriptExtractor._extract_desc_from_share_text(text)
+            return {"success": True, "url": url, "desc": desc}
+        except Exception as e:
+            logger.warning(f"解析分享文本失败: {e}")
+            return {"success": False, "url": "", "desc": "", "error": str(e)}
+
+    # ============ 文案提取 Cookies 配置（抖音/快手反爬绕过） ============
+
+    @app.post("/api/script/cookies")
+    async def upload_script_cookies(file: UploadFile = File(...)):
+        """上传抖音/快手 cookies 文件（Netscape 格式 .txt），用于 yt-dlp 绕过反爬
+
+        上传后自动更新 asr.cookies_file 配置并触发热重建，立即生效。
+        导出方法：浏览器安装 EditThisCookie / Get cookies.txt 插件，
+        访问 douyin.com 并登录后导出为 .txt（Netscape 格式）。
+        """
+        cookies_dir = Path("./config/cookies")
+        cookies_dir.mkdir(parents=True, exist_ok=True)
+        # 校验扩展名
+        suffix = Path(file.filename or "cookies.txt").suffix.lower()
+        if suffix not in (".txt", ""):
+            raise HTTPException(400, f"cookies 文件需为 .txt 格式（Netscape），收到: {suffix}")
+        # 固定文件名（覆盖旧文件）
+        save_path = cookies_dir / "douyin_cookies.txt"
+        content = await file.read()
+        # 简单校验 Netscape 格式（首行通常为 # Netscape HTTP Cookie File）
+        text_head = content.decode("utf-8", errors="ignore").strip()[:200]
+        if text_head and "#" not in text_head and "Netscape" not in text_head:
+            logger.warning("上传的 cookies 文件可能不是标准 Netscape 格式，仍尝试保存")
+        with open(save_path, "wb") as f:
+            f.write(content)
+        # 更新配置并触发热重建（script_extractor 重新读取 cookies_file）
+        abs_path = str(save_path.resolve())
+        try:
+            get_settings_manager().update_section("asr", {"cookies_file": abs_path})
+        except Exception as e:
+            logger.warning(f"更新 asr.cookies_file 配置失败: {e}")
+        logger.info(f"cookies 文件已保存: {save_path} ({len(content)} bytes), 配置已热更新")
+        return {
+            "success": True,
+            "path": abs_path,
+            "filename": "douyin_cookies.txt",
+            "size": len(content),
+            "message": "cookies 已配置，yt-dlp 下载将自动使用",
+        }
+
+    @app.get("/api/script/cookies")
+    async def get_script_cookies():
+        """查询当前 cookies 配置状态"""
+        try:
+            asr_config = get_settings_manager().get_section("asr", mask_sensitive=False)
+        except Exception:
+            asr_config = {}
+        cookies_file = asr_config.get("cookies_file", "")
+        exists = bool(cookies_file and Path(cookies_file).exists())
+        info: dict = {
+            "configured": bool(cookies_file),
+            "exists": exists,
+            "path": cookies_file,
+        }
+        if exists:
+            p = Path(cookies_file)
+            info["size"] = p.stat().st_size
+            info["mtime"] = int(p.stat().st_mtime)
+        return info
+
+    @app.delete("/api/script/cookies")
+    async def delete_script_cookies():
+        """删除 cookies 文件并清空配置"""
+        try:
+            asr_config = get_settings_manager().get_section("asr", mask_sensitive=False)
+        except Exception:
+            asr_config = {}
+        cookies_file = asr_config.get("cookies_file", "")
+        deleted = False
+        if cookies_file and Path(cookies_file).exists():
+            try:
+                Path(cookies_file).unlink()
+                deleted = True
+            except Exception as e:
+                logger.warning(f"删除 cookies 文件失败: {e}")
+        # 清空配置并热重建
+        try:
+            get_settings_manager().update_section("asr", {"cookies_file": ""})
+        except Exception as e:
+            logger.warning(f"清空 asr.cookies_file 配置失败: {e}")
+        return {"success": True, "deleted": deleted}
+
+    # ============ 批量处理 API ============
+
+    @app.post("/api/batch/generate")
+    async def batch_generate(req: BatchGenerateRequest):
+        """批量生成视频（串行执行，返回每个任务结果）"""
+        krvoice = _get_app()
+        loop = asyncio.get_event_loop()
+        results = []
+
+        def run_batch():
+            batch_results = []
+            for i, item in enumerate(req.items):
+                try:
+                    r = krvoice.submit_and_run(
+                        script=item.script,
+                        reference_video_url=item.reference_video_url,
+                        avatar_id=item.avatar_id,
+                        voice_id=item.voice_id,
+                        script_mode=item.script_mode,
+                        platform=item.platform,
+                        auto_publish=item.auto_publish,
+                    )
+                    r["batch_index"] = i
+                    batch_results.append(r)
+                except Exception as e:
+                    batch_results.append({
+                        "batch_index": i, "success": False, "error": str(e)
+                    })
+            return batch_results
+
+        results = await loop.run_in_executor(None, run_batch)
+        return {"total": len(req.items), "results": results}
+
+    @app.post("/api/batch/matrix")
+    async def batch_matrix(req: dict):
+        """矩阵批量生成（对标万兴播爆批量裂变）
+
+        笛卡尔积展开：1 文案 × M 数字人 × K 音色 × T 模板 = M×K×T 个变体
+        立即返回所有 job_ids，前端轮询 /api/jobs/{job_id} 查看进度
+
+        Body:
+        {
+          "script": "文案",
+          "avatar_ids": ["default", "anchor_female"],
+          "voice_ids": ["default", "xiaoxiao"],
+          "template_ids": [],  # 可选，模板只影响样式，不参与流水线
+          "script_mode": "polish",
+          "platform": "douyin",
+          "auto_publish": false,
+          "parallel": 2
+        }
+        """
+        import itertools
+        from concurrent.futures import ThreadPoolExecutor
+        krvoice = _get_app()
+
+        script = req.get("script", "")
+        avatar_ids = req.get("avatar_ids") or ["default"]
+        voice_ids = req.get("voice_ids") or ["default"]
+        template_ids = req.get("template_ids") or [None]
+        script_mode = req.get("script_mode", "polish")
+        platform = req.get("platform", "douyin")
+        auto_publish = bool(req.get("auto_publish", False))
+        parallel = max(1, min(int(req.get("parallel", 2)), 4))
+        # GPU 安全约束：使用 GPU 模型（latentsync/musetalk/cosyvoice）时强制串行，
+        # 避免多个推理请求同时打 GPU 导致显存溢出（8GB 卡限制）
+        avatar_provider = krvoice.config.get("avatar.provider", "")
+        tts_provider = krvoice.config.get("tts.provider", "")
+        gpu_providers = {"latentsync", "musetalk", "cosyvoice", "qwen3_tts", "qwen3_tts_clone"}
+        if avatar_provider in gpu_providers or tts_provider in gpu_providers:
+            if parallel > 1:
+                parallel = 1
+                krvoice.logger.warning(
+                    "批量矩阵：检测到 GPU provider "
+                    f"(avatar={avatar_provider}, tts={tts_provider})，"
+                    "强制串行执行以防显存溢出"
+                )
+
+        if not script.strip():
+            raise HTTPException(400, "文案不能为空")
+        if not avatar_ids or not voice_ids:
+            raise HTTPException(400, "至少选择一个数字人和一个音色")
+
+        # 笛卡尔积展开
+        combos = list(itertools.product(avatar_ids, voice_ids, template_ids))
+
+        # 提交所有任务，收集 job_ids
+        job_ids = []
+        job_meta = []
+        for avatar_id, voice_id, template_id in combos:
+            metadata = {"platform": platform, "auto_publish": auto_publish}
+            if template_id:
+                metadata["template_id"] = template_id
+                metadata["matrix_template"] = template_id
+            job_id = krvoice.orchestrator.submit_job(
+                script=script,
+                avatar_id=avatar_id,
+                voice_id=voice_id,
+                script_mode=script_mode,
+                metadata=metadata,
+            )
+            job_ids.append(job_id)
+            job_meta.append({
+                "job_id": job_id,
+                "avatar_id": avatar_id,
+                "voice_id": voice_id,
+                "template_id": template_id,
+            })
+
+        # 后台并发执行（受限并发）
+        def _run_matrix():
+            with ThreadPoolExecutor(max_workers=parallel) as ex:
+                futures = [ex.submit(krvoice.orchestrator.run_job, jid) for jid in job_ids]
+                for f in futures:
+                    try:
+                        f.result()
+                    except Exception as e:
+                        logger.warning(f"矩阵任务执行失败: {e}")
+
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(None, _run_matrix)
+
+        return {
+            "success": True,
+            "total": len(job_ids),
+            "job_ids": job_ids,
+            "matrix": job_meta,
+            "dimensions": {
+                "avatars": len(avatar_ids),
+                "voices": len(voice_ids),
+                "templates": len([t for t in template_ids if t]),
+            },
+        }
+
+    # ============ 语音播客 API ============
+
+    # 模块级播客任务进度存储（重启后丢失，适合轻量级场景）
+    _podcast_jobs: dict[str, dict[str, Any]] = {}
+
+    @app.post("/api/podcast/rewrite")
+    async def podcast_rewrite(req: PodcastRewriteRequest):
+        """AI 将文章/主题改写为播客剧本"""
+        if not req.content.strip():
+            return JSONResponse({"error": "内容不能为空"}, status_code=400)
+        try:
+            script = _get_app().podcast_rewrite(
+                content=req.content,
+                mode=req.mode,
+                role_count=max(0, min(10, req.role_count)),
+                style=req.style,
+                duration_minutes=max(1, min(30, req.duration_minutes)),
+                role_desc=req.role_desc,
+            )
+            return {"script": script, "char_count": len(script)}
+        except Exception as e:
+            logger.exception(f"播客剧本改写失败: {e}")
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    @app.post("/api/podcast/suggest-voices")
+    async def podcast_suggest_voices(req: PodcastSuggestVoicesRequest):
+        """根据剧本自动建议音色分配"""
+        if not req.script.strip():
+            return JSONResponse({"error": "剧本不能为空"}, status_code=400)
+        try:
+            suggestion = _get_app().podcast_suggest_voices(req.script)
+            return {"voice_map": suggestion}
+        except Exception as e:
+            logger.exception(f"音色建议失败: {e}")
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    @app.post("/api/podcast/generate")
+    async def podcast_generate(req: PodcastGenerateRequest):
+        """生成播客音频（异步，返回 job_id 供轮询）"""
+        if not req.script.strip():
+            return JSONResponse({"error": "剧本不能为空"}, status_code=400)
+        if not req.voice_map:
+            return JSONResponse({"error": "音色映射不能为空"}, status_code=400)
+
+        import threading
+        import uuid
+
+        job_id = f"pod_{uuid.uuid4().hex[:10]}"
+        app_obj = _get_app()
+
+        # 初始化进度存储
+        _podcast_jobs[job_id] = {
+            "status": "pending",
+            "progress": None,
+            "result": None,
+            "error": None,
+            "created_at": time.time(),
+        }
+
+        def _run():
+            _podcast_jobs[job_id]["status"] = "running"
+            try:
+                def _progress_cb(step, status, data):
+                    _podcast_jobs[job_id]["progress"] = data
+
+                result = app_obj.podcast_generate(
+                    script_text=req.script,
+                    voice_map=req.voice_map,
+                    output_name=req.output_name or job_id,
+                    bgm_track=req.bgm_track,
+                    bgm_volume=req.bgm_volume,
+                    output_format=req.output_format,
+                    progress_callback=_progress_cb,
+                )
+                _podcast_jobs[job_id]["status"] = "success"
+                _podcast_jobs[job_id]["result"] = result
+            except Exception as e:
+                _podcast_jobs[job_id]["status"] = "failed"
+                _podcast_jobs[job_id]["error"] = str(e)
+                logger.exception(f"播客生成失败 job={job_id}: {e}")
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+
+        return {"job_id": job_id, "status": "pending"}
+
+    @app.get("/api/podcast/jobs/{job_id}")
+    async def podcast_job_status(job_id: str):
+        """查询播客生成任务状态"""
+        job = _podcast_jobs.get(job_id)
+        if job is None:
+            return JSONResponse({"error": "任务不存在"}, status_code=404)
+        return job
+
+    @app.post("/api/podcast/jobs/{job_id}/cancel")
+    async def podcast_cancel_job(job_id: str):
+        """取消播客生成任务（标记为 cancelled，后台线程会在下次检查时退出）"""
+        job = _podcast_jobs.get(job_id)
+        if job is None:
+            return JSONResponse({"error": "任务不存在"}, status_code=404)
+        if job["status"] in ("success", "failed", "cancelled"):
+            return {"status": job["status"], "message": "任务已结束"}
+        job["status"] = "cancelled"
+        job["error"] = "用户取消任务"
+        return {"status": "cancelled", "message": "任务已取消"}
+
+    @app.get("/api/podcast/voices")
+    async def podcast_voices():
+        """获取可用于播客的音色列表（MOSS 内置 + 克隆音色）"""
+        try:
+            voices = _get_app().list_voices()
+            # 过滤出 MOSS 内置音色和克隆音色（播客主要用这些）
+            podcast_voices = [v for v in voices if v.get("type") in ("preset", "custom", "provider_default")]
+            return {"voices": podcast_voices}
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    @app.post("/api/podcast/extract")
+    async def podcast_extract(req: dict):
+        """从网络链接提取文本内容（文章/视频文案），用于播客内容来源
+
+        Body: {"url": "https://..."}
+        复用 ScriptExtractor.extract()，支持抖音/快手/B站/YouTube 视频文案 + 文章正文提取。
+        """
+        url = (req.get("url") or "").strip()
+        if not url:
+            return JSONResponse({"error": "链接不能为空"}, status_code=400)
+        try:
+            loop = asyncio.get_event_loop()
+            extractor = ScriptExtractor(ffmpeg=_get_app().ffmpeg)
+            text = await loop.run_in_executor(None, lambda: extractor.extract(url))
+            char_count = len(text)
+            return {"text": text, "char_count": char_count}
+        except Exception as e:
+            logger.exception(f"播客内容提取失败: {e}")
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    @app.post("/api/podcast/jobs/{job_id}/open-folder")
+    async def podcast_open_folder(job_id: str):
+        """打开播客任务输出目录"""
+        import os
+        import sys
+        from ..core.config import PROJECT_ROOT
+
+        job = _podcast_jobs.get(job_id)
+        if not job or not job.get("result"):
+            raise HTTPException(404, "任务或结果不存在")
+        output_dir = job["result"].get("output_dir")
+        if not output_dir:
+            raise HTTPException(404, "输出目录不存在")
+        out_path = Path(output_dir)
+        if not out_path.exists():
+            raise HTTPException(404, f"目录不存在: {output_dir}")
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(out_path))
+            elif sys.platform == "darwin":
+                import subprocess
+                subprocess.Popen(["open", str(out_path)])
+            else:
+                import subprocess
+                subprocess.Popen(["xdg-open", str(out_path)])
+            return {"success": True, "path": str(out_path)}
+        except Exception as e:
+            logger.error(f"打开播客目录失败: {e}")
+            raise HTTPException(500, f"打开目录失败: {e}")
+
+    # ============ 多平台一键分发 API（对标蝉妈妈/新榜矩阵分发） ============
+
+    @app.post("/api/publish")
+    async def publish_video(req: dict):
+        """一键分发视频到多平台
+
+        Body: {"job_id": "xxx", "platforms": ["bilibili","douyin"], "title":"", "description":"", "tags":[]}
+        从 job 上下文读取视频路径，调用 Publisher 发布到指定平台
+        """
+        from ..modules.publisher import Publisher
+        loop = asyncio.get_event_loop()
+
+        job_id = req.get("job_id", "")
+        platforms = req.get("platforms") or []
+        title = req.get("title", "")
+        description = req.get("description", "")
+        tags = req.get("tags") or []
+
+        if not job_id:
+            raise HTTPException(400, "缺少 job_id")
+        if not platforms:
+            raise HTTPException(400, "至少选择一个平台")
+
+        def _publish():
+            job = krvoice.get_job(job_id)
+            if not job:
+                return {"success": False, "error": "任务不存在"}
+
+            # 读 context.json（final_video / cover_path 都从这里取）
+            job_dir = Path("workspace_data") / "jobs" / job_id
+            ctx_file = job_dir / "context.json"
+            ctx: dict = {}
+            if ctx_file.exists():
+                try:
+                    import json as _json
+                    ctx = _json.loads(ctx_file.read_text(encoding="utf-8"))
+                except Exception:
+                    ctx = {}
+
+            # 视频路径解析优先级：
+            # 1) output.final_video（DB）
+            # 2) context.final_video
+            # 3) job 目录下 final_video.mp4 兜底
+            output = job.get("output") or {}
+            video_path = (
+                output.get("final_video")
+                or ctx.get("final_video")
+                or ctx.get("final_video_path")
+                or ctx.get("video_path")
+            )
+            if not video_path:
+                # 兜底：job 目录下查找 final_video.mp4
+                fallback = job_dir / "final_video.mp4"
+                if fallback.exists():
+                    video_path = str(fallback)
+            if not video_path:
+                return {"success": False, "error": "任务无视频产物"}
+            video_p = Path(video_path)
+            if not video_p.exists():
+                return {"success": False, "error": f"视频文件不存在: {video_path}"}
+
+            # 从 context 读 cover_path
+            cover_path = None
+            cp = ctx.get("cover_path")
+            if cp and Path(cp).exists():
+                cover_path = cp
+
+            publisher = Publisher()
+            manifest_path = Path("workspace_data") / "jobs" / job_id / "publish_manifest.json"
+            result = publisher.publish_video(
+                video_path=video_p,
+                platforms=platforms,
+                title=title or video_p.stem,
+                cover_path=cover_path,
+                description=description,
+                tags=tags,
+                manifest_path=manifest_path,
+            )
+            return result
+
+        krvoice = _get_app()
+        result = await loop.run_in_executor(None, _publish)
+        # 兼容错误返回
+        if "error" in result and "success" not in result:
+            return {"success": False, **result}
+        return {"success": True, **result}
+
+    @app.get("/api/publish/manifest/{job_id}")
+    async def get_publish_manifest(job_id: str):
+        """查看任务发布清单"""
+        manifest_path = Path("workspace_data") / "jobs" / job_id / "publish_manifest.json"
+        if not manifest_path.exists():
+            raise HTTPException(404, "无发布清单")
+        import json as _json
+        try:
+            data = _json.loads(manifest_path.read_text(encoding="utf-8"))
+            return {"success": True, "manifest": data, "path": str(manifest_path)}
+        except Exception as e:
+            raise HTTPException(500, f"读取清单失败: {e}")
+
+    @app.get("/api/publish/cookies")
+    async def get_cookies_status():
+        """查看各平台 Cookie 配置状态"""
+        from ..modules.publisher import Publisher
+        publisher = Publisher()
+        return {"success": True, "cookies": publisher.get_cookie_status()}
+
+    @app.post("/api/publish/cookies/{platform}")
+    async def save_cookie(platform: str, req: dict):
+        """保存平台 Cookie
+
+        Body: {"cookie": {...}} 或 {"cookie_text": "raw cookie string"}
+        """
+        from ..modules.publisher import Publisher
+        publisher = Publisher()
+        cookie_data = req.get("cookie")
+        if not cookie_data and req.get("cookie_text"):
+            # 解析 raw cookie 字符串为简单 dict
+            cookie_data = {"raw": req.get("cookie_text")}
+        if not cookie_data:
+            raise HTTPException(400, "缺少 cookie 数据")
+        result = publisher.save_cookie(platform, cookie_data)
+        if not result.get("success"):
+            raise HTTPException(400, result.get("error", "保存失败"))
+        return result
+
+    @app.delete("/api/publish/cookies/{platform}")
+    async def delete_cookie(platform: str):
+        """删除平台 Cookie"""
+        from ..modules.publisher import Publisher
+        publisher = Publisher()
+        cookie_file = publisher.cookies_dir / f"{platform}.json"
+        if cookie_file.exists():
+            cookie_file.unlink()
+            return {"success": True, "deleted": True}
+        return {"success": True, "deleted": False, "message": "Cookie 不存在"}
+
+    # ============ 傻瓜化登录：扫码/浏览器登录自动获取 Cookie ============
+
+    @app.post("/api/publish/login/bilibili/qrcode")
+    async def bilibili_qrcode_login():
+        """B站扫码登录 - 生成二维码，用户用B站APP扫码后自动获取Cookie
+
+        流程：
+        1. 调此接口生成二维码
+        2. 用B站APP扫码
+        3. 轮询 /api/publish/login/bilibili/check 检查状态
+        4. 扫码确认后Cookie自动保存
+        """
+        from ..modules.publisher import Publisher
+        # 清除旧的 publisher 实例（如果有），避免残留状态干扰新二维码
+        old_publisher = getattr(app.state, "bilibili_publisher", None)
+        if old_publisher is not None:
+            try:
+                old_publisher._bilibili_qr_login = None
+                old_publisher._bilibili_qr_done = False
+                old_publisher._bilibili_qr_cookie = None
+            except Exception:
+                pass
+            app.state.bilibili_publisher = None
+
+        publisher = Publisher()
+        result = publisher.login_bilibili_qrcode()
+        if not result.get("success"):
+            raise HTTPException(500, result.get("error", "生成二维码失败"))
+        # 保存 publisher 实例到全局供轮询使用
+        app.state.bilibili_publisher = publisher
+        return result
+
+    @app.get("/api/publish/login/bilibili/check")
+    async def bilibili_login_check():
+        """检查B站扫码登录状态（配合 /api/publish/login/bilibili/qrcode 使用）
+
+        注意：成功后不立即清除 publisher，避免前端轮询竞态条件：
+        - 前端 setTimeout 已调度下一次请求，但 app.state.bilibili_publisher 已被清除
+        - 会导致下一次请求返回 400 "请先调用..." 错误
+        - publisher 会在以下情况下被清除：
+          1. 生成新二维码时（覆盖旧实例）
+          2. 二维码过期时（check_bilibili_login 内部清除）
+          3. 服务重启时（内存状态丢失）
+        """
+        publisher = getattr(app.state, "bilibili_publisher", None)
+        if not publisher:
+            raise HTTPException(400, "请先调用 /api/publish/login/bilibili/qrcode 生成二维码")
+        result = publisher.check_bilibili_login()
+        # 不再立即清除 publisher，让 check_bilibili_login 内部通过 _bilibili_qr_done 缓存成功状态
+        # 这样即使前端轮询有竞态条件，后续 check 也会返回缓存的成功状态
+        return result
+
+    @app.post("/api/publish/login/{platform}")
+    async def browser_login(platform: str):
+        """抖音/快手/视频号浏览器登录 - 弹出浏览器让用户登录，自动提取Cookie
+
+        调用后阻塞等待用户登录（最长5分钟），登录成功后自动保存Cookie。
+        """
+        from ..modules.publisher import Publisher
+        if platform not in ("douyin", "kuaishou", "wechat_video"):
+            raise HTTPException(400, f"不支持的平台: {platform}（仅支持 douyin/kuaishou/wechat_video）")
+
+        publisher = Publisher()
+        # 浏览器登录是阻塞操作，在线程池中执行避免阻塞事件循环
+        import asyncio
+        result = await asyncio.to_thread(publisher.login_browser_platform, platform)
+        return result
+
+    # ============ 发布测试台 API（4 阶段测试链路） ============
+
+    @app.get("/api/publish/test/cookies")
+    async def test_publish_cookies():
+        """测试 1：Cookie 文件检查
+        检查各平台 Cookie 文件是否存在、字段是否完整
+        """
+        from ..modules.publisher import Publisher
+        publisher = Publisher()
+        return publisher.test_cookie_files()
+
+    @app.post("/api/publish/test/login_check")
+    async def test_publish_login_check(req: dict):
+        """测试 2：登录态真实性校验
+        实际加载 Cookie 访问平台，检测是否被重定向到登录页
+        Body: {"platform": "bilibili"} 或 {"platform": "douyin"}
+        """
+        from ..modules.publisher import Publisher
+        platform = req.get("platform", "")
+        if not platform:
+            raise HTTPException(400, "缺少 platform 参数")
+        if platform not in ("bilibili", "douyin", "kuaishou", "wechat_video"):
+            raise HTTPException(400, f"不支持的平台: {platform}")
+
+        publisher = Publisher()
+        # Playwright 是同步阻塞操作，在线程池中执行
+        import asyncio
+        result = await asyncio.to_thread(publisher.test_login_status, platform)
+        return result
+
+    @app.post("/api/publish/test/selectors")
+    async def test_publish_selectors(req: dict):
+        """测试 3：页面选择器探测
+        验证各平台发布页的 upload_input/title_input/publish_btn 选择器是否能定位到
+        Body: {"platform": "douyin"}
+        """
+        from ..modules.publisher import Publisher
+        platform = req.get("platform", "")
+        if not platform:
+            raise HTTPException(400, "缺少 platform 参数")
+        if platform not in ("douyin", "kuaishou", "wechat_video"):
+            raise HTTPException(400, f"不支持的平台: {platform}（B站走 API 无需选择器）")
+
+        publisher = Publisher()
+        import asyncio
+        result = await asyncio.to_thread(publisher.test_page_selectors, platform)
+        return result
+
+    @app.post("/api/publish/test/upload")
+    async def test_publish_upload(req: dict):
+        """测试 4：实际上传测试
+        上传视频文件到平台发布页，验证上传流程是否正常
+        Body: {"platform": "douyin", "video_path": "...", "dry_run": true, "title": "", "description": ""}
+        dry_run=true 仅上传不点发布；dry_run=false 真实发布
+        """
+        from ..modules.publisher import Publisher
+        platform = req.get("platform", "")
+        video_path = req.get("video_path", "")
+        dry_run = req.get("dry_run", True)
+        title = req.get("title", "")
+        description = req.get("description", "")
+
+        if not platform:
+            raise HTTPException(400, "缺少 platform 参数")
+        if not video_path:
+            raise HTTPException(400, "缺少 video_path 参数")
+        if platform not in ("bilibili", "douyin", "kuaishou", "wechat_video"):
+            raise HTTPException(400, f"不支持的平台: {platform}")
+
+        publisher = Publisher()
+        import asyncio
+        result = await asyncio.to_thread(
+            publisher.test_video_upload, platform, video_path, dry_run, title, description
+        )
+        return result
+
+    return app
+
+
+app = create_app()
+
+
+def launch(host: str = "0.0.0.0", port: int = 8000) -> None:
+    """启动 Web 服务"""
+    import uvicorn
+    logger.info(f"启动 Web 服务: http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port, log_level="info")
+
+
+if __name__ == "__main__":
+    launch()

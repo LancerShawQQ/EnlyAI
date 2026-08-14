@@ -1,0 +1,3206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
+  <title>EnlyAI · 虚拟人口播智能体</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=20260729lg3">
+  <link rel="stylesheet" href="/static/css/liquid_glass.css?v=20260729lg3">
+  <script src="https://unpkg.com/lucide@0.460.0"></script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+  <!-- 移动端点击修复（内联确保优先级，避免外部CSS缓存导致失效） -->
+  <style>
+    @media (max-width: 768px) {
+      html, body {
+        height: auto !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        touch-action: manipulation !important;
+      }
+      /* 彻底放弃 flex 布局，改用最简单的块级布局 */
+      .app-layout {
+        display: block !important;
+        min-height: 100vh !important;
+        min-height: 100dvh !important;
+        height: auto !important;
+        overflow: visible !important;
+        position: static !important;
+        z-index: auto !important;
+      }
+      .main-content {
+        display: block !important;
+        flex: none !important;
+        overflow: visible !important;
+        min-height: 0 !important;
+        touch-action: manipulation !important;
+        position: static !important;
+        z-index: auto !important;
+        padding: 76px 16px 80px !important;
+        padding-top: calc(76px + env(safe-area-inset-top)) !important;
+        padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important;
+      }
+      .sidebar:not(.open) {
+        visibility: hidden !important;
+        pointer-events: none !important;
+        transform: translateX(-100%) !important;
+      }
+      .sidebar-overlay:not(.active) {
+        display: none !important;
+        pointer-events: none !important;
+      }
+      /* 移除所有动画，避免 transform 创建 stacking context 影响触摸 */
+      .page { animation: none !important; }
+      .dashboard-hero { animation: none !important; }
+      .hero-orb { animation: none !important; }
+      .hero-icon-big { animation: none !important; }
+      /* 确保 hero 区不创建影响触摸的层叠上下文 */
+      .dashboard-hero {
+        overflow: visible !important;
+        backdrop-filter: none !important;
+      }
+      .dashboard-hero::before {
+        display: none !important;
+      }
+      /* 确保所有交互元素可点击 */
+      .btn, .nav-item, .bottom-nav-item, .scene-card, .template-card,
+      .avatar-card, .voice-card, .preset-avatar-card, .preset-voice-card,
+      .scene-template-card, .menu-toggle, .mobile-quick-create,
+      .upload-zone, .wizard-step, .sub-tab, .action-btn, .asset-card,
+      .recent-card, button, a, input[type="button"], input[type="submit"],
+      select, label, [onclick] {
+        pointer-events: auto !important;
+        touch-action: manipulation !important;
+        position: relative !important;
+        z-index: 1 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+
+    <!-- ========== 移动端顶部栏 ========== -->
+    <header class="mobile-topbar">
+      <button class="menu-toggle" id="menu-toggle" aria-label="打开菜单">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="mobile-logo"><i data-lucide="film"></i> Enly<span>AI</span></div>
+      <button class="mobile-quick-create" id="mobile-quick-create" aria-label="快速创建"><i data-lucide="plus"></i></button>
+    </header>
+
+    <!-- ========== 侧边栏遮罩（移动端抽屉） ========== -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- ========== 侧边栏 ========== -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <div class="logo-icon"><i data-lucide="film"></i></div>
+          <div class="logo-text">Enly<span>AI</span></div>
+        </div>
+      </div>
+
+            <nav class="sidebar-nav">
+        <button class="nav-item active" id="nav-wizard">
+          <span class="nav-icon"><i data-lucide="wand-2"></i></span><span>视频口播</span>
+        </button>
+        <button class="nav-item" id="nav-podcast">
+          <span class="nav-icon"><i data-lucide="podcast"></i></span><span>语音播客</span>
+        </button>
+        <button class="nav-item" id="nav-settings">
+          <span class="nav-icon"><i data-lucide="settings"></i></span><span>设置中心</span>
+        </button>
+        <button class="nav-item" id="nav-health">
+          <span class="nav-icon"><i data-lucide="activity"></i></span><span>系统状态</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-indicator">
+          <div class="status-dot" id="status-dot"></div>
+          <span id="status-text">检查中...</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ========== 主内容区 ========== -->
+    <main class="main-content">
+
+      <!-- ===== 页面: 首页仪表盘（默认激活） ===== -->
+      <div class="page" id="page-dashboard">
+        <!-- 1.1 Hero 欢迎区 -->
+        <div class="dashboard-hero">
+          <div class="hero-content">
+            <h1 class="hero-title">开始创作你的数字人口播视频</h1>
+            <p class="hero-subtitle">AI 驱动 · 全流程自动化 · 商业级品质</p>
+            <div class="hero-actions">
+              <button class="btn btn-primary" id="dash-new-video-btn"><i data-lucide="rocket"></i> 新建口播视频</button>
+              <button class="btn btn-secondary" id="dash-from-template-btn"><i data-lucide="clipboard-list"></i> 从模板开始</button>
+            </div>
+          </div>
+          <div class="hero-decoration">
+            <div class="hero-orb"></div>
+            <div class="hero-orb hero-orb-2"></div>
+            <div class="hero-icon-big"><i data-lucide="film"></i></div>
+          </div>
+        </div>
+
+        <!-- 1.2 场景化入口卡 -->
+        <div class="section-header">
+          <h2 class="section-title">按场景开始</h2>
+        </div>
+        <div class="scene-card-grid">
+          <div class="scene-card" data-scene="self_media">
+            <div class="scene-card-icon"><i data-lucide="megaphone"></i></div>
+            <div class="scene-card-title">自媒体口播</div>
+            <div class="scene-card-desc">短视频口播、知识分享、Vlog</div>
+          </div>
+          <div class="scene-card" data-scene="marketing">
+            <div class="scene-card-icon"><i data-lucide="shopping-cart"></i></div>
+            <div class="scene-card-title">营销推广</div>
+            <div class="scene-card-desc">产品介绍、直播带货、广告投放</div>
+          </div>
+          <div class="scene-card" data-scene="knowledge">
+            <div class="scene-card-icon"><i data-lucide="book-open"></i></div>
+            <div class="scene-card-title">知识科普</div>
+            <div class="scene-card-desc">教程讲解、课程录制、科普视频</div>
+          </div>
+          <div class="scene-card" data-scene="enterprise">
+            <div class="scene-card-icon"><i data-lucide="building-2"></i></div>
+            <div class="scene-card-title">政企宣传</div>
+            <div class="scene-card-desc">企业宣传、新闻播报、培训视频</div>
+          </div>
+        </div>
+
+        <!-- 1.3 最近创作 -->
+        <div class="section-header">
+          <h2 class="section-title">最近创作</h2>
+          <button class="btn btn-sm btn-secondary" id="dash-view-all-jobs">查看全部 →</button>
+        </div>
+        <div class="recent-scroll" id="dash-recent-list">
+          <div class="empty-state">
+            <div class="empty-state-icon"><i data-lucide="film"></i></div>
+            <div>还没有创作记录，点击上方按钮开始吧</div>
+          </div>
+        </div>
+
+        <!-- 1.4 模板画廊预览 -->
+        <div class="section-header">
+          <h2 class="section-title">热门模板</h2>
+          <button class="btn btn-sm btn-secondary" id="dash-view-all-templates">查看全部 →</button>
+        </div>
+        <div class="template-grid" id="dash-template-grid"></div>
+
+        <!-- 1.5 系统状态条 -->
+        <div class="dashboard-status-bar" id="dash-status-bar">
+          <div class="status-bar-item" data-key="ffmpeg">
+            <span class="status-bar-dot"></span>
+            <span class="status-bar-label">FFmpeg</span>
+          </div>
+          <div class="status-bar-item" data-key="llm">
+            <span class="status-bar-dot"></span>
+            <span class="status-bar-label">LLM</span>
+          </div>
+          <div class="status-bar-item" data-key="tts">
+            <span class="status-bar-dot"></span>
+            <span class="status-bar-label">TTS</span>
+          </div>
+          <div class="status-bar-item" data-key="avatar">
+            <span class="status-bar-dot"></span>
+            <span class="status-bar-label">Avatar</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面 0: 视频口播 ===== -->
+      <div class="page active" id="page-wizard">
+        <div class="page-header">
+          <h1 class="page-title">视频口播</h1>
+          <p class="page-subtitle">流水线式引导创作，6 步完成商业级数字人口播视频</p>
+        </div>
+
+        <!-- 步骤指示器 -->
+        <div class="wizard-stepper" id="wizard-stepper">
+          <div class="wizard-step active" data-step="1" onclick="wizardGoToStep(1)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">1</span></div>
+            <div class="wizard-step-text">选择模板</div>
+          </div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="2" onclick="wizardGoToStep(2)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">2</span></div>
+            <div class="wizard-step-text">数字人形象</div>
+          </div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="3" onclick="wizardGoToStep(3)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">3</span></div>
+            <div class="wizard-step-text">文案输入</div>
+          </div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="4" onclick="wizardGoToStep(4)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">4</span></div>
+            <div class="wizard-step-text">声音设置</div>
+          </div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="5" onclick="wizardGoToStep(5)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">5</span></div>
+            <div class="wizard-step-text">字幕与效果</div>
+          </div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="6" onclick="wizardGoToStep(6)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">6</span></div>
+            <div class="wizard-step-text">预览与生成</div>
+          </div>
+        </div>
+
+        <!-- 步骤1：选择模板 -->
+        <div class="wizard-panel active" id="wizard-panel-1">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="newspaper"></i></span> 选择创作模板</div>
+              <span class="hint">点击卡片选中，可一键应用全套样式</span>
+            </div>
+            <div class="template-grid" id="wizard-template-grid"></div>
+            <div class="form-row" style="margin-top:10px">
+              <button class="btn btn-primary" id="wizard-apply-template-btn"><i data-lucide="check"></i> 应用此模板</button>
+              <button class="btn btn-secondary" id="wizard-skip-template-btn">跳过，自定义</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤2：数字人形象 -->
+        <div class="wizard-panel" id="wizard-panel-2">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="user-round"></i></span> 数字人形象</div>
+              <span class="hint">点击卡片选中，再次点击取消</span>
+            </div>
+            <div class="avatar-card-grid" id="wiz-avatar-grid"></div>
+            <input type="hidden" id="wiz-avatar" value="default">
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="settings"></i></span> 高级设置</div>
+              <button class="btn btn-sm btn-secondary" type="button" onclick="toggleCollapse('wiz-avatar-advanced', this)">展开</button>
+            </div>
+            <div class="collapse-body" id="wiz-avatar-advanced" style="display:none">
+              <div class="form-group">
+                <label class="form-label">姿态</label>
+                <div class="btn-card-grid" id="wiz-pose-grid"></div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">水平位置</label>
+                <div class="btn-card-grid btn-card-grid-3" id="wiz-position-grid">
+                  <button class="btn-card" data-value="left" type="button"><div class="btn-card-label">左</div></button>
+                  <button class="btn-card active" data-value="center" type="button"><div class="btn-card-label">中</div></button>
+                  <button class="btn-card" data-value="right" type="button"><div class="btn-card-label">右</div></button>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">大小 <span class="hint" id="wiz-scale-val">1.0</span></label>
+                <input type="range" class="form-range" id="wiz-scale" min="0.3" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('wiz-scale-val').textContent=this.value">
+              </div>
+              <div class="form-group">
+                <label class="form-label">背景类型</label>
+                <div class="btn-card-grid btn-card-grid-3" id="wiz-bg-type-grid">
+                  <button class="btn-card active" data-value="transparent" type="button"><div class="btn-card-label">透明</div></button>
+                  <button class="btn-card" data-value="solid" type="button"><div class="btn-card-label">纯色</div></button>
+                  <button class="btn-card" data-value="image" type="button"><div class="btn-card-label">图片</div></button>
+                </div>
+              </div>
+              <div class="form-group" id="wiz-bg-color-group" style="display:none">
+                <label class="form-label">背景颜色</label>
+                <input type="color" class="form-input" id="wiz-bg-color" value="#1a1a2e" style="height:42px;padding:4px">
+              </div>
+              <div class="form-group" id="wiz-bg-image-group" style="display:none">
+                <label class="form-label">背景图片路径</label>
+                <input class="form-input" id="wiz-bg-image" placeholder="./config/backgrounds/bg01.jpg">
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>显示 Logo</span>
+                  <label class="toggle-switch"><input type="checkbox" id="wiz-show-logo"><span class="toggle-slider"></span></label>
+                </label>
+              </div>
+              <div class="form-group" id="wiz-logo-position-group" style="display:none">
+                <label class="form-label">Logo 位置</label>
+                <select class="form-select" id="wiz-logo-position">
+                  <option value="top-left">左上</option>
+                  <option value="top-right">右上</option>
+                  <option value="bottom-left">左下</option>
+                  <option value="bottom-right" selected>右下</option>
+                </select>
+              </div>
+              <div class="form-group" id="wiz-logo-image-group" style="display:none">
+                <label class="form-label">Logo 图片路径</label>
+                <input class="form-input" id="wiz-logo-image" placeholder="./config/logo.png">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤3：文案输入 -->
+        <div class="wizard-panel" id="wizard-panel-3">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="pen-line"></i></span> 文案输入</div>
+              <span class="hint" id="wiz-script-count">0 字</span>
+            </div>
+            <div class="sub-tabs">
+              <button class="sub-tab active" data-wiztab="manual" type="button"><i data-lucide="pen-line"></i> 手动输入</button>
+              <button class="sub-tab" data-wiztab="ai" type="button"><i data-lucide="brain-circuit"></i> AI 生成</button>
+              <button class="sub-tab" data-wiztab="extract" type="button"><i data-lucide="link"></i> 对标提取</button>
+            </div>
+            <div class="sub-page active" id="wiz-script-manual">
+              <div class="script-toolbar">
+                <div class="script-toolbar-group">
+                  <div class="script-dropdown">
+                    <button class="btn btn-sm btn-secondary" id="wiz-polish-btn" type="button">AI润色 ▼</button>
+                    <div class="script-dropdown-menu" id="wiz-polish-menu">
+                      <div class="script-dropdown-item" data-style="口语化">口语化</div>
+                      <div class="script-dropdown-item" data-style="专业">专业</div>
+                      <div class="script-dropdown-item" data-style="幽默">幽默</div>
+                      <div class="script-dropdown-item" data-style="激情">激情</div>
+                      <div class="script-dropdown-item" data-style="温柔">温柔</div>
+                    </div>
+                  </div>
+                  <button class="btn btn-sm btn-secondary" id="wiz-expand-btn" type="button">AI扩写</button>
+                  <button class="btn btn-sm btn-secondary" id="wiz-shorten-btn" type="button">AI缩写</button>
+                  <button class="btn btn-sm btn-secondary" id="wiz-smooth-btn" type="button">去冗余</button>
+                  <button class="btn btn-sm btn-secondary" id="wiz-hook-btn" type="button">优化钩子</button>
+                  <button class="btn btn-sm btn-secondary" id="wiz-analyze-btn" type="button"><i data-lucide="search-analytics" style="width:14px;height:14px"></i> 爆款分析</button>
+                  <button class="btn btn-sm btn-secondary" id="wiz-preview-tts-btn" type="button"><i data-lucide="headphones" style="width:14px;height:14px"></i> 试听</button>
+                  <button class="btn btn-sm btn-secondary" id="wiz-clear-btn" type="button">清空</button>
+                </div>
+              </div>
+              <!-- 占位符填充表单：应用模板后动态渲染（仅当模板含 placeholders 时显示） -->
+              <div id="wiz-placeholder-form" class="placeholder-form" style="display:none;margin-bottom:12px">
+                <div class="placeholder-form-header">
+                  <span class="placeholder-form-title"><i data-lucide="edit-3" style="width:14px;height:14px"></i> 模板占位符填充</span>
+                  <span class="placeholder-form-hint">填写以下字段，点击"生成完整文案"自动套入骨架</span>
+                </div>
+                <div class="placeholder-form-fields" id="wiz-placeholder-fields"></div>
+                <div class="placeholder-form-actions">
+                  <button class="btn btn-sm btn-primary" id="wiz-fill-script-btn" type="button"><i data-lucide="file-text" style="width:14px;height:14px"></i> 生成完整文案</button>
+                  <button class="btn btn-sm btn-ghost" id="wiz-hide-placeholder-btn" type="button">收起</button>
+                </div>
+              </div>
+              <div class="form-group">
+                <textarea class="form-textarea" id="wiz-script" style="min-height:200px" placeholder="输入口播文案，建议 150-500 字..."></textarea>
+              </div>
+              <div class="script-stats" id="wiz-script-stats">
+                <span class="script-stats-count">字数 0 字</span>
+                <span class="script-stats-sep">·</span>
+                <span class="script-stats-duration">预估时长 0 秒</span>
+              </div>
+              <div class="script-warning" id="wiz-script-warning" style="display:none"></div>
+              <!-- 爆款分析报告区域 -->
+              <div class="viral-analysis" id="wiz-viral-analysis" style="display:none">
+                <div class="viral-analysis-header">
+                  <span class="viral-analysis-title"><i data-lucide="search-analytics"></i> 爆款结构分析报告</span>
+                  <button class="btn btn-sm btn-ghost" id="wiz-viral-close" type="button"><i data-lucide="x"></i></button>
+                </div>
+                <div class="viral-analysis-body" id="wiz-viral-body"></div>
+              </div>
+            </div>
+            <div class="sub-page" id="wiz-script-ai">
+              <div class="form-group">
+                <label class="form-label">爆款模板（可选）</label>
+                <div class="template-grid" id="wiz-template-grid">
+                  <div class="template-card active" data-tplid="">
+                    <i data-lucide="zap"></i>
+                    <span class="tpl-name">自由创作</span>
+                    <span class="tpl-desc">不套用模板</span>
+                  </div>
+                  <!-- 模板卡片由 JS 动态注入 -->
+                </div>
+                <div class="form-hint" id="wiz-tpl-hint" style="display:none;margin-top:8px"></div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">创作主题 / 要点</label>
+                <input class="form-input" id="wiz-ai-topic" placeholder="如：3个提高短视频完播率的技巧">
+              </div>
+              <div class="form-group">
+                <label class="form-label">目标风格</label>
+                <select class="form-select" id="wiz-ai-style">
+                  <option value="幽默">幽默风趣</option>
+                  <option value="严肃">严肃专业</option>
+                  <option value="活泼">活泼可爱</option>
+                  <option value="专业">专业权威</option>
+                  <option value="口语化">口语化</option>
+                  <option value="煽情">煽情走心</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" id="wiz-ai-generate-btn" type="button"><i data-lucide="lightbulb"></i> 生成文案</button>
+            </div>
+            <div class="sub-page" id="wiz-script-extract">
+              <div class="form-group">
+                <label class="form-label">视频链接 / 分享文本</label>
+                <textarea class="form-textarea" id="wiz-ref-url" rows="4" placeholder="粘贴抖音/快手/B站视频链接，或整段分享文本&#10;例：1.25 复制打开抖音，看看【xxx的作品】文案... https://v.douyin.com/xxx/ anq:/ :1pm"></textarea>
+              </div>
+              <div class="extract-preview" id="wiz-extract-preview" style="display:none">
+                <div class="preview-row">
+                  <span class="preview-label"><i data-lucide="link"></i> 识别链接</span>
+                  <code class="preview-value" id="wiz-preview-url">—</code>
+                </div>
+                <div class="preview-row">
+                  <span class="preview-label"><i data-lucide="pen-line"></i> 识别描述</span>
+                  <span class="preview-value" id="wiz-preview-desc">—</span>
+                </div>
+              </div>
+              <button class="btn btn-primary" id="wiz-extract-btn" type="button"><i data-lucide="link"></i> 提取文案</button>
+              <div class="extract-tip" id="wiz-extract-tip">
+                粘贴抖音/快手/B站分享文本，系统自动提取文案（含字幕转写，无需任何配置）
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="brain-circuit"></i></span> 文案 AI 处理</div>
+            </div>
+            <div class="action-grid">
+              <button class="action-btn" data-wizaction="polish" type="button"><i data-lucide="sparkles"></i> 润色</button>
+              <button class="action-btn" data-wizaction="rewrite" type="button"><i data-lucide="refresh-cw"></i> 仿写</button>
+              <button class="action-btn" data-wizaction="expand" type="button"><i data-lucide="trending-up"></i> 扩写</button>
+              <button class="action-btn" data-wizaction="shorten" type="button"><i data-lucide="trending-down"></i> 缩写</button>
+              <button class="action-btn" data-wizaction="style" type="button"><i data-lucide="palette"></i> 风格转换</button>
+            </div>
+            <div class="form-group" id="wiz-style-group" style="display:none;margin-top:16px">
+              <label class="form-label">目标风格</label>
+              <select class="form-select" id="wiz-process-style">
+                <option value="幽默">幽默风趣</option>
+                <option value="严肃">严肃专业</option>
+                <option value="活泼">活泼可爱</option>
+                <option value="专业">专业权威</option>
+                <option value="口语化">口语化</option>
+                <option value="煽情">煽情走心</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-top:16px">
+              <button class="btn btn-primary btn-block" id="wiz-script-process-btn" type="button"><i data-lucide="play"></i> 执行 AI 处理</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤4：声音设置 -->
+        <div class="wizard-panel" id="wizard-panel-4">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="mic"></i></span> 音色选择</div>
+              <span class="hint">点击卡片选中，<i data-lucide="play"></i> 试听音色</span>
+            </div>
+            <div class="voice-card-grid" id="wiz-voice-grid"></div>
+          <input type="hidden" id="wiz-voice" value="zh-CN-XiaoxiaoNeural">
+          <!-- 声音克隆上传入口（对标必火AI 60秒克隆） -->
+          <div style="margin-top:12px;padding:12px;border:1px dashed var(--border-default, #d2d2d7);border-radius:12px;background:var(--bg-surface, #f5f5f7)">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <i data-lucide="upload-cloud" style="width:18px;height:18px;color:var(--accent-primary, #0071e3)"></i>
+              <span style="font-size:14px;font-weight:600;color:var(--text-primary, #1d1d1f)">声音克隆</span>
+              <span class="hint" style="font-size:12px">上传5-10秒干净人声样本</span>
+              <button class="btn btn-sm btn-secondary" type="button" onclick="showVoiceRecordingGuide()" style="margin-left:auto;padding:4px 10px;font-size:12px">
+                <i data-lucide="help-circle" style="width:14px;height:14px"></i> 录制指南
+              </button>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <input type="text" class="form-input" id="wiz-clone-voice-id" placeholder="音色名称（如：我的音色）" style="flex:1;min-width:120px">
+              <button class="btn btn-secondary" type="button" onclick="document.getElementById('wiz-clone-file').click()">
+                <i data-lucide="upload" style="width:16px;height:16px"></i> 选择音频
+              </button>
+              <input type="file" id="wiz-clone-file" accept=".wav,.mp3,.m4a,.flac" style="display:none" onchange="onWizardVoiceClone(this)">
+            </div>
+            <div id="wiz-clone-status" style="font-size:12px;color:var(--text-secondary, #6e6e73);min-height:18px;margin-top:6px"></div>
+            <div id="wiz-clone-quality-report" style="display:none;margin-top:8px"></div>
+          </div>
+        </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="settings"></i></span> 语音高级设置</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">语速 <span class="hint" id="wiz-speed-val">1.0</span></label>
+                <input type="range" class="form-range" id="wiz-speed" min="0.3" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('wiz-speed-val').textContent=this.value">
+              </div>
+              <div class="form-group">
+                <label class="form-label">音量 <span class="hint" id="wiz-volume-val">100</span></label>
+                <input type="range" class="form-range" id="wiz-volume" min="0" max="200" step="5" value="100" oninput="document.getElementById('wiz-volume-val').textContent=this.value">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">音高 <span class="hint" id="wiz-pitch-val">0</span></label>
+                <input type="range" class="form-range" id="wiz-pitch" min="-12" max="12" step="1" value="0" oninput="document.getElementById('wiz-pitch-val').textContent=this.value">
+              </div>
+              <div class="form-group">
+                <label class="form-label">句间停顿 <span class="hint" id="wiz-pause-val">0.5s</span></label>
+                <input type="range" class="form-range" id="wiz-pause" min="0" max="2" step="0.1" value="0.5" oninput="document.getElementById('wiz-pause-val').textContent=this.value+'s'">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">情感</label>
+              <div class="btn-card-grid" id="wiz-emotion-grid"></div>
+              <div id="wiz-emotion-hint" style="display:none;font-size:12px;color:var(--color-text-secondary);margin-top:6px;padding:6px 8px;background:rgba(255,200,0,0.1);border-radius:6px">
+                ⚠️ 当前音色不支持情感调节，情感设置将被忽略
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                <span>自动去静音</span>
+                <label class="toggle-switch"><input type="checkbox" id="wiz-remove-silence" checked><span class="toggle-slider"></span></label>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                <span>人声增强</span>
+                <label class="toggle-switch"><input type="checkbox" id="wiz-voice-enhance" checked><span class="toggle-slider"></span></label>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤5：字幕与效果 -->
+        <div class="wizard-panel" id="wizard-panel-5">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="message-square"></i></span> 字幕样式</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">字幕样式预设</label>
+              <div class="subtitle-style-grid" id="wiz-subtitle-style-grid"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">字幕动画</label>
+              <select class="form-select" id="wiz-sub-anim"></select>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">字幕位置</label>
+                <select class="form-select" id="wiz-sub-position">
+                  <option value="top">上</option>
+                  <option value="center">中</option>
+                  <option value="bottom" selected>下</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">字号 <span class="hint" id="wiz-sub-size-val">56</span></label>
+                <input type="range" class="form-range" id="wiz-sub-size" min="12" max="80" step="1" value="56" oninput="document.getElementById('wiz-sub-size-val').textContent=this.value">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>双行字幕</span>
+                  <label class="toggle-switch"><input type="checkbox" id="wiz-sub-dual" checked><span class="toggle-slider"></span></label>
+                </label>
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>卡拉OK逐字</span>
+                  <label class="toggle-switch"><input type="checkbox" id="wiz-sub-karaoke" checked><span class="toggle-slider"></span></label>
+                </label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">字间距 <span class="hint" id="wiz-sub-letter-val">0</span></label>
+              <input type="range" class="form-range" id="wiz-sub-letter" min="0" max="10" step="1" value="0" oninput="document.getElementById('wiz-sub-letter-val').textContent=this.value">
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="music"></i></span> 背景音乐 (BGM)</div>
+              <label class="toggle-switch"><input type="checkbox" id="wiz-bgm-enabled" checked><span class="toggle-slider"></span></label>
+            </div>
+            <div id="wiz-bgm-group">
+              <div class="form-row">
+                <div class="form-group" style="flex:1">
+                  <label class="form-label">曲目</label>
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <select class="form-select" id="wiz-bgm-track" style="flex:1"></select>
+                    <button class="btn btn-sm btn-secondary" type="button" id="wiz-bgm-preview-btn" onclick="previewBgm()" title="试听BGM">
+                      <i data-lucide="play" style="width:14px;height:14px"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">音量 <span class="hint" id="wiz-bgm-vol-val">25</span></label>
+                  <input type="range" class="form-range" id="wiz-bgm-vol" min="0" max="100" step="5" value="25" oninput="document.getElementById('wiz-bgm-vol-val').textContent=this.value">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">淡入 <span class="hint" id="wiz-bgm-fadein-val">1.0s</span></label>
+                  <input type="range" class="form-range" id="wiz-bgm-fadein" min="0" max="5" step="0.5" value="1.0" oninput="document.getElementById('wiz-bgm-fadein-val').textContent=this.value+'s'">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">淡出 <span class="hint" id="wiz-bgm-fadeout-val">1.0s</span></label>
+                  <input type="range" class="form-range" id="wiz-bgm-fadeout" min="0" max="5" step="0.5" value="1.0" oninput="document.getElementById('wiz-bgm-fadeout-val').textContent=this.value+'s'">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- B-roll 画中画（对标旗博士） -->
+          <div class="card" id="wiz-broll-card">
+            <div class="card-header">
+              <div class="card-title">
+                <span class="card-title-icon"><i data-lucide="layers"></i></span>
+                画中画 / B-roll
+                <span class="hint" style="margin-left:8px;font-size:12px;color:var(--text-tertiary)">在字幕时间段插入插播素材</span>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-sm btn-secondary" id="wiz-broll-smart-btn" onclick="wizardBrollSuggest()">
+                  <i data-lucide="sparkles" style="width:14px;height:14px"></i> 智能推荐
+                </button>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="wiz-broll-enabled" onchange="toggleWizardBroll()">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            <div id="wiz-broll-group" style="display:none">
+              <!-- 素材库 + 上传 -->
+              <div class="form-row" style="align-items:flex-start">
+                <div class="form-group" style="flex:1">
+                  <label class="form-label">B-roll 素材库</label>
+                  <div class="upload-zone" style="padding:12px;margin-bottom:8px" onclick="document.getElementById('wiz-broll-upload').click()">
+                    <i data-lucide="upload-cloud" style="width:20px;height:20px;color:var(--text-tertiary)"></i>
+                    <span style="font-size:13px;color:var(--text-secondary);margin-left:6px">上传视频/图片</span>
+                    <input type="file" id="wiz-broll-upload" accept="video/*,image/*" style="display:none" onchange="onWizardBrollUpload(this)">
+                  </div>
+                  <div id="wiz-broll-list" style="max-height:200px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:8px"></div>
+                </div>
+                <div class="form-group" style="flex:1">
+                  <label class="form-label">已添加片段</label>
+                  <div id="wiz-broll-clips" style="max-height:200px;overflow-y:auto"></div>
+                </div>
+              </div>
+
+              <!-- 字幕时间轴（对标旗博士：可视化字幕时间段+B-roll插入点） -->
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>字幕时间轴 <span class="hint" style="font-size:11px">点击字幕间的 + 插入 B-roll</span></span>
+                  <button class="btn btn-sm btn-text" onclick="clearWizardBrollClips()">清空</button>
+                </label>
+                <div class="timeline-container" id="wiz-timeline" style="max-height:200px;overflow-y:auto">
+                  <div class="timeline-ruler" id="wiz-ruler"></div>
+                  <div class="timeline-track">
+                    <div class="timeline-track-label">B-roll</div>
+                    <div class="timeline-track-content" id="wiz-broll-track"></div>
+                  </div>
+                  <div class="timeline-track">
+                    <div class="timeline-track-label">字幕</div>
+                    <div class="timeline-track-content" id="wiz-subtitle-track"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 垂直字幕段落列表（对标商业口播智能体：直观选择插入点） -->
+              <div class="form-group">
+                <label class="form-label">字幕段落列表 <span class="hint" style="font-size:11px">点击段落卡片可在对应时间插入 B-roll</span></label>
+                <div id="wiz-subtitle-list" style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:6px"></div>
+              </div>
+
+              <!-- 模式说明 -->
+              <div style="padding:10px 14px;background:var(--bg-vibrant);border-radius:var(--radius-sm);font-size:12px;color:var(--text-secondary);line-height:1.6">
+                <strong style="color:var(--text-primary)">使用说明：</strong>
+                ① 上传素材或点击"智能推荐"获取 B-roll 素材；<br>
+                ② 点击字幕间的 <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:var(--color-primary);color:#fff;border-radius:50%;font-size:12px;vertical-align:middle">+</span> 在两段字幕之间插入；<br>
+                ③ 点击 B-roll 轨道空白处可在任意位置插入；<br>
+                ④ <strong>画中画(PIP)</strong>：素材叠加在数字人上；<strong>整段切换(CUT)</strong>：替换主画面。
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="film"></i></span> 视频效果</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">转场</label>
+                <select class="form-select" id="wiz-transition"></select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">滤镜</label>
+                <select class="form-select" id="wiz-filter"></select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">滤镜强度 <span class="hint" id="wiz-filter-intensity-val">50</span></label>
+              <input type="range" class="form-range" id="wiz-filter-intensity" min="0" max="100" step="5" value="50" oninput="document.getElementById('wiz-filter-intensity-val').textContent=this.value">
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="droplet"></i></span> 水印</div>
+              <label class="toggle-switch"><input type="checkbox" id="wiz-watermark-enabled"><span class="toggle-slider"></span></label>
+            </div>
+            <div id="wiz-watermark-group">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">水印文字</label>
+                  <input class="form-input" id="wiz-watermark-text" placeholder="@我的账号">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">位置</label>
+                  <select class="form-select" id="wiz-watermark-position">
+                    <option value="top-left">左上</option>
+                    <option value="top-right">右上</option>
+                    <option value="bottom-left">左下</option>
+                    <option value="bottom-right" selected>右下</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">透明度 <span class="hint" id="wiz-watermark-opacity-val">50</span></label>
+                <input type="range" class="form-range" id="wiz-watermark-opacity" min="0" max="100" step="5" value="50" oninput="document.getElementById('wiz-watermark-opacity-val').textContent=this.value">
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="film"></i></span> 片头片尾</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>启用片头</span>
+                  <label class="toggle-switch"><input type="checkbox" id="wiz-intro-enabled"><span class="toggle-slider"></span></label>
+                </label>
+                <input class="form-input" id="wiz-intro-text" style="margin-top:8px" placeholder="片头文字">
+                <input type="number" class="form-input" id="wiz-intro-duration" style="margin-top:8px" value="3" min="1" max="10" placeholder="时长(秒)">
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>启用片尾</span>
+                  <label class="toggle-switch"><input type="checkbox" id="wiz-outro-enabled"><span class="toggle-slider"></span></label>
+                </label>
+                <input class="form-input" id="wiz-outro-text" style="margin-top:8px" placeholder="片尾文字">
+                <input type="number" class="form-input" id="wiz-outro-duration" style="margin-top:8px" value="3" min="1" max="10" placeholder="时长(秒)">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤6：预览与生成 -->
+        <div class="wizard-panel" id="wizard-panel-6">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="clipboard-list"></i></span> 配置汇总</div>
+            </div>
+            <div id="wiz-summary" class="summary-grid"></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="share-2"></i></span> 一键发布设置</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">目标平台（可多选，同时发布到多个平台）</label>
+              <div class="platform-checkbox-grid" id="wiz-publish-platforms">
+                <!-- 联动 P3：平台卡片由 loadWizardPublishPlatforms() 动态渲染，带登录态徽章 -->
+                <div style="grid-column:1/-1;color:var(--text-secondary);font-size:12px;padding:8px">加载平台登录态...</div>
+              </div>
+              <div id="wiz-publish-platforms-hint" style="font-size:11px;color:var(--text-secondary);margin-top:6px;display:none">
+                <i data-lucide="info" style="width:12px;height:12px;vertical-align:middle"></i>
+                <span>未登录平台显示红色边框，勾选后将提示前往设置中心登录</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                <span>生成后自动发布到选中的平台</span>
+                <label class="toggle-switch"><input type="checkbox" id="wiz-auto-publish"><span class="toggle-slider"></span></label>
+              </label>
+              <div style="font-size:12px;color:var(--color-text-secondary);margin-top:4px" id="wiz-publish-hint">
+                开启后，视频生成完成将自动发布到选中的平台（需先在"发布设置"页登录各平台）
+                <a href="#" id="wiz-goto-publish-settings" style="color:var(--color-primary);text-decoration:underline;font-weight:500">前往发布设置 →</a>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-block" id="wiz-generate-btn" style="margin-top:8px"><i data-lucide="rocket"></i> 开始生成视频</button>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="bar-chart-3"></i></span> 流水线进度</div>
+            </div>
+            <div class="pipeline" id="wiz-pipeline"></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="film"></i></span> 生成结果</div>
+            </div>
+            <div class="result-grid">
+              <div>
+                <div class="result-video" id="wiz-result-video">
+                  <div class="result-video-placeholder">
+                    <div style="font-size:48px;margin-bottom:12px"><i data-lucide="film"></i></div>
+                    <div>视频将在此处展示</div>
+                  </div>
+                </div>
+              </div>
+              <div class="result-meta">
+                <div class="meta-item">
+                  <div class="meta-label">标题</div>
+                  <div class="meta-value" id="wiz-result-title">—</div>
+                </div>
+                <div class="meta-item">
+                  <div class="meta-label">最终文案</div>
+                  <div class="meta-value" id="wiz-result-script" style="max-height:120px;overflow-y:auto;font-size:13px">—</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 向导底部导航 -->
+        <div class="wizard-footer">
+          <button class="btn btn-secondary" id="wiz-prev-btn"><i data-lucide="arrow-left"></i> 上一步</button>
+          <span class="wizard-progress-text" id="wiz-progress-text">第 1 / 6 步</span>
+          <button class="btn btn-primary" id="wiz-next-btn">下一步 <i data-lucide="arrow-right"></i></button>
+        </div>
+      </div>
+
+      <!-- ===== 页面 1: 一键生成 ===== -->
+      <div class="page" id="page-generate">
+        <div class="page-header">
+          <h1 class="page-title">一键生成视频</h1>
+          <p class="page-subtitle">输入文案，自动完成文案仿写、语音合成、数字人口播、字幕、视频合成全流程</p>
+        </div>
+
+        <div class="two-col-grid">
+          <!-- 左侧：输入 -->
+          <div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="pen-line"></i></span> 文案输入</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">口播文案 <span class="hint">150-500 字，系统自动润色</span></label>
+                <textarea class="form-textarea" id="gen-script" placeholder="直接输入文案，或留空并在下方填写参考视频链接自动提取..."></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">参考视频链接 <span class="hint">可选，用于对标文案提取</span></label>
+                <input class="form-input" id="gen-ref-url" placeholder="粘贴抖音/快手/B站视频链接">
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="settings"></i></span> 生成设置</div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">文案模式</label>
+                  <select class="form-select" id="gen-mode">
+                    <option value="polish">润色 - 优化表达</option>
+                    <option value="rewrite">仿写 - 语义级改写</option>
+                    <option value="generate">生成 - 根据主题创作</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">目标平台</label>
+                  <select class="form-select" id="gen-platform">
+                    <option value="douyin">抖音</option>
+                    <option value="bilibili">哔哩哔哩</option>
+                    <option value="kuaishou">快手</option>
+                    <option value="wechat_video">微信视频号</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">数字人形象</label>
+                  <select class="form-select" id="gen-avatar"></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">音色</label>
+                  <select class="form-select" id="gen-voice"></select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                  <input type="checkbox" id="gen-publish" style="width:18px;height:18px">
+                  <span>自动发布到目标平台</span>
+                </label>
+              </div>
+              <button class="btn btn-primary btn-block" id="gen-btn"><i data-lucide="rocket"></i> 开始生成视频</button>
+            </div>
+          </div>
+
+          <!-- 右侧：进度 -->
+          <div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="bar-chart-3"></i></span> 流水线进度</div>
+              </div>
+              <div class="pipeline" id="pipeline"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 结果展示 -->
+        <div class="card" style="margin-top:20px">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon"><i data-lucide="film"></i></span> 生成结果</div>
+          </div>
+          <div class="result-grid">
+            <div>
+              <div class="result-video" id="result-video">
+                <div class="result-video-placeholder">
+                  <div style="font-size:48px;margin-bottom:12px"><i data-lucide="film"></i></div>
+                  <div>视频将在此处展示</div>
+                </div>
+              </div>
+            </div>
+            <div class="result-meta">
+              <div class="meta-item">
+                <div class="meta-label">标题</div>
+                <div class="meta-value" id="result-title">—</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">封面</div>
+                <div id="result-cover"><span class="meta-value">—</span></div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">最终文案</div>
+                <div class="meta-value" id="result-script" style="max-height:120px;overflow-y:auto;font-size:13px">—</div>
+              </div>
+            </div>
+          </div>
+          <details style="margin-top:16px">
+            <summary style="cursor:pointer;color:var(--text-secondary);font-size:13px">详细信息</summary>
+            <pre id="result-detail" style="margin-top:12px;padding:16px;background:var(--bg-elevated);border-radius:8px;font-size:12px;overflow-x:auto;max-height:300px"></pre>
+          </details>
+        </div>
+      </div>
+
+      <!-- ===== 页面 2: 文案工作台 ===== -->
+      <div class="page" id="page-script">
+        <div class="page-header">
+          <h1 class="page-title">文案工作台</h1>
+          <p class="page-subtitle">AI 驱动的口播文案创作：润色、仿写、扩写、缩写、风格转换、主题生成</p>
+        </div>
+
+        <div class="two-col-grid">
+          <!-- 左侧：输入 + 操作 -->
+          <div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="pen-line"></i></span> 原始文案</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">输入文案 <span class="hint" id="script-char-count">0 字</span></label>
+                <textarea class="form-textarea" id="script-input" style="min-height:200px" placeholder="粘贴或输入口播文案..."></textarea>
+              </div>
+              <div class="form-group" id="topic-input-group" style="display:none">
+                <label class="form-label">创作主题 / 要点</label>
+                <input class="form-input" id="script-topic" placeholder="如：3个提高短视频完播率的技巧">
+              </div>
+              <div class="form-group" id="style-input-group" style="display:none">
+                <label class="form-label">目标风格</label>
+                <select class="form-select" id="script-style">
+                  <option value="幽默">幽默风趣</option>
+                  <option value="严肃">严肃专业</option>
+                  <option value="活泼">活泼可爱</option>
+                  <option value="专业">专业权威</option>
+                  <option value="口语化">口语化</option>
+                  <option value="煽情">煽情走心</option>
+                  <option value="犀利">犀利吐槽</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="brain-circuit"></i></span> AI 处理</div>
+              </div>
+              <div class="action-grid">
+                <button class="action-btn" data-action="polish"><i data-lucide="sparkles"></i> 润色</button>
+                <button class="action-btn" data-action="rewrite"><i data-lucide="refresh-cw"></i> 仿写</button>
+                <button class="action-btn" data-action="expand"><i data-lucide="trending-up"></i> 扩写</button>
+                <button class="action-btn" data-action="shorten"><i data-lucide="trending-down"></i> 缩写</button>
+                <button class="action-btn" data-action="style"><i data-lucide="palette"></i> 风格转换</button>
+                <button class="action-btn" data-action="generate"><i data-lucide="lightbulb"></i> 主题生成</button>
+              </div>
+              <div class="form-group" style="margin-top:16px">
+                <button class="btn btn-primary btn-block" id="script-process-btn"><i data-lucide="play"></i> 执行 AI 处理</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右侧：结果 -->
+          <div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="file-text"></i></span> 处理结果</div>
+                <button class="btn btn-sm btn-secondary" id="script-copy-btn"><i data-lucide="clipboard-list"></i> 复制</button>
+              </div>
+              <div class="form-group">
+                <label class="form-label">输出文案 <span class="hint" id="script-output-count">0 字</span></label>
+                <textarea class="form-textarea" id="script-output" style="min-height:280px" placeholder="AI 处理后的文案将显示在此处..."></textarea>
+              </div>
+              <div class="form-row">
+                <button class="btn btn-secondary btn-block" id="script-to-generate-btn"><i data-lucide="rocket"></i> 用此文案生成视频</button>
+                <button class="btn btn-secondary btn-block" id="script-clear-btn"><i data-lucide="trash-2"></i> 清空</button>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="lightbulb"></i></span> 使用提示</div>
+              </div>
+              <div style="color:var(--text-secondary);font-size:13px;line-height:1.8">
+                <p><strong>润色</strong>：优化表达，保留原意</p>
+                <p><strong>仿写</strong>：语义级改写，避免查重</p>
+                <p><strong>扩写</strong>：增加细节和案例</p>
+                <p><strong>缩写</strong>：精简压缩，保留核心</p>
+                <p><strong>风格转换</strong>：调整语气风格</p>
+                <p><strong>主题生成</strong>：根据主题创作</p>
+                <p style="margin-top:12px;padding:10px;background:rgba(99,102,241,0.1);border-radius:8px;color:var(--accent-primary)">
+                  <i data-lucide="lightbulb"></i> 需先在「设置 → 模型配置」配置 LLM API Key，否则使用 Mock 模板
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面 3: 分步创作 ===== -->
+      <div class="page" id="page-step-by-step">
+        <div class="page-header">
+          <h1 class="page-title">分步创作</h1>
+          <p class="page-subtitle">单独执行任一模块，便于调试和定制。前置模块会自动执行以准备上下文。</p>
+        </div>
+
+        <div class="two-col-grid">
+          <div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="pen-line"></i></span> 基础设置</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">口播文案</label>
+                <textarea class="form-textarea" id="step-script" placeholder="输入文案..."></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">参考视频链接（可选）</label>
+                <input class="form-input" id="step-ref-url" placeholder="https://...">
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">数字人形象</label>
+                  <select class="form-select" id="step-avatar"></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">音色</label>
+                  <select class="form-select" id="step-voice"></select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">文案模式</label>
+                  <select class="form-select" id="step-mode">
+                    <option value="polish">润色</option>
+                    <option value="rewrite">仿写</option>
+                    <option value="generate">生成</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">目标平台</label>
+                  <select class="form-select" id="step-platform">
+                    <option value="douyin">抖音</option>
+                    <option value="bilibili">哔哩哔哩</option>
+                    <option value="kuaishou">快手</option>
+                    <option value="wechat_video">微信视频号</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="wrench"></i></span> 选择模块执行</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">执行模块</label>
+                <select class="form-select" id="step-module">
+                  <option value="script_extract">文案提取</option>
+                  <option value="script_write" selected>文案仿写</option>
+                  <option value="tts">语音合成</option>
+                  <option value="avatar">数字人生成</option>
+                  <option value="subtitle">字幕生成</option>
+                  <option value="compose">视频合成</option>
+                  <option value="title">标题生成</option>
+                  <option value="cover">封面生成</option>
+                  <option value="publish">多平台发布</option>
+                </select>
+              </div>
+              <button class="btn btn-primary btn-block" id="step-run-btn"><i data-lucide="play"></i> 执行此模块</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="music"></i></span> 音频产物</div>
+              </div>
+              <div id="step-audio" style="color:var(--text-muted)">执行后展示</div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="film"></i></span> 视频产物</div>
+              </div>
+              <div id="step-video" style="color:var(--text-muted)">执行后展示</div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="clipboard-list"></i></span> 执行结果</div>
+              </div>
+              <pre id="step-result" style="padding:16px;background:var(--bg-elevated);border-radius:8px;font-size:12px;overflow-x:auto;max-height:300px;color:var(--text-secondary)">等待执行...</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面 4: 批量处理 ===== -->
+      <div class="page" id="page-batch">
+        <div class="page-header">
+          <h1 class="page-title">批量处理</h1>
+          <p class="page-subtitle">批量提交多个文案，串行生成视频。适合内容矩阵运营。</p>
+        </div>
+
+        <div class="two-col-grid">
+          <div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="pen-line"></i></span> 批量文案输入</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">文案列表 <span class="hint">每行一条文案，空行分隔</span></label>
+                <textarea class="form-textarea" id="batch-scripts" style="min-height:240px" placeholder="第一条文案内容...&#10;&#10;第二条文案内容...&#10;&#10;第三条文案内容..."></textarea>
+              </div>
+
+              <!-- 模式切换 -->
+              <div class="form-group">
+                <div style="display:flex;gap:8px;margin-bottom:8px">
+                  <button type="button" class="btn btn-sm btn-primary" id="batch-mode-simple" onclick="switchBatchMode('simple')">普通批量</button>
+                  <button type="button" class="btn btn-sm btn-secondary" id="batch-mode-matrix" onclick="switchBatchMode('matrix')">矩阵生成</button>
+                </div>
+                <div id="batch-mode-hint-simple" class="hint">N 条文案 × 1 组参数 = N 个视频</div>
+                <div id="batch-mode-hint-matrix" class="hint" style="display:none;color:#1a4d8f">1 文案 × M 数字人 × K 音色 = M×K 个变体（对标万兴播爆批量裂变）</div>
+              </div>
+
+              <!-- 普通模式：单选 -->
+              <div id="batch-simple-fields">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">数字人形象</label>
+                    <select class="form-select" id="batch-avatar"></select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">音色</label>
+                    <select class="form-select" id="batch-voice"></select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 矩阵模式：多选 checkbox 网格 -->
+              <div id="batch-matrix-fields" style="display:none">
+                <div class="form-group">
+                  <label class="form-label">数字人形象（多选）</label>
+                  <div id="batch-matrix-avatars" class="matrix-checkbox-grid"></div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">音色（多选）</label>
+                  <div id="batch-matrix-voices" class="matrix-checkbox-grid"></div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">并发数</label>
+                  <select class="form-select" id="batch-matrix-parallel">
+                    <option value="1">1（串行）</option>
+                    <option value="2" selected>2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                  </select>
+                </div>
+                <div class="hint" id="batch-matrix-preview" style="color:#1a4d8f;font-size:12px;padding:6px 0"></div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">文案模式</label>
+                  <select class="form-select" id="batch-mode">
+                    <option value="polish">润色</option>
+                    <option value="rewrite">仿写</option>
+                    <option value="generate">生成</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">目标平台</label>
+                  <select class="form-select" id="batch-platform">
+                    <option value="douyin">抖音</option>
+                    <option value="bilibili">哔哩哔哩</option>
+                    <option value="kuaishou">快手</option>
+                    <option value="wechat_video">微信视频号</option>
+                  </select>
+                </div>
+              </div>
+              <button class="btn btn-primary btn-block" id="batch-run-btn"><i data-lucide="package"></i> 开始批量生成</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="bar-chart-3"></i></span> 批量进度</div>
+                <span class="badge badge-info" id="batch-progress-badge">0 / 0</span>
+              </div>
+              <div id="batch-progress-list" style="max-height:500px;overflow-y:auto">
+                <div class="empty-state">
+                  <div class="empty-state-icon"><i data-lucide="package"></i></div>
+                  <div>提交后将显示每条文案的处理进度</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面: 时间轴剪辑（画中画/B-roll） ===== -->
+      <div class="page" id="page-timeline">
+        <div class="page-header">
+          <h1 class="page-title">时间轴剪辑</h1>
+          <p class="page-subtitle">画中画插播视频 + 快捷剪辑，对标剪映/HeyGen 的 B-roll 编辑能力</p>
+        </div>
+
+        <!-- 工作原理说明 -->
+        <div class="card" style="margin-bottom:20px;background:linear-gradient(135deg,#fff8e1,#fff3cd);border:1px solid #ffe082">
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="font-size:36px"><i data-lucide="film"></i></div>
+            <div style="flex:1">
+              <div style="font-weight:600;color:#8b6914;margin-bottom:6px">画中画与插播视频</div>
+              <div style="color:#6b5d2e;font-size:13px;line-height:1.6">
+                <strong>画中画模式（PIP）</strong>：B-roll 视频以小窗口叠加在数字人画面上，数字人仍可见（适合讲解类）<br>
+                <strong>整段切换模式（CUT）</strong>：在指定时间段用 B-roll 替换主画面，数字人暂离（适合展示实景素材）<br>
+                <strong>三种插入方式</strong>：① 点击字幕间的 <span class="tl-insert-plus">+</span> 在两段字幕之间插入；② 点击 B-roll 轨道空白处在任意位置插入；③ 点击"在播放头插入"按当前播放位置插入<br>
+                <strong>快捷剪辑</strong>：裁剪头尾、调整音量、片头片尾淡入淡出，一键应用
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:20px">
+          <!-- 左侧：任务选择 + 素材库 -->
+          <div>
+            <div class="card" style="margin-bottom:16px">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="clipboard-list"></i></span> 选择任务</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">选择已生成视频的任务</label>
+                <select class="form-input" id="tl-job-select" onchange="onTimelineJobSelected()">
+                  <option value="">-- 选择任务 --</option>
+                </select>
+              </div>
+              <div id="tl-job-info" style="font-size:12px;color:#666"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="folder"></i></span> B-roll 素材库</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">上传新素材</label>
+                <div class="upload-zone" style="padding:12px" onclick="document.getElementById('tl-broll-upload').click()">
+                  <div class="upload-icon" style="font-size:24px"><i data-lucide="paperclip"></i></div>
+                  <div class="upload-text" style="font-size:12px" id="tl-upload-text">点击上传视频/图片</div>
+                  <input type="file" id="tl-broll-upload" accept="video/*,image/*" style="display:none" onchange="onBrollUpload(this)">
+                </div>
+              </div>
+              <div id="tl-broll-list" style="max-height:300px;overflow-y:auto"></div>
+            </div>
+          </div>
+
+          <!-- 右侧：时间轴编辑器 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="film"></i></span> 时间轴编辑器</div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-sm btn-secondary" onclick="clearAllBrollClips()">清空</button>
+                <button class="btn btn-sm btn-primary" id="tl-apply-btn" onclick="applyBrollToVideo()">应用 B-roll 合成</button>
+              </div>
+            </div>
+
+            <div id="tl-editor-empty" class="empty-state">
+              <div class="empty-state-icon"><i data-lucide="film"></i></div>
+              <div>请先选择一个任务</div>
+              <div style="font-size:12px;color:#999;margin-top:6px">选择任务后将显示字幕时间轴</div>
+            </div>
+
+            <div id="tl-editor" style="display:none">
+              <!-- 视频预览 -->
+              <div style="margin-bottom:12px;background:#000;border-radius:8px;overflow:hidden;position:relative">
+                <video id="tl-video-preview" controls style="width:100%;max-height:300px;display:block"></video>
+              </div>
+
+              <!-- 快捷剪辑工具栏 -->
+              <div class="tl-toolbar">
+                <div class="tl-toolbar-group">
+                  <span class="tl-toolbar-label">快捷剪辑</span>
+                  <button class="btn btn-sm btn-secondary" onclick="openQuickEditModal('trim')"><i data-lucide="scissors"></i> 裁剪</button>
+                  <button class="btn btn-sm btn-secondary" onclick="openQuickEditModal('volume')"><i data-lucide="volume-2"></i> 音量</button>
+                  <button class="btn btn-sm btn-secondary" onclick="openQuickEditModal('fade')"><i data-lucide="contrast"></i> 淡入淡出</button>
+                </div>
+                <div class="tl-toolbar-group">
+                  <span class="tl-toolbar-label">B-roll</span>
+                  <button class="btn btn-sm btn-secondary" onclick="insertBrollAtPlayhead()"><i data-lucide="plus"></i> 在播放头插入</button>
+                  <button class="btn btn-sm btn-primary" id="tl-suggest-btn" onclick="suggestBrollClips()"><i data-lucide="sparkles"></i> 智能插入</button>
+                </div>
+              </div>
+
+              <!-- B-roll 智能推荐结果区 -->
+              <div id="tl-suggest-panel" style="display:none;margin-top:12px;padding:12px;background:linear-gradient(135deg,#f0f7ff,#e6f0ff);border:1px solid #b3d4ff;border-radius:8px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                  <div style="font-weight:600;color:#1a4d8f;font-size:13px">
+                    <i data-lucide="sparkles" style="width:16px;height:16px;vertical-align:-3px"></i>
+                    AI 智能推荐 B-roll 插入点
+                  </div>
+                  <div style="display:flex;gap:6px">
+                    <button class="btn btn-sm btn-secondary" onclick="clearBrollSuggestions()">清空</button>
+                    <button class="btn btn-sm btn-primary" onclick="acceptAllBrollSuggestions()">全部接受</button>
+                  </div>
+                </div>
+                <div id="tl-suggest-list" style="display:flex;flex-direction:column;gap:6px"></div>
+              </div>
+
+              <!-- 时间轴 -->
+              <div class="timeline-container" id="tl-timeline">
+                <div class="timeline-ruler" id="tl-ruler"></div>
+                <div class="timeline-track">
+                  <div class="timeline-track-label">主视频</div>
+                  <div class="timeline-track-content" id="tl-main-track"></div>
+                </div>
+                <div class="timeline-track">
+                  <div class="timeline-track-label">B-roll</div>
+                  <div class="timeline-track-content" id="tl-broll-track"></div>
+                </div>
+                <div class="timeline-track">
+                  <div class="timeline-track-label">字幕</div>
+                  <div class="timeline-track-content" id="tl-subtitle-track"></div>
+                </div>
+              </div>
+
+              <!-- 操作提示 -->
+              <div class="tl-tip-bar">
+                <i data-lucide="lightbulb"></i> 点击字幕间的 <span class="tl-insert-plus">+</span> 可在两段字幕之间插入 B-roll 视频；点击 B-roll 轨道空白处可在任意位置插入；点击已添加的片段可编辑
+              </div>
+
+              <!-- 已添加的 B-roll 片段列表 -->
+              <div style="margin-top:12px">
+                <div style="font-weight:600;margin-bottom:8px">已添加的 B-roll 片段</div>
+                <div id="tl-clip-list" style="max-height:200px;overflow-y:auto"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- B-roll 片段编辑弹窗 -->
+        <div class="modal-overlay" id="tl-clip-modal" style="display:none">
+          <div class="modal" style="max-width:480px">
+            <div class="modal-header">
+              <div class="modal-title">编辑 B-roll 片段</div>
+              <button class="modal-close" onclick="closeClipModal()">×</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label class="form-label">插入模式</label>
+                <div style="display:flex;gap:12px">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                    <input type="radio" name="clip-mode" value="pip" checked onchange="onClipModeChange()">
+                    <span><i data-lucide="image"></i> 画中画（小窗口叠加）</span>
+                  </label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                    <input type="radio" name="clip-mode" value="cut" onchange="onClipModeChange()">
+                    <span><i data-lucide="scissors"></i> 整段切换（替换画面）</span>
+                  </label>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">按字幕段落选择位置</label>
+                <select class="form-input" id="clip-subtitle-seg" onchange="onTlSubtitleSegChange(this.value)">
+                  <option value="-1">自定义时间</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">时间段（秒）</label>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <input type="number" class="form-input" id="clip-start" step="0.1" min="0" style="flex:1" placeholder="开始" oninput="document.getElementById('clip-subtitle-seg').value='-1'">
+                  <span>—</span>
+                  <input type="number" class="form-input" id="clip-end" step="0.1" min="0" style="flex:1" placeholder="结束" oninput="document.getElementById('clip-subtitle-seg').value='-1'">
+                </div>
+              </div>
+              <div class="form-group" id="clip-pip-settings">
+                <label class="form-label">画中画位置</label>
+                <select class="form-input" id="clip-position">
+                  <option value="top_left">左上角</option>
+                  <option value="top_right">右上角</option>
+                  <option value="bottom_left">左下角</option>
+                  <option value="bottom_right" selected>右下角</option>
+                  <option value="center">居中</option>
+                </select>
+              </div>
+              <div class="form-group" id="clip-scale-group">
+                <label class="form-label">画中画大小 <span id="clip-scale-val" style="color:#666">30%</span></label>
+                <input type="range" id="clip-scale" min="0.2" max="0.8" step="0.05" value="0.3" oninput="document.getElementById('clip-scale-val').textContent=Math.round(this.value*100)+'%'">
+              </div>
+              <div class="form-group">
+                <label class="form-label">B-roll 音量 <span id="clip-volume-val" style="color:#666">0%（静音）</span></label>
+                <input type="range" id="clip-volume" min="0" max="1" step="0.1" value="0" oninput="document.getElementById('clip-volume-val').textContent=Math.round(this.value*100)+'%'">
+              </div>
+              <div class="form-group">
+                <label class="form-label">转场效果</label>
+                <select class="form-input" id="clip-transition">
+                  <option value="none">无转场</option>
+                  <option value="fade">淡入淡出</option>
+                </select>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" onclick="closeClipModal()">取消</button>
+              <button class="btn btn-primary" onclick="confirmAddClip()">添加片段</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 快捷剪辑弹窗 -->
+        <div class="modal-overlay" id="tl-quickedit-modal" style="display:none">
+          <div class="modal" style="max-width:420px">
+            <div class="modal-header">
+              <div class="modal-title" id="qe-title">快捷剪辑</div>
+              <button class="modal-close" onclick="closeQuickEditModal()">×</button>
+            </div>
+            <div class="modal-body" id="qe-body"></div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" onclick="closeQuickEditModal()">取消</button>
+              <button class="btn btn-primary" id="qe-confirm-btn" onclick="confirmQuickEdit()">应用</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面: 语音播客 ===== -->
+      <div class="page" id="page-podcast">
+        <!-- 步骤指示器 -->
+        <div class="wizard-stepper" id="podcast-stepper">
+          <div class="wizard-step active" data-step="1" onclick="podcastGoToStep(1)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">1</span></div>
+            <div class="wizard-step-text">内容与剧本</div>
+          </div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="2" onclick="podcastGoToStep(2)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">2</span></div>
+            <div class="wizard-step-text">角色音色</div>
+          </div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="3" onclick="podcastGoToStep(3)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">3</span></div>
+            <div class="wizard-step-text">生成设置</div>
+          </div>
+          <div class="wizard-step-line"></div>
+          <div class="wizard-step" data-step="4" onclick="podcastGoToStep(4)">
+            <div class="wizard-step-circle"><span class="wizard-step-num">4</span></div>
+            <div class="wizard-step-text">生成结果</div>
+          </div>
+        </div>
+
+        <!-- Step 1: 内容与剧本（整合为单卡片，参考口播视频风格） -->
+        <div class="wizard-panel active" id="podcast-panel-1">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="file-text"></i></span> 内容与剧本</div>
+              <span class="hint" id="pod-script-count-hint">0 字</span>
+            </div>
+
+            <!-- 内容来源切换 -->
+            <div class="sub-tabs">
+              <button class="sub-tab active" data-pod-source="manual" type="button"><i data-lucide="pen-line" style="width:14px;height:14px"></i> 文章输入</button>
+              <button class="sub-tab" data-pod-source="url" type="button"><i data-lucide="link" style="width:14px;height:14px"></i> 网络链接</button>
+              <button class="sub-tab" data-pod-source="file" type="button"><i data-lucide="upload-cloud" style="width:14px;height:14px"></i> 本地文档</button>
+              <button class="sub-tab" data-pod-source="topic" type="button"><i data-lucide="lightbulb" style="width:14px;height:14px"></i> AI 生成</button>
+            </div>
+
+            <!-- 网络链接输入区（提取后填入剧本编辑器） -->
+            <div class="sub-page" id="pod-source-url" style="display:none">
+              <textarea class="form-input" id="pod-url-input" rows="3" placeholder="粘贴视频/文章链接或分享文本...&#10;支持抖音/快手/B站/YouTube/微信公众号等"></textarea>
+              <div class="form-row" style="margin-top:8px">
+                <button class="btn btn-primary btn-sm" id="pod-extract-btn" type="button">
+                  <i data-lucide="download"></i> 提取内容
+                </button>
+              </div>
+              <div id="pod-extract-preview" style="margin-top:8px"></div>
+            </div>
+
+            <!-- 本地文档上传区（读取后填入剧本编辑器） -->
+            <div class="sub-page" id="pod-source-file" style="display:none">
+              <div class="upload-area" id="pod-file-upload" style="padding:16px">
+                <i data-lucide="upload-cloud" style="width:28px;height:28px"></i>
+                <p style="margin:4px 0">点击或拖拽文件到此处</p>
+                <span class="hint">支持 .txt / .md 格式</span>
+                <input type="file" id="pod-file-input" accept=".txt,.md" style="display:none">
+              </div>
+              <div id="pod-file-preview" style="margin-top:8px"></div>
+            </div>
+
+            <!-- AI 生成参数区（生成后填入剧本编辑器） -->
+            <div class="sub-page" id="pod-source-topic" style="display:none">
+              <textarea class="form-input" id="pod-topic-input" rows="2" placeholder="输入主题描述，如：AI 对未来职场的影响，三人讨论"></textarea>
+            </div>
+
+            <!-- 生成设置（紧凑工具栏，始终可见） -->
+            <div class="form-row" style="margin:12px 0;gap:8px;align-items:flex-end;flex-wrap:wrap">
+              <div style="flex:1;min-width:90px">
+                <label class="form-label">角色数量</label>
+                <select class="form-input" id="pod-role-count">
+                  <option value="0" selected>自动侦测</option>
+                  <option value="1">1 人</option>
+                  <option value="2">2 人</option>
+                  <option value="3">3 人</option>
+                  <option value="4">4 人</option>
+                  <option value="5">5 人</option>
+                  <option value="6">6 人</option>
+                  <option value="7">7 人</option>
+                  <option value="8">8 人</option>
+                  <option value="9">9 人</option>
+                  <option value="10">10 人</option>
+                </select>
+              </div>
+              <div style="flex:1;min-width:90px">
+                <label class="form-label">目标时长</label>
+                <select class="form-input" id="pod-duration">
+                  <option value="3">3 分钟</option>
+                  <option value="5" selected>5 分钟</option>
+                  <option value="10">10 分钟</option>
+                  <option value="15">15 分钟</option>
+                  <option value="20">20 分钟</option>
+                </select>
+              </div>
+              <div style="flex:1;min-width:90px">
+                <label class="form-label">改写风格</label>
+                <select class="form-input" id="pod-rewrite-style">
+                  <option value="轻松对话">轻松对话</option>
+                  <option value="深度访谈">深度访谈</option>
+                  <option value="专业讨论">专业讨论</option>
+                  <option value="趣味科普">趣味科普</option>
+                </select>
+              </div>
+              <div style="flex:1;min-width:120px">
+                <label class="form-label">角色描述（可选）</label>
+                <input type="text" class="form-input" id="pod-role-desc" placeholder="如：主持人、专家、用户">
+              </div>
+            </div>
+
+            <!-- AI 改写工具栏 -->
+            <div class="form-row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" data-pod-rewrite-mode="polish" type="button">
+                <i data-lucide="sparkles"></i> 口语润色
+              </button>
+              <button class="btn btn-secondary btn-sm" data-pod-rewrite-mode="expand" type="button">
+                <i data-lucide="plus-circle"></i> 丰富扩展
+              </button>
+              <button class="btn btn-secondary btn-sm" data-pod-rewrite-mode="condense" type="button">
+                <i data-lucide="minimize-2"></i> 精简提炼
+              </button>
+              <button class="btn btn-secondary btn-sm" data-pod-rewrite-mode="generate" type="button">
+                <i data-lucide="wand-2"></i> AI 创作
+              </button>
+              <button class="btn btn-ghost btn-sm" id="pod-clear-script-btn" type="button">
+                <i data-lucide="eraser"></i> 清空
+              </button>
+            </div>
+
+            <!-- 剧本编辑器（唯一文本框，既是输入也是结果） -->
+            <div class="form-label">剧本（可粘贴文章让 AI 改写，或直接编辑剧本）</div>
+            <textarea class="form-input" id="pod-script-editor" rows="12" placeholder="&gt; 粘贴文章内容后点击上方「口语润色」等按钮 AI 改写&#10;&gt; 或直接粘贴/编辑剧本，格式：&#10;# 张三（男）&#10;张三: 大家好，欢迎收听本期播客。&#10;李四: 大家好，我是李四。"></textarea>
+            <div class="script-stats">
+              <span><i data-lucide="type"></i> <span id="pod-script-count">0</span> 字</span>
+              <span><i data-lucide="users"></i> <span id="pod-role-count-display">0</span> 个角色</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: 角色音色 -->
+        <div class="wizard-panel" id="podcast-panel-2">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="users"></i></span> 角色与音色</div>
+              <div>
+                <button class="btn btn-secondary btn-sm" id="pod-clone-voice-btn" type="button">
+                  <i data-lucide="mic"></i> 克隆新音色
+                </button>
+                <button class="btn btn-secondary btn-sm" id="pod-auto-voice-btn" type="button">
+                  <i data-lucide="wand-2"></i> 自动匹配
+                </button>
+              </div>
+            </div>
+            <div id="pod-voice-list"></div>
+          </div>
+        </div>
+
+        <!-- Step 3: 生成设置 -->
+        <div class="wizard-panel" id="podcast-panel-3">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="settings-2"></i></span> 生成设置</div>
+            </div>
+
+            <div class="form-row" style="margin-bottom:16px">
+              <div style="flex:1">
+                <label class="form-label">角色切换停顿（秒）</label>
+                <input type="range" class="form-range" id="pod-switch-pause" min="0.2" max="1.0" step="0.1" value="0.4">
+                <span class="hint" id="pod-switch-pause-val">0.4s</span>
+              </div>
+              <div style="flex:1">
+                <label class="form-label">同角色停顿（秒）</label>
+                <input type="range" class="form-range" id="pod-same-pause" min="0.05" max="0.5" step="0.01" value="0.12">
+                <span class="hint" id="pod-same-pause-val">0.12s</span>
+              </div>
+            </div>
+
+            <div class="form-row" style="margin-bottom:16px">
+              <div style="flex:1">
+                <label class="form-label">语速</label>
+                <input type="range" class="form-range" id="pod-speed" min="0.5" max="2.0" step="0.1" value="1.0">
+                <span class="hint" id="pod-speed-val">1.0x</span>
+              </div>
+              <div style="flex:1">
+                <label class="form-label">输出名称（可选）</label>
+                <input type="text" class="form-input" id="pod-output-name" placeholder="留空则自动生成">
+              </div>
+            </div>
+
+            <div style="margin-bottom:16px">
+              <label class="form-label">生成内容</label>
+              <div class="form-row">
+                <label class="checkbox-label"><input type="checkbox" id="pod-gen-srt" checked> 字幕文件（SRT）</label>
+                <label class="checkbox-label"><input type="checkbox" id="pod-gen-json" checked> 时间戳（JSON）</label>
+                <label class="checkbox-label"><input type="checkbox" id="pod-gen-script" checked> 剧本文件</label>
+              </div>
+            </div>
+
+            <!-- BGM 背景音乐 -->
+            <div style="margin-bottom:0;padding-top:12px;border-top:1px solid var(--border-subtle)">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <label class="form-label" style="margin-bottom:0">背景音乐（BGM）</label>
+                <label class="checkbox-label" style="font-weight:500">
+                  <input type="checkbox" id="pod-bgm-enabled"> 启用 BGM
+                </label>
+              </div>
+              <div id="pod-bgm-settings" style="display:none">
+                <div class="form-row" style="margin-bottom:10px">
+                  <div style="flex:2">
+                    <label class="form-label">曲目选择</label>
+                    <select class="form-select" id="pod-bgm-track">
+                      <option value="">加载中...</option>
+                    </select>
+                  </div>
+                  <div style="flex:1;display:flex;align-items:flex-end;gap:6px">
+                    <button class="btn btn-secondary btn-sm" id="pod-bgm-preview-btn" type="button" style="white-space:nowrap">
+                      <i data-lucide="play"></i> 试听
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label class="form-label">
+                    BGM 音量
+                    <span class="hint" id="pod-bgm-volume-val">15%</span>
+                  </label>
+                  <input type="range" class="form-range" id="pod-bgm-volume" min="0" max="0.6" step="0.05" value="0.15">
+                </div>
+                <audio id="pod-bgm-audio" preload="none" style="display:none"></audio>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: 生成结果 -->
+        <div class="wizard-panel" id="podcast-panel-4">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="play-circle"></i></span> 生成结果</div>
+            </div>
+
+            <div id="pod-generate-section">
+              <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
+                <label class="form-label" style="margin:0;white-space:nowrap">输出格式</label>
+                <select id="pod-output-format" class="form-control" style="width:auto;min-width:120px">
+                  <option value="wav" selected>WAV（无损）</option>
+                  <option value="mp3">MP3（压缩）</option>
+                </select>
+              </div>
+              <button class="btn btn-primary btn-lg" id="pod-generate-btn" type="button" style="width:100%;margin-bottom:16px">
+                <i data-lucide="rocket"></i> 开始生成播客
+              </button>
+            </div>
+
+            <div id="pod-progress-section" style="display:none">
+              <div class="progress-apple" style="margin-bottom:12px">
+                <div class="progress-bar" id="pod-progress-bar" style="width:0%"></div>
+              </div>
+              <div class="hint" id="pod-progress-text" style="text-align:center">准备中...</div>
+              <div id="pod-stuck-warning" style="display:none;margin-top:12px;padding:12px 16px;background:#FFF3CD;border:1px solid #FFEEBA;border-radius:10px;">
+                <div style="font-size:13px;color:#856404;line-height:1.6">
+                  <strong>任务似乎卡住了</strong> — 如果进度长时间未更新，可能是 TTS 引擎在处理某些文本时遇到困难。<br>
+                  你可以等待自动恢复（超时后会用静音填充继续），或点击下方按钮取消后重试。
+                </div>
+                <button class="btn btn-secondary btn-sm" id="pod-cancel-btn" type="button" style="margin-top:8px">
+                  <i data-lucide="x-circle"></i> 取消任务
+                </button>
+              </div>
+            </div>
+
+            <div id="pod-result-section" style="display:none">
+              <div style="margin-bottom:16px">
+                <audio id="pod-audio-player" controls style="width:100%"></audio>
+              </div>
+
+              <div class="form-row" style="margin-bottom:16px">
+                <div class="result-stat">
+                  <div class="result-stat-value" id="pod-result-duration">0s</div>
+                  <div class="result-stat-label">总时长</div>
+                </div>
+                <div class="result-stat">
+                  <div class="result-stat-value" id="pod-result-segments">0</div>
+                  <div class="result-stat-label">片段数</div>
+                </div>
+                <div class="result-stat">
+                  <div class="result-stat-value" id="pod-result-roles">0</div>
+                  <div class="result-stat-label">角色数</div>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <button class="btn btn-secondary" id="pod-download-script" type="button">
+                  <i data-lucide="download"></i> 下载剧本
+                </button>
+                <button class="btn btn-secondary" id="pod-download-srt" type="button">
+                  <i data-lucide="captions"></i> 下载字幕
+                </button>
+                <button class="btn btn-secondary" id="pod-open-folder" type="button">
+                  <i data-lucide="folder-open"></i> 打开目录
+                </button>
+                <button class="btn btn-primary" id="pod-regenerate" type="button">
+                  <i data-lucide="refresh-cw"></i> 重新生成
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部导航 -->
+        <div class="wizard-footer">
+          <button class="btn btn-secondary" id="pod-prev-btn"><i data-lucide="arrow-left"></i> 上一步</button>
+          <span class="wizard-progress-text" id="pod-progress-text-nav">第 1 / 4 步</span>
+          <button class="btn btn-primary" id="pod-next-btn">下一步 <i data-lucide="arrow-right"></i></button>
+        </div>
+      </div>
+
+      <!-- ===== 页面 5: 形象管理 ===== -->
+      <div class="page" id="page-avatars">
+        <div class="settings-tabs">
+          <button class="settings-tab" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景效果</button>
+          <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
+          <button class="settings-tab" data-target="avatars" type="button">形象管理</button>
+          <button class="settings-tab" data-target="voices" type="button">音色管理</button>
+          <button class="settings-tab" data-target="templates" type="button">模板中心</button>
+        </div>
+        <div class="page-header">
+          <h1 class="page-title">形象管理</h1>
+          <p class="page-subtitle">上传真人照片或视频（嘴巴不动），生成唇形同步数字人</p>
+        </div>
+
+        <!-- Wav2Lip 工作原理说明 -->
+        <div class="card" style="margin-bottom:20px;background:linear-gradient(135deg,#f0f7ff,#e8f4ff);border:1px solid #c8e0ff">
+          <div style="display:flex;gap:16px;align-items:flex-start">
+            <div style="font-size:36px"><i data-lucide="smile"></i></div>
+            <div style="flex:1">
+              <div style="font-weight:600;color:#1a4d8f;margin-bottom:6px">Wav2Lip 唇形同步工作原理</div>
+              <div style="color:#4a6a8f;font-size:13px;line-height:1.6">
+                <strong>1. 上传参考素材</strong>：上传一张真人正面照片，或一段嘴巴不动的真人视频（3-10秒）<br>
+                <strong>2. 生成音频</strong>：系统将文案转为语音（TTS）<br>
+                <strong>3. 唇形同步</strong>：Wav2Lip 模型根据音频驱动参考素材中的嘴唇动作<br>
+                <strong>4. 输出视频</strong>：生成嘴唇会动的数字人口播视频
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="two-col-grid">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="download"></i></span> 注册新形象</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">形象 ID <span class="hint">英文字母+数字</span></label>
+              <input class="form-input" id="avatar-id" placeholder="如：anchor_01">
+            </div>
+            <div class="form-group">
+              <label class="form-label">参考素材（真人照片 或 嘴巴不动的视频）</label>
+              <div class="upload-zone" id="avatar-upload-zone" onclick="document.getElementById('avatar-file').click()">
+                <div class="upload-icon"><i data-lucide="camera"></i></div>
+                <div class="upload-text" id="avatar-upload-text">点击或拖拽上传照片/视频</div>
+                <div class="upload-hint">支持 JPG/PNG 照片 或 MP4/MOV 视频，建议正面清晰、嘴巴不动</div>
+                <input type="file" id="avatar-file" accept=".jpg,.jpeg,.png,.webp,.mp4,.mov,.avi,.mkv" style="display:none" onchange="onAvatarFileSelected(this)">
+              </div>
+              <div id="avatar-preview" style="display:none;margin-top:12px;text-align:center"></div>
+            </div>
+            <button class="btn btn-primary btn-block" id="avatar-reg-btn" onclick="handleRegisterAvatar()"><i data-lucide="download"></i> 注册形象（Wav2Lip 唇形同步）</button>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="users"></i></span> 已注册形象</div>
+            </div>
+            <div class="asset-grid" id="avatars-grid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面 6: 音色管理 ===== -->
+      <div class="page" id="page-voices">
+        <div class="settings-tabs">
+          <button class="settings-tab" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景效果</button>
+          <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
+          <button class="settings-tab" data-target="avatars" type="button">形象管理</button>
+          <button class="settings-tab" data-target="voices" type="button">音色管理</button>
+          <button class="settings-tab" data-target="templates" type="button">模板中心</button>
+        </div>
+        <div class="page-header">
+          <h1 class="page-title">音色管理</h1>
+          <p class="page-subtitle">上传 5-10 秒干净人声样本，克隆音色</p>
+        </div>
+
+        <div class="two-col-grid">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="download"></i></span> 注册新音色</div>
+              <button class="btn btn-sm btn-secondary" onclick="showVoiceRecordingGuide()"><i data-lucide="help-circle"></i> 录制指南</button>
+            </div>
+            <div class="form-group">
+              <label class="form-label">音色 ID <span class="hint">英文字母+数字</span></label>
+              <input class="form-input" id="voice-id" placeholder="如：voice_01">
+            </div>
+            <div class="form-group">
+              <label class="form-label">样本音频（5-10s 干净人声）</label>
+              <div class="upload-zone" onclick="document.getElementById('voice-file').click()">
+                <div class="upload-icon"><i data-lucide="music"></i></div>
+                <div class="upload-text">点击或拖拽上传音频</div>
+                <div class="upload-hint">支持 WAV / MP3 / M4A，无背景噪音</div>
+                <input type="file" id="voice-file" accept=".wav,.mp3,.m4a,.flac" style="display:none" onchange="this.parentElement.querySelector('.upload-text').textContent=this.files[0]?this.files[0].name:'点击或拖拽上传音频'">
+              </div>
+            </div>
+            <button class="btn btn-primary btn-block" id="voice-reg-btn"><i data-lucide="download"></i> 注册音色</button>
+            <div id="voice-quality-report" style="display:none;margin-top:12px"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="music"></i></span> 已注册音色</div>
+            </div>
+            <div class="asset-grid" id="voices-grid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面 6.5: 模板中心 ===== -->
+      <div class="page" id="page-templates">
+        <div class="settings-tabs">
+          <button class="settings-tab" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景效果</button>
+          <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
+          <button class="settings-tab" data-target="avatars" type="button">形象管理</button>
+          <button class="settings-tab" data-target="voices" type="button">音色管理</button>
+          <button class="settings-tab" data-target="templates" type="button">模板中心</button>
+        </div>
+        <div class="page-header">
+          <h1 class="page-title">模板中心</h1>
+          <p class="page-subtitle">场景化一键创作：选场景 → 填内容 → 生成视频。对标腾讯智影/万兴播爆的"点点点"创作模式</p>
+        </div>
+
+        <!-- 场景化模板（核心：选模板→填内容→生成） -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon"><i data-lucide="film"></i></span> 场景化创作模板</div>
+            <button class="btn btn-sm btn-secondary" id="refresh-scene-templates-btn"><i data-lucide="refresh-cw"></i> 刷新</button>
+          </div>
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+            每个模板预置了该场景的口播文案骨架、字幕样式、BGM、滤镜、转场、情感、语速。选择场景后填入关键词即可生成完整文案，一键应用全部样式。
+          </div>
+          <div class="template-grid" id="scene-templates-grid"></div>
+        </div>
+
+        <!-- 场景模板详情与文案填充弹窗 -->
+        <div class="modal-overlay" id="scene-modal" style="display:none">
+          <div class="modal" style="max-width:680px">
+            <div class="modal-header">
+              <div class="modal-title" id="scene-modal-title">场景创作</div>
+              <button class="modal-close" onclick="closeSceneModal()">×</button>
+            </div>
+            <div class="modal-body" id="scene-modal-body" style="max-height:60vh;overflow-y:auto"></div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" onclick="closeSceneModal()">取消</button>
+              <button class="btn btn-primary" id="scene-generate-btn" onclick="generateSceneScript()">生成文案</button>
+              <button class="btn btn-primary" id="scene-apply-style-btn" onclick="applySceneStyle()">一键应用样式</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 预制形象库 -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon"><i data-lucide="user-round"></i></span> 预制数字人形象库</div>
+            <button class="btn btn-sm btn-secondary" id="refresh-preset-avatars-btn"><i data-lucide="refresh-cw"></i> 刷新</button>
+          </div>
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+            预制形象可直接选用，搭配推荐音色。点击"使用此形象"将设为默认形象（建议上传真人照片替换占位图以获最佳效果）。
+          </div>
+          <div class="preset-avatar-grid" id="preset-avatars-grid"></div>
+        </div>
+
+        <!-- 预制音色库 -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon"><i data-lucide="mic"></i></span> 预制音色库</div>
+            <button class="btn btn-sm btn-secondary" id="refresh-preset-voices-btn"><i data-lucide="refresh-cw"></i> 刷新</button>
+          </div>
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+            基于 Edge TTS 的免费音色，按场景推荐。点击"使用此音色"将设为默认音色。
+          </div>
+          <div class="preset-voice-grid" id="preset-voices-grid"></div>
+        </div>
+
+        <!-- 原有创作模板（样式模板） -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon"><i data-lucide="palette"></i></span> 样式模板库（字幕/BGM/滤镜/转场）</div>
+            <button class="btn btn-sm btn-secondary" id="refresh-templates-btn"><i data-lucide="refresh-cw"></i> 刷新</button>
+          </div>
+          <div class="template-grid" id="templates-grid"></div>
+        </div>
+      </div>
+
+      <!-- ===== 页面 7: 任务管理 ===== -->
+      <div class="page" id="page-jobs">
+        <div class="page-header">
+          <h1 class="page-title">任务管理</h1>
+          <p class="page-subtitle">查看历史任务、断点续跑、删除任务</p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon"><i data-lucide="clipboard-list"></i></span> 任务列表</div>
+            <button class="btn btn-sm btn-secondary" id="refresh-jobs-btn"><i data-lucide="refresh-cw"></i> 刷新</button>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>任务 ID</th>
+                  <th>状态</th>
+                  <th>创建时间</th>
+                  <th>更新时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="jobs-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon"><i data-lucide="search"></i></span> 任务详情</div>
+          </div>
+          <div id="job-detail" style="color:var(--text-muted)">选择上方任务查看详情</div>
+        </div>
+      </div>
+
+      <!-- ===== 页面 8: 模型配置 ===== -->
+      <div class="page" id="page-settings-models">
+        <div class="settings-tabs">
+          <button class="settings-tab" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景效果</button>
+          <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
+          <button class="settings-tab" data-target="avatars" type="button">形象管理</button>
+          <button class="settings-tab" data-target="voices" type="button">音色管理</button>
+          <button class="settings-tab" data-target="templates" type="button">模板中心</button>
+        </div>
+        <div class="page-header">
+          <h1 class="page-title">模型配置</h1>
+          <p class="page-subtitle">配置 LLM、TTS、ASR、数字人等核心模型。修改后自动保存并热更新。</p>
+        </div>
+
+        <!-- 子标签 -->
+        <div class="sub-tabs">
+          <button class="sub-tab active" data-subtab="llm"><i data-lucide="brain"></i> LLM 大语言模型</button>
+          <button class="sub-tab" data-subtab="tts"><i data-lucide="mic"></i> TTS 语音合成</button>
+          <button class="sub-tab" data-subtab="asr"><i data-lucide="ear"></i> ASR 语音识别</button>
+          <button class="sub-tab" data-subtab="avatar"><i data-lucide="user-round"></i> 数字人模型</button>
+        </div>
+
+        <!-- LLM 配置 -->
+        <div class="sub-page active" id="subpage-llm">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="brain"></i></span> LLM 大语言模型配置</div>
+              <span class="badge badge-warning" id="llm-status-badge">检查中</span>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">模型名称</label>
+                <input class="form-input" id="llm-model" placeholder="如 agnes-2.5-flash / deepseek-chat / gpt-4o">
+              </div>
+              <div class="form-group">
+                <label class="form-label">API Base URL</label>
+                <input class="form-input" id="llm-base-url" placeholder="https://api.example.com/v1">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">API Key <span class="hint" id="llm-key-hint">未配置</span></label>
+              <div style="display:flex;gap:8px">
+                <input class="form-input" id="llm-api-key" type="password" placeholder="sk-...（留空则走 Mock 模式）">
+                <button class="btn btn-secondary" id="llm-toggle-key" type="button"><i data-lucide="eye"></i></button>
+              </div>
+              <div class="hint" id="llm-key-url" style="margin-top:6px"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Temperature <span class="hint" id="llm-temp-val">0.7</span></label>
+                <input type="range" class="form-range" id="llm-temperature" min="0" max="2" step="0.1" value="0.7" oninput="document.getElementById('llm-temp-val').textContent=this.value">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Max Tokens</label>
+                <input type="number" class="form-input" id="llm-max-tokens" value="2000" min="100" max="32000" step="100">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">超时（秒）</label>
+                <input type="number" class="form-input" id="llm-timeout" value="60" min="5" max="600">
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;gap:8px">
+                <button class="btn btn-secondary" id="llm-test-btn"><i data-lucide="plug"></i> 测试连接</button>
+              </div>
+            </div>
+            <div id="llm-test-result"></div>
+            <div class="form-row" style="margin-top:16px">
+              <button class="btn btn-primary" id="llm-save-btn"><i data-lucide="save"></i> 保存配置</button>
+              <button class="btn btn-secondary" id="llm-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TTS 配置 -->
+        <div class="sub-page" id="subpage-tts">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="mic"></i></span> TTS 语音合成配置</div>
+              <span class="badge badge-warning" id="tts-status-badge">检查中</span>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">服务提供商</label>
+                <select class="form-select" id="tts-provider" onchange="onTTSProviderChange()">
+                  <option value="cosyvoice">CosyVoice3（本地0.5B，9语言+18方言+instruct+克隆，Apache 2.0）</option>
+                  <option value="qwen3_tts">Qwen3-TTS 预置音色（本地0.6B，9音色+情绪控制，推荐）</option>
+                  <option value="qwen3_tts_clone">Qwen3-TTS 声音克隆（本地0.6B Base，3秒样本克隆）</option>
+                  <option value="moss_nano">MOSS NANO（本地CPU降级，6中文+5英文，快速预览）</option>
+                  <option value="edge_tts">Edge TTS（微软标准音色，免费，7中文）</option>
+                  <option value="mimo">MiMo TTS（小米云端，需API凭证）</option>
+                  <option value="gpt_sovits">GPT-SoVITS 云端（声音克隆）</option>
+                  <option value="mock">Mock 模式（静音音频，调试用）</option>
+                </select>
+              </div>
+              <div class="form-group" id="tts-edge-voice-group" style="display:none">
+                <label class="form-label">Edge 音色</label>
+                <div style="display:flex;gap:8px">
+                  <select class="form-select" id="tts-edge-voice" style="flex:1">
+                    <!-- 由 settings.js 动态加载，数据源 /api/voices -->
+                  </select>
+                  <button class="btn btn-secondary" id="tts-edge-preview-btn" type="button" title="试听当前音色"><i data-lucide="play" style="width:14px;height:14px"></i></button>
+                </div>
+              </div>
+              <div class="form-group" id="tts-moss-voice-group" style="display:none">
+                <label class="form-label">MOSS NANO 内置音色</label>
+                <div style="display:flex;gap:8px">
+                  <select class="form-select" id="tts-moss-voice" style="flex:1">
+                    <!-- 由 settings.js 动态加载，数据源 /api/voices -->
+                  </select>
+                  <button class="btn btn-secondary" id="tts-moss-preview-btn" type="button" title="试听当前音色"><i data-lucide="play" style="width:14px;height:14px"></i></button>
+                </div>
+              </div>
+              <div class="form-group" id="tts-qwen3-voice-group" style="display:none">
+                <label class="form-label">Qwen3-TTS 音色</label>
+                <div style="display:flex;gap:8px">
+                  <select class="form-select" id="tts-qwen3-voice" style="flex:1">
+                    <!-- 由 settings.js 动态加载，数据源 /api/voices -->
+                  </select>
+                  <button class="btn btn-secondary" id="tts-qwen3-preview-btn" type="button" title="试听当前音色"><i data-lucide="play" style="width:14px;height:14px"></i></button>
+                </div>
+              </div>
+              <div class="form-group" id="tts-cosyvoice-voice-group" style="display:none">
+                <label class="form-label">CosyVoice3 预置音色</label>
+                <div style="display:flex;gap:8px">
+                  <select class="form-select" id="tts-cosyvoice-voice" style="flex:1">
+                    <option value="anchor_female">女主播（女·中文）</option>
+                    <option value="anchor_male">男主播（男·中文）</option>
+                    <option value="narrator_female">女解说（女·中文）</option>
+                    <option value="narrator_male">男解说（男·中文）</option>
+                    <option value="seller_energetic">带货达人（女·中文）</option>
+                    <option value="english_female">English Female</option>
+                    <option value="english_male">English Male</option>
+                  </select>
+                  <button class="btn btn-secondary" id="tts-cosyvoice-preview-btn" type="button" title="试听当前音色"><i data-lucide="play" style="width:14px;height:14px"></i></button>
+                </div>
+              </div>
+            </div>
+            <!-- Qwen3-TTS 声音克隆配置区（provider=qwen3_tts_clone 时显示） -->
+            <div id="tts-qwen3-clone-group" style="display:none">
+              <div class="form-group">
+                <label class="form-label">参考音频路径 <span class="hint">3秒以上清晰人声样本</span></label>
+                <input class="form-input" id="tts-qwen3-clone-ref-audio" placeholder="例如：config/voices/sample.wav（相对项目根目录）">
+              </div>
+              <div class="form-group">
+                <label class="form-label">参考音频对应文本 <span class="hint">与音频内容一致，提升克隆精度</span></label>
+                <textarea class="form-input" id="tts-qwen3-clone-ref-text" rows="2" placeholder="输入参考音频中说的那句话"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">合成语言</label>
+                <select class="form-select" id="tts-qwen3-clone-lang">
+                  <option value="Chinese">中文</option>
+                  <option value="English">英文</option>
+                  <option value="Japanese">日文</option>
+                  <option value="Korean">韩文</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group" id="tts-api-base-group">
+              <label class="form-label">GPT-SoVITS 服务地址</label>
+              <input class="form-input" id="tts-api-base" placeholder="http://localhost:9880">
+            </div>
+            <div class="form-group" id="tts-api-key-group">
+              <label class="form-label">API Key <span class="hint">可选，若服务需要鉴权</span></label>
+              <input class="form-input" id="tts-api-key" type="password" placeholder="留空表示无需鉴权">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">默认音色 ID</label>
+                <input class="form-input" id="tts-default-voice" value="default">
+              </div>
+              <div class="form-group">
+                <label class="form-label">超时（秒）</label>
+                <input type="number" class="form-input" id="tts-timeout" value="120" min="10" max="600">
+              </div>
+            </div>
+            <div class="form-row" style="margin-top:16px">
+              <button class="btn btn-primary" id="tts-save-btn"><i data-lucide="save"></i> 保存配置</button>
+              <button class="btn btn-secondary" id="tts-test-btn"><i data-lucide="plug"></i> 测试连接</button>
+              <button class="btn btn-secondary" id="tts-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
+            </div>
+            <div id="tts-test-result"></div>
+          </div>
+        </div>
+
+        <!-- ASR 配置 -->
+        <div class="sub-page" id="subpage-asr">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="ear"></i></span> ASR 语音识别配置</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">服务提供商</label>
+                <select class="form-select" id="asr-provider">
+                  <option value="sherpa_funasr">Fun-ASR-Nano（sherpa-onnx 本地，词级时间戳+热词+VAD，推荐）</option>
+                  <option value="whisper_local">Whisper 本地（faster-whisper GPU，large-v3 高准确度）</option>
+                  <option value="funasr">FunASR（本地，paraformer-zh）</option>
+                  <option value="mimo">MiMo ASR（小米云端）</option>
+                  <option value="mock">Mock 模式（按句切分）</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Whisper 模型</label>
+                <select class="form-select" id="asr-model">
+                  <option value="tiny">tiny（最快，准确度低）</option>
+                  <option value="base">base（快）</option>
+                  <option value="small">small（平衡）</option>
+                  <option value="medium">medium（准确，推荐文案提取）</option>
+                  <option value="large-v3">large-v3（最准，慢）</option>
+                  <option value="paraformer-zh">paraformer-zh（FunASR）</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">识别语言</label>
+                <select class="form-select" id="asr-language">
+                  <option value="zh">中文</option>
+                  <option value="en">英文</option>
+                  <option value="ja">日文</option>
+                  <option value="auto">自动检测</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">每行最大字符数</label>
+                <input type="number" class="form-input" id="asr-max-chars" value="18" min="8" max="40">
+              </div>
+            </div>
+            <div class="form-row" style="margin-top:16px">
+              <button class="btn btn-primary" id="asr-save-btn"><i data-lucide="save"></i> 保存配置</button>
+              <button class="btn btn-secondary" id="asr-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 数字人配置 -->
+        <div class="sub-page" id="subpage-avatar">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="user-round"></i></span> 数字人模型配置</div>
+              <span class="badge badge-warning" id="avatar-status-badge">检查中</span>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">服务提供商</label>
+                <select class="form-select" id="avatar-provider" onchange="onAvatarProviderChange()">
+                  <option value="wav2lip">Wav2Lip（本地唇形同步，CPU可跑）</option>
+                  <option value="musetalk">MuseTalk 1.5（本地高质量，解决头部移动问题，需GPU）</option>
+                  <option value="longcat">LongCat 1.5（商用级唇形同步，需云端GPU）</option>
+                  <option value="latentsync">LatentSync（高精度口型，需GPU）</option>
+                  <option value="echomimic">EchoMimic（表情驱动，需GPU）</option>
+                  <option value="mock">Mock 模式（占位图视频，调试用）</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">默认形象 ID</label>
+                <input class="form-input" id="avatar-default" value="default">
+              </div>
+            </div>
+            <div class="form-group" id="avatar-api-base-group">
+              <label class="form-label">数字人服务地址</label>
+              <input class="form-input" id="avatar-api-base" placeholder="http://localhost:8010">
+            </div>
+            <!-- LongCat 1.5 配置（provider=longcat 时显示） -->
+            <div id="avatar-longcat-group" style="display:none;padding:16px;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:12px;margin-bottom:12px">
+              <div style="font-size:13px;font-weight:600;color:var(--color-primary);margin-bottom:12px;display:flex;align-items:center;gap:6px">
+                <i data-lucide="zap" style="width:16px;height:16px"></i> LongCat-Video-Avatar 1.5（美团开源·MIT协议·商用级唇形同步）
+              </div>
+              <div class="form-row">
+                <div class="form-group" style="flex:2">
+                  <label class="form-label">云端服务器地址</label>
+                  <input class="form-input" id="longcat-server-url" placeholder="http://xxx.xxx.xxx.xxx:8000">
+                </div>
+                <div class="form-group" style="flex:1">
+                  <label class="form-label">API Key（可选）</label>
+                  <input class="form-input" id="longcat-api-key" placeholder="留空则不鉴权">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">模型版本</label>
+                  <select class="form-select" id="longcat-model-type">
+                    <option value="avatar-v1.5">Avatar 1.5（Whisper-large，推荐）</option>
+                    <option value="avatar-v1.0">Avatar 1.0（Wav2Vec2，兼容）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">分辨率</label>
+                  <select class="form-select" id="longcat-resolution">
+                    <option value="480p">480P（更快）</option>
+                    <option value="720p">720P（更清晰）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">超时（秒）</label>
+                  <input type="number" class="form-input" id="longcat-timeout" value="600" min="60" max="1800">
+                </div>
+              </div>
+              <div style="font-size:12px;color:var(--text-tertiary);margin-top:8px;line-height:1.5">
+                部署方式：将 <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px">longcat_server.py</code> 部署到 8GB+ 显存 GPU 服务器（如 RTX 3090），填入上方地址即可。本地仅需网络连接。
+              </div>
+            </div>
+            <!-- MuseTalk 配置（provider=musetalk 时显示） -->
+            <div id="avatar-musetalk-group" style="display:none;padding:16px;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:12px;margin-bottom:12px">
+              <div style="font-size:13px;font-weight:600;color:var(--color-success);margin-bottom:12px;display:flex;align-items:center;gap:6px">
+                <i data-lucide="zap" style="width:16px;height:16px"></i> MuseTalk 1.5（腾讯开源·MIT协议·解决头部移动唇形精度问题）
+              </div>
+              <div class="form-row">
+                <div class="form-group" style="flex:2">
+                  <label class="form-label">MuseTalk 服务地址</label>
+                  <input class="form-input" id="musetalk-server-url" placeholder="http://localhost:8010">
+                </div>
+                <div class="form-group" style="flex:1">
+                  <label class="form-label">API Key（可选）</label>
+                  <input class="form-input" id="musetalk-api-key" placeholder="留空则不鉴权">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">模型版本</label>
+                  <select class="form-select" id="musetalk-version">
+                    <option value="v15">v15（推荐，GAN+感知+sync loss）</option>
+                    <option value="v10">v10（基础版）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">FP16 推理</label>
+                  <select class="form-select" id="musetalk-use-float16">
+                    <option value="true">启用（降低显存，2GB必须启用）</option>
+                    <option value="false">禁用（更高质量，需6GB+显存）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">输出帧率</label>
+                  <input type="number" class="form-input" id="musetalk-fps" value="25" min="15" max="60">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">人脸框偏移</label>
+                  <input type="number" class="form-input" id="musetalk-bbox-shift" value="5" min="-20" max="20">
+                </div>
+              </div>
+              <div style="font-size:12px;color:var(--text-tertiary);margin-top:8px;line-height:1.5">
+                部署方式：安装 conda 环境（Python 3.10）→ clone MuseTalk → 安装依赖+下载权重 → 运行 <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px">musetalk_server.py</code>。官方最低 4GB 显存，2GB 需 fp16 + 优化，存在 OOM 风险。
+              </div>
+            </div>
+            <!-- LatentSync 配置（provider=latentsync 时显示） -->
+            <div id="avatar-latentsync-group" style="display:none;padding:16px;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:12px;margin-bottom:12px">
+              <div style="font-size:13px;font-weight:600;color:var(--color-primary);margin-bottom:12px;display:flex;align-items:center;gap:6px">
+                <i data-lucide="zap" style="width:16px;height:16px"></i> LatentSync 1.5（字节开源·Apache 2.0·潜在扩散模型·口型质量超越 MuseTalk）
+              </div>
+              <div class="form-row">
+                <div class="form-group" style="flex:2">
+                  <label class="form-label">LatentSync 服务地址</label>
+                  <input class="form-input" id="latentsync-server-url" placeholder="http://localhost:8011">
+                </div>
+                <div class="form-group" style="flex:1">
+                  <label class="form-label">API Key（可选）</label>
+                  <input class="form-input" id="latentsync-api-key" placeholder="留空则不鉴权">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">推理步数</label>
+                  <select class="form-select" id="latentsync-inference-steps">
+                    <option value="10">10（最快，质量略降）</option>
+                    <option value="15">15（平衡，推荐）</option>
+                    <option value="25">25（高质量）</option>
+                    <option value="50">50（最高质量，较慢）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">处理分辨率</label>
+                  <select class="form-select" id="latentsync-resolution">
+                    <option value="256">256（适配 8GB 显存，推荐）</option>
+                    <option value="512">512（更清晰，需 12GB+ 显存）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">随机种子</label>
+                  <input type="number" class="form-input" id="latentsync-seed" value="-1" min="-1" max="999999999" title="-1 表示随机">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">超时（秒）</label>
+                  <input type="number" class="form-input" id="latentsync-timeout" value="600" min="60" max="1800">
+                </div>
+              </div>
+              <div style="font-size:12px;color:var(--text-tertiary);margin-top:8px;line-height:1.5">
+                部署方式：运行 <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px">scripts/setup_latentsync_env.bat</code> 创建独立 conda 环境 → 启动 <code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px">latentsync_server.py --port 8011</code>。8GB 显存建议 resolution=256 + inference_steps=25。Blackwell（RTX 50系）需 PyTorch 2.7+cu128。
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">输出 FPS</label>
+                <input type="number" class="form-input" id="avatar-fps" value="25" min="15" max="60">
+              </div>
+              <div class="form-group">
+                <label class="form-label">超时（秒）</label>
+                <input type="number" class="form-input" id="avatar-timeout" value="300" min="30" max="1800">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">输出分辨率</label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input type="number" class="form-input" id="avatar-res-w" value="1080" style="flex:1">
+                <span>×</span>
+                <input type="number" class="form-input" id="avatar-res-h" value="1920" style="flex:1">
+                <select class="form-select" id="avatar-res-preset" style="width:auto" onchange="onAvatarResPresetChange(this.value)">
+                  <option value="">自定义</option>
+                  <option value="1080x1920">竖版 1080×1920</option>
+                  <option value="1920x1080">横版 1920×1080</option>
+                  <option value="1080x1080">方形 1080×1080</option>
+                  <option value="720x1280">竖版 720×1280</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row" style="margin-top:16px">
+              <button class="btn btn-primary" id="avatar-save-btn"><i data-lucide="save"></i> 保存配置</button>
+              <button class="btn btn-secondary" id="avatar-test-btn"><i data-lucide="plug"></i> 测试连接</button>
+              <button class="btn btn-secondary" id="avatar-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
+            </div>
+            <div id="avatar-test-result"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面 9: 视频设置 ===== -->
+      <div class="page" id="page-settings-video">
+        <div class="settings-tabs">
+          <button class="settings-tab" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景效果</button>
+          <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
+          <button class="settings-tab" data-target="avatars" type="button">形象管理</button>
+          <button class="settings-tab" data-target="voices" type="button">音色管理</button>
+          <button class="settings-tab" data-target="templates" type="button">模板中心</button>
+        </div>
+        <div class="page-header">
+          <h1 class="page-title">视频设置</h1>
+          <p class="page-subtitle">字幕样式、BGM、画面比例、水印等视频输出参数</p>
+        </div>
+
+        <div class="two-col-grid">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="message-square"></i></span> 字幕样式</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">字幕样式预设</label>
+              <div class="subtitle-style-grid" id="video-subtitle-style-grid"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">字幕动画</label>
+                <select class="form-select" id="sub-animation"></select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">字幕位置</label>
+                <select class="form-select" id="sub-position">
+                  <option value="top">上</option>
+                  <option value="center">中</option>
+                  <option value="bottom" selected>下</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">字号</label>
+                <input type="number" class="form-input" id="sub-font-size" value="24" min="12" max="60">
+              </div>
+              <div class="form-group">
+                <label class="form-label">每行最大字符</label>
+                <input type="number" class="form-input" id="sub-max-chars" value="18" min="8" max="40">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">字体颜色</label>
+                <input type="color" class="form-input" id="sub-font-color" value="#FFFFFF" style="height:42px;padding:4px">
+              </div>
+              <div class="form-group">
+                <label class="form-label">描边颜色</label>
+                <input type="color" class="form-input" id="sub-outline-color" value="#000000" style="height:42px;padding:4px">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">描边宽度</label>
+                <input type="number" class="form-input" id="sub-outline-width" value="2" min="0" max="10" step="0.5">
+              </div>
+              <div class="form-group">
+                <label class="form-label">字间距</label>
+                <input type="number" class="form-input" id="sub-letter-spacing" value="0" min="0" max="10" step="1">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>双行字幕</span>
+                  <label class="toggle-switch"><input type="checkbox" id="sub-dual-line"><span class="toggle-slider"></span></label>
+                </label>
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>卡拉OK逐字</span>
+                  <label class="toggle-switch"><input type="checkbox" id="sub-karaoke"><span class="toggle-slider"></span></label>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="music"></i></span> 背景音乐 (BGM)</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">BGM 音量 <span class="hint" id="bgm-vol-val">0.15</span></label>
+              <input type="range" class="form-range" id="bgm-volume" min="0" max="1" step="0.05" value="0.15" oninput="document.getElementById('bgm-vol-val').textContent=this.value">
+            </div>
+            <div class="form-group">
+              <label class="form-label">BGM 目录</label>
+              <input class="form-input" id="bgm-dir" value="./config/bgm">
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="film"></i></span> 视频输出参数</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">输出 FPS</label>
+                <input type="number" class="form-input" id="video-fps" value="30" min="15" max="60">
+              </div>
+              <div class="form-group">
+                <label class="form-label">视频码率</label>
+                <select class="form-select" id="video-bitrate">
+                  <option value="4M">4M (低画质)</option>
+                  <option value="8M">8M (标准)</option>
+                  <option value="12M">12M (高清)</option>
+                  <option value="20M">20M (超清)</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">音频码率</label>
+                <select class="form-select" id="audio-bitrate">
+                  <option value="128k">128k</option>
+                  <option value="192k">192k</option>
+                  <option value="256k">256k</option>
+                  <option value="320k">320k</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">画面比例</label>
+                <select class="form-select" id="video-ratio" onchange="onVideoRatioChange(this.value)">
+                  <option value="1080x1920">9:16 竖版 (1080×1920)</option>
+                  <option value="1920x1080">16:9 横版 (1920×1080)</option>
+                  <option value="1080x1080">1:1 方形 (1080×1080)</option>
+                  <option value="720x1280">9:16 竖版 (720×1280)</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">FFmpeg 路径</label>
+              <input class="form-input" id="ffmpeg-path" value="ffmpeg" placeholder="ffmpeg 或绝对路径">
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="image"></i></span> 封面设置</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">封面样式</label>
+              <div class="cover-style-grid" id="cover-style-grid">
+                <!-- 样式卡片由 JS 动态注入 -->
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">封面标题预览</label>
+              <input class="form-input" id="cover-preview-title" placeholder="输入标题预览封面效果" value="">
+            </div>
+            <div class="form-group" id="cover-preview-wrapper" style="display:none">
+              <label class="form-label">封面预览</label>
+              <div class="cover-preview-box">
+                <img id="cover-preview-img" alt="封面预览" style="max-width:100%;border-radius:8px">
+              </div>
+              <button class="btn btn-secondary btn-sm" id="cover-regenerate-btn" type="button" style="margin-top:8px"><i data-lucide="refresh-cw"></i> 重新生成</button>
+            </div>
+            <div class="form-group">
+              <label class="form-label">封面生成模式</label>
+              <select class="form-select" id="cover-mode">
+                <option value="frame_overlay">帧叠加（视频帧+标题文字）</option>
+                <option value="template">模板拼接</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">标题最大字符数</label>
+              <input type="number" class="form-input" id="cover-max-chars" value="20" min="8" max="40">
+            </div>
+            <div class="form-group">
+              <label class="form-label">字体文件路径</label>
+              <input class="form-input" id="cover-font-path" value="./config/fonts/SourceHanSansCN-Bold.otf">
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="form-row">
+            <button class="btn btn-primary" id="video-save-btn"><i data-lucide="save"></i> 保存视频设置</button>
+            <button class="btn btn-secondary" id="video-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面 9.5: 场景与效果设置 ===== -->
+      <div class="page" id="page-settings-scene">
+        <div class="settings-tabs">
+          <button class="settings-tab" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景效果</button>
+          <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
+          <button class="settings-tab" data-target="avatars" type="button">形象管理</button>
+          <button class="settings-tab" data-target="voices" type="button">音色管理</button>
+          <button class="settings-tab" data-target="templates" type="button">模板中心</button>
+        </div>
+        <div class="page-header">
+          <h1 class="page-title">场景与效果</h1>
+          <p class="page-subtitle">数字人场景、音频效果、视频转场/滤镜/水印/片头片尾等高级效果配置</p>
+        </div>
+
+        <div class="two-col-grid">
+          <!-- 数字人场景 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="user-round"></i></span> 数字人场景</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">姿态</label>
+              <div class="btn-card-grid" id="scene-pose-grid"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">水平位置</label>
+              <div class="btn-card-grid btn-card-grid-3" id="scene-position-grid">
+                <button class="btn-card" data-value="left" type="button"><div class="btn-card-label">左</div></button>
+                <button class="btn-card active" data-value="center" type="button"><div class="btn-card-label">中</div></button>
+                <button class="btn-card" data-value="right" type="button"><div class="btn-card-label">右</div></button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">大小 <span class="hint" id="scene-scale-val">1.0</span></label>
+              <input type="range" class="form-range" id="scene-scale" min="0.3" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('scene-scale-val').textContent=this.value">
+            </div>
+            <div class="form-group">
+              <label class="form-label">背景类型</label>
+              <div class="btn-card-grid btn-card-grid-3" id="scene-bg-type-grid">
+                <button class="btn-card active" data-value="transparent" type="button"><div class="btn-card-label">透明</div></button>
+                <button class="btn-card" data-value="solid" type="button"><div class="btn-card-label">纯色</div></button>
+                <button class="btn-card" data-value="image" type="button"><div class="btn-card-label">图片</div></button>
+              </div>
+            </div>
+            <div class="form-group" id="scene-bg-color-group" style="display:none">
+              <label class="form-label">背景颜色</label>
+              <input type="color" class="form-input" id="scene-bg-color" value="#1a1a2e" style="height:42px;padding:4px">
+            </div>
+            <div class="form-group" id="scene-bg-image-group" style="display:none">
+              <label class="form-label">背景图片路径</label>
+              <input class="form-input" id="scene-bg-image" placeholder="./config/backgrounds/bg01.jpg">
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                <span>显示 Logo</span>
+                <label class="toggle-switch"><input type="checkbox" id="scene-show-logo"><span class="toggle-slider"></span></label>
+              </label>
+            </div>
+            <div class="form-group" id="scene-logo-position-group" style="display:none">
+              <label class="form-label">Logo 位置</label>
+              <select class="form-select" id="scene-logo-position">
+                <option value="top-left">左上</option>
+                <option value="top-right">右上</option>
+                <option value="bottom-left">左下</option>
+                <option value="bottom-right" selected>右下</option>
+              </select>
+            </div>
+            <div class="form-group" id="settings-logo-image-group" style="display:none">
+              <label class="form-label">Logo 图片路径</label>
+              <input class="form-input" id="settings-logo-image" placeholder="./config/logo.png">
+            </div>
+          </div>
+
+          <!-- 音频效果 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="mic"></i></span> 音频效果</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">语速 <span class="hint" id="audio-speed-val">1.0</span></label>
+                <input type="range" class="form-range" id="audio-speed" min="0.3" max="2.0" step="0.1" value="1.0" oninput="document.getElementById('audio-speed-val').textContent=this.value">
+              </div>
+              <div class="form-group">
+                <label class="form-label">音量 <span class="hint" id="audio-volume-val">100</span></label>
+                <input type="range" class="form-range" id="audio-volume" min="0" max="200" step="5" value="100" oninput="document.getElementById('audio-volume-val').textContent=this.value">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">音高 <span class="hint" id="audio-pitch-val">0</span></label>
+                <input type="range" class="form-range" id="audio-pitch" min="-12" max="12" step="1" value="0" oninput="document.getElementById('audio-pitch-val').textContent=this.value">
+              </div>
+              <div class="form-group">
+                <label class="form-label">句间停顿 <span class="hint" id="audio-pause-val">0.5s</span></label>
+                <input type="range" class="form-range" id="audio-pause" min="0" max="2" step="0.1" value="0.5" oninput="document.getElementById('audio-pause-val').textContent=this.value+'s'">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">情感</label>
+              <div class="btn-card-grid" id="audio-emotion-grid"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                <span>自动去静音</span>
+                <label class="toggle-switch"><input type="checkbox" id="audio-remove-silence"><span class="toggle-slider"></span></label>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                <span>人声增强</span>
+                <label class="toggle-switch"><input type="checkbox" id="audio-voice-enhance"><span class="toggle-slider"></span></label>
+              </label>
+            </div>
+          </div>
+
+          <!-- 视频效果 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="film"></i></span> 视频效果</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">转场</label>
+                <select class="form-select" id="effect-transition"></select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">转场时长 <span class="hint" id="effect-transition-dur-val">0.5s</span></label>
+                <input type="range" class="form-range" id="effect-transition-dur" min="0.1" max="2" step="0.1" value="0.5" oninput="document.getElementById('effect-transition-dur-val').textContent=this.value+'s'">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">滤镜</label>
+                <select class="form-select" id="effect-filter"></select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">滤镜强度 <span class="hint" id="effect-filter-intensity-val">50</span></label>
+                <input type="range" class="form-range" id="effect-filter-intensity" min="0" max="100" step="5" value="50" oninput="document.getElementById('effect-filter-intensity-val').textContent=this.value">
+              </div>
+            </div>
+          </div>
+
+          <!-- 水印 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="droplet"></i></span> 水印</div>
+              <label class="toggle-switch"><input type="checkbox" id="effect-watermark-enabled"><span class="toggle-slider"></span></label>
+            </div>
+            <div id="effect-watermark-group">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">水印文字</label>
+                  <input class="form-input" id="effect-watermark-text" placeholder="@我的账号">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">位置</label>
+                  <select class="form-select" id="effect-watermark-position">
+                    <option value="top-left">左上</option>
+                    <option value="top-right">右上</option>
+                    <option value="bottom-left">左下</option>
+                    <option value="bottom-right" selected>右下</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">透明度 <span class="hint" id="effect-watermark-opacity-val">50</span></label>
+                <input type="range" class="form-range" id="effect-watermark-opacity" min="0" max="100" step="5" value="50" oninput="document.getElementById('effect-watermark-opacity-val').textContent=this.value">
+              </div>
+            </div>
+          </div>
+
+          <!-- 片头片尾 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="card-title-icon"><i data-lucide="film"></i></span> 片头片尾</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>启用片头</span>
+                  <label class="toggle-switch"><input type="checkbox" id="effect-intro-enabled"><span class="toggle-slider"></span></label>
+                </label>
+                <input class="form-input" id="effect-intro-text" style="margin-top:8px" placeholder="片头文字">
+                <input type="number" class="form-input" id="effect-intro-duration" style="margin-top:8px" value="3" min="1" max="10" placeholder="时长(秒)">
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                  <span>启用片尾</span>
+                  <label class="toggle-switch"><input type="checkbox" id="effect-outro-enabled"><span class="toggle-slider"></span></label>
+                </label>
+                <input class="form-input" id="effect-outro-text" style="margin-top:8px" placeholder="片尾文字">
+                <input type="number" class="form-input" id="effect-outro-duration" style="margin-top:8px" value="3" min="1" max="10" placeholder="时长(秒)">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="form-row">
+            <button class="btn btn-primary" id="scene-save-btn"><i data-lucide="save"></i> 保存场景与效果</button>
+            <button class="btn btn-secondary" id="scene-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面 10: 发布设置 ===== -->
+      <div class="page" id="page-settings-publish">
+        <div class="settings-tabs">
+          <button class="settings-tab" data-target="settings-models" type="button">模型配置</button>
+          <button class="settings-tab" data-target="settings-video" type="button">视频设置</button>
+          <button class="settings-tab" data-target="settings-scene" type="button">场景效果</button>
+          <button class="settings-tab" data-target="settings-publish" type="button">发布设置</button>
+          <button class="settings-tab" data-target="avatars" type="button">形象管理</button>
+          <button class="settings-tab" data-target="voices" type="button">音色管理</button>
+          <button class="settings-tab" data-target="templates" type="button">模板中心</button>
+        </div>
+        <div class="page-header">
+          <h1 class="page-title">发布设置</h1>
+          <p class="page-subtitle">多平台账号管理、发布模式、频率控制</p>
+        </div>
+
+        <!-- 联动 P5：Cookie 体系说明卡片（区分两套 Cookie 用途，避免用户混淆） -->
+        <div class="card" style="background:linear-gradient(135deg,rgba(0,113,227,0.04),rgba(94,92,230,0.04));border:1px solid var(--border-default)">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon"><i data-lucide="info"></i></span> 两套 Cookie 体系说明</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div style="padding:12px;background:var(--state-success-light);border:1px solid var(--color-success);border-radius:8px">
+              <div style="font-weight:600;font-size:13px;color:#1e7e34;margin-bottom:6px">
+                <i data-lucide="send" style="width:14px;height:14px;vertical-align:middle"></i>
+                平台账号登录（下方"账号管理"）
+              </div>
+              <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">
+                <strong>用途：</strong>发布视频到抖音/快手/B站/视频号<br>
+                <strong>方式：</strong>点击"登录"按钮，浏览器扫码或账密登录<br>
+                <strong>存储：</strong>config/cookies/{platform}.json<br>
+                <strong>技术：</strong>Playwright 自动化发布
+              </div>
+            </div>
+            <div style="padding:12px;background:var(--state-info-light);border:1px solid var(--color-info);border-radius:8px">
+              <div style="font-weight:600;font-size:13px;color:#0c5460;margin-bottom:6px">
+                <i data-lucide="file-text" style="width:14px;height:14px;vertical-align:middle"></i>
+                ASR Cookie（向导步骤3"对标提取"）
+              </div>
+              <div style="font-size:12px;color:var(--text-secondary);line-height:1.6">
+                <strong>用途：</strong>从抖音/快手等平台提取爆款文案<br>
+                <strong>方式：</strong>上传 Netscape 格式 .txt 文件<br>
+                <strong>存储：</strong>config/asr_cookies.txt<br>
+                <strong>技术：</strong>yt-dlp 下载后 ASR 转文字
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:10px;font-size:11px;color:var(--text-muted);line-height:1.5">
+            <i data-lucide="lightbulb" style="width:12px;height:12px;vertical-align:middle"></i>
+            两套 Cookie 互不复用：发布 Cookie 用于上传视频，ASR Cookie 用于下载视频提取文案。如需提取爆款文案，请在向导步骤3"对标提取"中上传 ASR Cookie。
+          </div>
+        </div>
+
+        <!-- ① 账号管理（一次登录，永久复用） -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon"><i data-lucide="users"></i></span> 账号管理</div>
+            <span class="hint">登录一次后永久复用，无需重复登录</span>
+          </div>
+          <div id="accounts-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+            <!-- 由 JS 渲染 4 个平台卡片 -->
+          </div>
+          <div style="margin-top:10px;padding:10px;background:#e3f2fd;border:1px solid #90caf9;border-radius:6px;font-size:12px;color:#1565c0">
+            <strong>使用说明：</strong>点击平台卡片的"登录"按钮，在弹出的浏览器窗口中完成登录，Cookie 会自动保存。后续发布无需再次登录。
+          </div>
+        </div>
+
+        <!-- ② 一键发布 -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon"><i data-lucide="send"></i></span> 一键发布</div>
+            <span class="hint">将视频发布到已登录的平台</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">📹 选择视频</label>
+            <select class="form-select" id="publish-job-select">
+              <option value="">-- 加载中... --</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">📝 标题 <span class="hint">（留空则用文件名）</span></label>
+            <input class="form-input" id="publish-title" placeholder="输入发布标题">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">📤 发布到 <span class="hint">（只显示已登录平台）</span></label>
+            <div id="publish-platforms-grid" class="matrix-checkbox-grid">
+              <!-- 由 JS 渲染，只显示已登录平台 -->
+            </div>
+            <div id="publish-platforms-empty" style="display:none;padding:10px;background:#fff3e0;border:1px solid #ffe082;border-radius:6px;font-size:12px;color:#8b6914;margin-top:6px">
+              ⚠ 暂无已登录平台，请先在上方"账号管理"中登录至少一个平台
+            </div>
+          </div>
+
+          <details style="margin-top:8px">
+            <summary style="font-size:12px;color:var(--color-text-secondary);cursor:pointer;padding:6px">⚙ 更多选项（描述、标签）</summary>
+            <div class="form-group" style="margin-top:8px">
+              <label class="form-label">视频描述</label>
+              <textarea class="form-textarea" id="publish-description" style="min-height:60px" placeholder="视频描述（可选）"></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">标签 <span class="hint">（逗号分隔）</span></label>
+              <input class="form-input" id="publish-tags" placeholder="口播,AI,数字人">
+            </div>
+          </details>
+
+          <button class="btn btn-primary btn-block" id="publish-run-btn" style="margin-top:12px"><i data-lucide="send"></i> 立即发布</button>
+          <div id="publish-result" style="margin-top:12px"></div>
+        </div>
+
+        <!-- ③ 发布历史 -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon"><i data-lucide="history"></i></span> 发布历史</div>
+            <span class="hint">最近 5 次发布记录</span>
+          </div>
+          <div id="publish-history-list">
+            <!-- 由 JS 渲染 -->
+          </div>
+        </div>
+
+        <!-- 高级选项（折叠） -->
+        <details style="margin-top:12px">
+          <summary style="font-size:13px;color:var(--color-text-secondary);cursor:pointer;padding:10px;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:6px;font-weight:600">
+            🔧 高级选项（发布模式 / 平台启用 / 手动 Cookie / 发布测试台）
+          </summary>
+          <div style="margin-top:12px">
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="settings"></i></span> 发布模式</div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">发布模式</label>
+                  <select class="form-select" id="pub-mode">
+                    <option value="manual">手动 - 仅生成视频，自行发布</option>
+                    <option value="semi_auto">半自动 - 自动打开浏览器，手动确认</option>
+                    <option value="auto">全自动 - 自动发布（需登录态）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">发布间隔（秒）</label>
+                  <input type="number" class="form-input" id="pub-interval" value="60" min="10" max="3600">
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="share-2"></i></span> 平台管理</div>
+              </div>
+              <div class="platform-list" id="platform-list">
+                <!-- 平台卡片由 JS 渲染 -->
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="key"></i></span> 手动 Cookie 管理</div>
+                <span class="hint">高级用户可手动粘贴 Cookie</span>
+              </div>
+              <div id="cookie-manager-list" style="display:flex;flex-direction:column;gap:12px">
+                <!-- Cookie 管理卡片由 JS 渲染 -->
+              </div>
+              <div style="margin-top:12px;padding:10px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;font-size:12px;color:#8b6914">
+                <strong>获取 Cookie 方法：</strong>浏览器登录对应平台 → F12 开发者工具 → Application/存储 → Cookies → 复制全部 Cookie（JSON 格式）粘贴到对应平台输入框
+              </div>
+            </div>
+
+            <!-- 发布测试台（4 阶段测试链路） -->
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="card-title-icon"><i data-lucide="flask-conical"></i></span> 发布测试台</div>
+                <span class="hint">4 阶段测试链路：Cookie检查 → 登录态校验 → 选择器探测 → 上传测试</span>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">测试平台</label>
+                  <select class="form-select" id="test-platform-select">
+                    <option value="bilibili">B站（API 模式）</option>
+                    <option value="douyin">抖音（Playwright）</option>
+                    <option value="kuaishou">快手（Playwright）</option>
+                    <option value="wechat_video">视频号（Playwright）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">测试视频 <span class="hint">（上传测试用）</span></label>
+                  <select class="form-select" id="test-video-select">
+                    <option value="">-- 选择测试视频 --</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">视频标题 <span class="hint">（上传测试用，留空则用文件名）</span></label>
+                <input class="form-input" id="test-video-title" placeholder="测试标题">
+              </div>
+
+              <div class="form-row" style="align-items:center">
+                <div class="form-group" style="flex:0 0 auto">
+                  <label class="form-label" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                    <input type="checkbox" id="test-dry-run" checked style="width:auto">
+                    <span>Dry-run 模式 <span class="hint">（仅上传不点发布按钮）</span></span>
+                  </label>
+                </div>
+              </div>
+
+              <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px">
+                <button class="btn btn-secondary" id="test-cookies-btn"><i data-lucide="file-check"></i> 1.Cookie检查</button>
+                <button class="btn btn-secondary" id="test-login-btn"><i data-lucide="log-in"></i> 2.登录态校验</button>
+                <button class="btn btn-secondary" id="test-selectors-btn"><i data-lucide="search"></i> 3.选择器探测</button>
+                <button class="btn btn-primary" id="test-upload-btn"><i data-lucide="upload-cloud"></i> 4.上传测试</button>
+              </div>
+
+              <div id="test-result" style="margin-top:12px"></div>
+
+              <div style="margin-top:12px;padding:10px;background:#e3f2fd;border:1px solid #90caf9;border-radius:6px;font-size:12px;color:#1565c0">
+                <strong>测试说明：</strong>
+                <br>• <strong>Cookie检查</strong>：仅检查文件存在性和字段完整性，不访问网络（最安全）
+                <br>• <strong>登录态校验</strong>：实际加载 Cookie 访问平台，检测是否被重定向到登录页
+                <br>• <strong>选择器探测</strong>：打开浏览器访问发布页，检测上传/标题/发布按钮选择器是否有效
+                <br>• <strong>上传测试</strong>：实际上传视频文件，dry-run 模式不点发布按钮；关闭 dry-run 将真实发布视频
+              </div>
+            </div>
+
+          </div>
+        </details>
+
+        <div class="card" style="margin-top:20px">
+          <div class="form-row">
+            <button class="btn btn-primary" id="publish-save-btn"><i data-lucide="save"></i> 保存发布设置</button>
+            <button class="btn btn-secondary" id="publish-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面 11: 系统状态 ===== -->
+      <div class="page" id="page-health">
+        <div class="settings-tabs">
+          <button class="settings-tab" data-target="jobs" type="button">任务列表</button>
+          <button class="settings-tab" data-target="health" type="button">系统状态</button>
+        </div>
+        <div class="page-header">
+          <h1 class="page-title">系统状态</h1>
+          <p class="page-subtitle">查看各模块运行状态</p>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+          <button class="btn btn-sm btn-secondary" id="refresh-health-btn"><i data-lucide="refresh-cw"></i> 刷新</button>
+        </div>
+
+        <div id="health-content"></div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="card-header">
+            <div class="card-title"><span class="card-title-icon"><i data-lucide="info"></i></span> 状态说明</div>
+          </div>
+          <div style="color:var(--text-secondary);font-size:13px;line-height:1.8">
+            <p><strong>FFmpeg</strong>：视频处理引擎，必须可用</p>
+            <p><strong>云端 TTS</strong>：语音合成服务状态检查（当前默认 MOSS NANO 本地克隆，无需云端）。该项检查云端 GPU TTS 服务，不可用时本地模式不受影响</p>
+            <p><strong>云端数字人</strong>：口播生成服务状态检查（当前默认 Wav2Lip 本地唇形同步，无需云端）。该项检查云端 GPU 数字人服务，不可用时本地模式不受影响</p>
+            <p><strong>LLM 模式</strong>：Mock 模式表示未配置 API Key，使用模板化文案。配置 DeepSeek/Qwen API Key 后切换为真实生成（当前默认 DeepSeek）</p>
+            <p style="margin-top:12px;padding:12px;background:rgba(99,102,241,0.1);border-radius:8px">
+              <i data-lucide="lightbulb"></i> <strong>提示</strong>：默认使用本地模式（MOSS NANO + Wav2Lip），无需云端 GPU 即可生成真实音视频。云端 GPU 服务为可选增强。前往「设置 → 模型配置」可切换 provider。
+            </p>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- ========== 移动端底部导航栏（拇指区） ========== -->
+        <nav class="bottom-nav">
+      <button class="bottom-nav-item active" data-page="wizard">
+        <span class="bottom-nav-icon"><i data-lucide="wand-2"></i></span>
+        <span class="bottom-nav-label">创作</span>
+      </button>
+      <button class="bottom-nav-item" data-page="settings-models">
+        <span class="bottom-nav-icon"><i data-lucide="settings"></i></span>
+        <span class="bottom-nav-label">设置</span>
+      </button>
+      <button class="bottom-nav-item" data-page="health">
+        <span class="bottom-nav-icon"><i data-lucide="activity"></i></span>
+        <span class="bottom-nav-label">系统</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- 生成进度模态框 -->
+  <div class="progress-modal-overlay" id="progress-modal" style="display:none">
+    <div class="progress-modal">
+      <div class="progress-modal-header">
+        <h2 class="progress-modal-title" id="progress-modal-title">正在生成视频...</h2>
+        <button class="progress-modal-close" id="progress-modal-close" style="display:none" type="button"><i data-lucide="x"></i></button>
+      </div>
+      <div class="progress-stages" id="progress-stages"></div>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progress-bar-fill" style="width:0%"></div>
+        </div>
+        <div class="progress-bar-meta">
+          <span id="progress-percent">0%</span>
+          <span id="progress-eta">预估剩余时间 计算中...</span>
+        </div>
+      </div>
+      <div id="progress-hint" style="margin-top:8px;padding:8px 12px;background:var(--bg-elevated);border-radius:8px;font-size:13px;color:var(--text-secondary);line-height:1.5;display:none"></div>
+      <div class="progress-modal-result" id="progress-modal-result" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- Toast 容器 -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="/static/js/app.js?v=20260731lg1"></script>
+  <script src="/static/js/settings.js?v=20260731lg2"></script>
+
+  <!-- ========== Liquid Glass SVG 滤镜定义（边缘折射变形效果） ========== -->
+  <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false">
+    <defs>
+      <!-- 强折射：用于大卡片、弹窗 -->
+      <filter id="lg-distortion-strong" x="-10%" y="-10%" width="120%" height="120%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.012 0.012" numOctaves="2" seed="92" result="noise"/>
+        <feGaussianBlur in="noise" stdDeviation="2.5" result="blurred"/>
+        <feDisplacementMap in="SourceGraphic" in2="blurred" scale="50" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+      <!-- 轻折射：用于按钮、导航项 -->
+      <filter id="lg-distortion-subtle" x="-5%" y="-5%" width="110%" height="110%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.02 0.02" numOctaves="1" seed="42" result="noise"/>
+        <feGaussianBlur in="noise" stdDeviation="1" result="blurred"/>
+        <feDisplacementMap in="SourceGraphic" in2="blurred" scale="18" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+      <!-- 光泽渐变：用于高光层 -->
+      <linearGradient id="lg-sheen" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="rgba(255,255,255,0)"/>
+        <stop offset="40%" stop-color="rgba(255,255,255,0.6)"/>
+        <stop offset="60%" stop-color="rgba(255,255,255,0.6)"/>
+        <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+      </linearGradient>
+    </defs>
+  </svg>
+</body>
+</html>

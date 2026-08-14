@@ -1,0 +1,416 @@
+# 场景化预制模板库
+# 对标腾讯智影/万兴播爆/剪映的"选模板→填内容→生成"一键创作模式
+# 每个模板包含：文案骨架（带占位符）+ 样式推荐 + BGM + 转场 + 数字人场景
+# 用户只需选择场景 + 填入关键词，即可一键生成完整口播视频
+
+templates:
+
+  # ===== 卖货/电商场景 =====
+  product_selling:
+    label: "电商带货"
+    icon: "shopping-cart"
+    category: "营销带货"
+    description: "适合产品种草、直播带货、促销宣传，节奏明快、突出卖点"
+    script_template: |
+      今天给大家带来一款超好用的{product_name}！
+      你是不是也经常遇到{pain_point}的烦恼？
+      这款{product_name}完美解决了这个问题。
+      它的{feature_1}，让你{benefit_1}；
+      而且{feature_2}，再也不用担心{pain_point}。
+      最关键的是，今天下单还有{offer}！
+      喜欢的朋友点击下方链接，手慢无哦！
+    placeholders:
+      product_name: "产品名称，如：无线蓝牙耳机"
+      pain_point: "用户痛点，如：耳机线缠绕"
+      feature_1: "核心卖点1，如：蓝牙5.3稳定连接"
+      benefit_1: "带来的好处，如：告别卡顿"
+      feature_2: "核心卖点2，如：续航30小时"
+      offer: "促销优惠，如：立减50元+赠收纳盒"
+    style:
+      subtitle_preset: pop_pink
+      subtitle_animation: bounce
+      bgm_track: upbeat_corporate
+      emotion: excited
+      filter: vivid
+      transition: zoomin
+      speech_speed: 1.1
+      voice: Ava
+      avatar: standard
+    avatar_scene:
+      pose: half_body
+      position: center
+      scale: 1.0
+      background_type: solid
+      background_color: "#fff0f5"
+
+  factory_intro:
+    label: "工厂宣传"
+    icon: "building-2"
+    category: "企业宣传"
+    description: "适合工厂/企业实力展示，突出规模、工艺、品质，建立信任"
+    script_template: |
+      大家好，欢迎来到{company_name}。
+      我们是一家专注{industry}的{company_type}，
+      拥有{scale}的生产基地和{experience}的行业经验。
+      走进我们的车间，{production_feature}，
+      每一道工序都严格把控，确保{quality_standard}。
+      我们的{product_line}远销{markets}，
+      深受{customer_type}的信赖。
+      选择{company_name}，就是选择{value_proposition}。
+      欢迎来厂参观洽谈！
+    placeholders:
+      company_name: "公司名称，如：华盛制造"
+      industry: "所在行业，如：精密五金"
+      company_type: "企业类型，如：源头工厂"
+      scale: "规模描述，如：20000平米"
+      experience: "经验年限，如：15年"
+      production_feature: "生产特色，如：引进德国进口设备"
+      quality_standard: "质量标准，如：ISO9001认证"
+      product_line: "产品线，如：精密配件"
+      markets: "销售区域，如：欧美东南亚"
+      customer_type: "客户类型，如：世界500强企业"
+      value_proposition: "价值主张，如：品质与诚信"
+    style:
+      subtitle_preset: tech_blue
+      subtitle_animation: fade
+      bgm_track: upbeat_corporate
+      emotion: neutral
+      filter: none
+      transition: fade
+      speech_speed: 0.95
+      voice: Zhiming
+      avatar: standard
+    avatar_scene:
+      pose: half_body
+      position: center
+      scale: 1.0
+      background_type: solid
+      background_color: "#f0f4f8"
+
+  company_profile:
+    label: "企业介绍"
+    icon: "building"
+    category: "企业宣传"
+    description: "适合公司品牌宣传、招商加盟、团队展示，专业大气"
+    script_template: |
+      {company_name}，{founded_year}年成立于{location}，
+      是一家{positioning}的{industry}企业。
+      多年来，我们始终秉持{philosophy}的理念，
+      致力于为{target_customers}提供{core_service}。
+      公司拥有{team_feature}，{achievement}。
+      未来，{company_name}将继续{vision}，
+      与合作伙伴携手共创美好明天。
+    placeholders:
+      company_name: "公司名称"
+      founded_year: "成立年份"
+      location: "所在地，如：深圳"
+      positioning: "定位，如：国内领先"
+      industry: "行业"
+      philosophy: "经营理念，如：客户至上"
+      target_customers: "目标客户"
+      core_service: "核心服务/产品"
+      team_feature: "团队特色，如：500人研发团队"
+      achievement: "成就，如：服务超过10000家客户"
+      vision: "愿景，如：成为行业标杆"
+    style:
+      subtitle_preset: minimal_white
+      subtitle_animation: fade
+      bgm_track: warm_acoustic
+      emotion: neutral
+      filter: none
+      transition: fade
+      speech_speed: 0.95
+      voice: Zhiming
+      avatar: standard
+    avatar_scene:
+      pose: half_body
+      position: center
+      scale: 1.0
+      background_type: solid
+      background_color: "#ffffff"
+
+  # ===== 教育/知识场景 =====
+  knowledge_popular:
+    label: "知识科普"
+    icon: "book-open"
+    category: "知识教育"
+    description: "适合科普解读、干货分享、原理解释，清晰易懂"
+    script_template: |
+      你知道{topic}是怎么回事吗？
+      今天一分钟带你搞懂。
+      简单来说，{concept}就是{explanation}。
+      举个例子，{example}。
+      所以{conclusion}。
+      是不是一下子就明白了？
+      关注我，每天学点新知识！
+    placeholders:
+      topic: "科普主题，如：为什么天空是蓝色的"
+      concept: "核心概念"
+      explanation: "通俗解释"
+      example: "生活化例子"
+      conclusion: "结论总结"
+    style:
+      subtitle_preset: tech_blue
+      subtitle_animation: slide
+      bgm_track: tech_electronic
+      emotion: cheerful
+      filter: vivid
+      transition: slideup
+      speech_speed: 1.0
+      voice: Bella
+      avatar: standard
+    avatar_scene:
+      pose: half_body
+      position: center
+      scale: 1.0
+      background_type: solid
+      background_color: "#e8f4ff"
+
+  course_intro:
+    label: "课程介绍"
+    icon: "🎓"
+    category: "知识教育"
+    description: "适合在线课程、培训招生、知识付费推广"
+    script_template: |
+      想要{learning_goal}却总是{difficulty}？
+      {course_name}帮你系统掌握{skill}！
+      这门课程包含{content_1}、{content_2}、{content_3}，
+      从{level_start}到{level_end}，循序渐进。
+      {teacher_intro}亲自授课，
+      {feature}，让你{benefit}。
+      现在报名享受{offer}，
+      点击链接，开启你的{learning_goal}之旅！
+    placeholders:
+      learning_goal: "学习目标，如：学会Python编程"
+      difficulty: "遇到的困难，如：无从下手"
+      course_name: "课程名称"
+      skill: "技能名称"
+      content_1: "内容模块1"
+      content_2: "内容模块2"
+      content_3: "内容模块3"
+      level_start: "起点水平，如：零基础"
+      level_end: "终点水平，如：独立开发"
+      teacher_intro: "老师介绍，如：10年资深工程师"
+      feature: "课程特色，如：实战项目驱动"
+      benefit: "学习收益，如：学完即可接单"
+      offer: "报名优惠"
+    style:
+      subtitle_preset: pop_pink
+      subtitle_animation: bounce
+      bgm_track: upbeat_corporate
+      emotion: cheerful
+      filter: vivid
+      transition: zoomin
+      speech_speed: 1.05
+      voice: Bella
+      avatar: standard
+    avatar_scene:
+      pose: half_body
+      position: center
+      scale: 1.0
+      background_type: solid
+      background_color: "#fff8e1"
+
+  # ===== 资讯/新闻场景 =====
+  news_broadcast:
+    label: "新闻播报"
+    icon: "📰"
+    category: "资讯新闻"
+    description: "适合热点资讯、行业动态、政策解读，严肃专业"
+    script_template: |
+      观众朋友们大家好，欢迎收看{program_name}。
+      今天我们来关注{news_topic}。
+      {news_fact}。
+      据了解，{detail_1}。
+      {detail_2}。
+      业内人士表示，{expert_opinion}。
+      {news_topic}的后续发展，我们将持续关注。
+      感谢您的收看，我们下期再见。
+    placeholders:
+      program_name: "节目名称，如：今日资讯"
+      news_topic: "新闻话题"
+      news_fact: "新闻事实"
+      detail_1: "细节1"
+      detail_2: "细节2"
+      expert_opinion: "专家观点"
+    style:
+      subtitle_preset: news_red
+      subtitle_animation: fade
+      bgm_track: news_serious
+      emotion: serious
+      filter: none
+      transition: fade
+      speech_speed: 0.95
+      voice: Zhiming
+      avatar: standard
+    avatar_scene:
+      pose: half_body
+      position: center
+      scale: 1.0
+      background_type: solid
+      background_color: "#1a1a2e"
+
+  # ===== 情感/生活场景 =====
+  emotional_story:
+    label: "情感故事"
+    icon: "heart"
+    category: "情感生活"
+    description: "适合情感分享、治愈故事、人生感悟，温柔细腻"
+    script_template: |
+      {opening_hook}
+      {story_background}。
+      {story_development}。
+      后来才明白，{insight}。
+      其实{philosophy}。
+      愿{wish}。
+      我是{anchor_name}，我们下期见。
+    placeholders:
+      opening_hook: "开场钩子，如：你有没有过这样的时刻"
+      story_background: "故事背景"
+      story_development: "故事发展"
+      insight: "感悟洞察"
+      philosophy: "人生哲理"
+      wish: "祝福语"
+      anchor_name: "主播名"
+    style:
+      subtitle_preset: minimal_white
+      subtitle_animation: fade
+      bgm_track: warm_acoustic
+      emotion: gentle
+      filter: warm
+      transition: fade
+      speech_speed: 0.9
+      voice: Ava
+      avatar: standard
+    avatar_scene:
+      pose: half_body
+      position: center
+      scale: 1.0
+      background_type: solid
+      background_color: "#fdf2f8"
+
+  # ===== 科技/测评场景 =====
+  tech_review:
+    label: "科技测评"
+    icon: "🔬"
+    category: "科技数码"
+    description: "适合数码测评、科技解读、产品对比，硬核专业"
+    script_template: |
+      哈喽大家好，今天我们来聊聊{product_name}。
+      {product_name}最大的亮点就是{highlight}。
+      先看{aspect_1}，{detail_1}。
+      再看{aspect_2}，{detail_2}。
+      不过也有不足，{drawback}。
+      综合来看，{verdict}。
+      如果你的预算在{price_range}，{recommendation}。
+      喜欢的话点个赞，我们下期见！
+    placeholders:
+      product_name: "产品名称"
+      highlight: "最大亮点"
+      aspect_1: "方面1，如：性能"
+      detail_1: "细节1"
+      aspect_2: "方面2，如：续航"
+      detail_2: "细节2"
+      drawback: "不足之处"
+      verdict: "综合评价"
+      price_range: "价格区间"
+      recommendation: "购买建议"
+    style:
+      subtitle_preset: dark_black
+      subtitle_animation: zoom
+      bgm_track: tech_electronic
+      emotion: neutral
+      filter: cool
+      transition: slideleft
+      speech_speed: 1.05
+      voice: Nathan
+      avatar: standard
+    avatar_scene:
+      pose: half_body
+      position: center
+      scale: 1.0
+      background_type: solid
+      background_color: "#0f172a"
+
+  # ===== 古风/文化场景 =====
+  chinese_culture:
+    label: "古风文化"
+    icon: "landmark"
+    category: "文化历史"
+    description: "适合历史故事、国学经典、传统文化，典雅古朴"
+    script_template: |
+      {opening_poem}。
+      今天我们来聊一聊{topic}。
+      {historical_background}。
+      {main_content}。
+      {cultural_meaning}。
+      正所谓{classical_quote}。
+      {modern_insight}。
+      愿我们都能从{topic}中，汲取{wisdom}。
+    placeholders:
+      opening_poem: "开场诗词"
+      topic: "主题，如：孔子的为政思想"
+      historical_background: "历史背景"
+      main_content: "主要内容"
+      cultural_meaning: "文化内涵"
+      classical_quote: "经典引用"
+      modern_insight: "现代启示"
+      wisdom: "智慧，如：处世之道"
+    style:
+      subtitle_preset: classic_gold
+      subtitle_animation: typewriter
+      bgm_track: chinese_guzheng
+      emotion: calm
+      filter: vintage
+      transition: fade
+      speech_speed: 0.9
+      voice: Zhiming
+      avatar: standard
+    avatar_scene:
+      pose: half_body
+      position: center
+      scale: 1.0
+      background_type: solid
+      background_color: "#2d1810"
+
+  # ===== 自我介绍/个人IP场景 =====
+  personal_ip:
+    label: "个人IP介绍"
+    icon: "star"
+    category: "个人品牌"
+    description: "适合博主自我介绍、账号定位、个人品牌打造"
+    script_template: |
+      你好，我是{anchor_name}。
+      一个{identity}的{profession}。
+      在这个账号，我会分享{content_direction}。
+      {credential}。
+      {unique_value}。
+      如果你也对{target_audience_interest}感兴趣，
+      不妨点个关注，我们一起{growth_goal}。
+      评论区告诉我，{interaction_question}？
+    placeholders:
+      anchor_name: "你的名字/昵称"
+      identity: "身份特征，如：热爱分享"
+      profession: "职业，如：程序员"
+      content_direction: "内容方向，如：编程技巧和职场经验"
+      credential: "资历背书，如：10年大厂经验"
+      unique_value: "独特价值，如：用最通俗的语言讲最硬核的知识"
+      target_audience_interest: "目标受众兴趣"
+      growth_goal: "成长目标，如：共同进步"
+      interaction_question: "互动问题，如：你想学什么技术"
+    style:
+      subtitle_preset: minimal_white
+      subtitle_animation: fade
+      bgm_track: warm_acoustic
+      emotion: cheerful
+      filter: none
+      transition: fade
+      speech_speed: 1.0
+      voice: Zhiming
+      avatar: standard
+    avatar_scene:
+      pose: half_body
+      position: center
+      scale: 1.0
+      background_type: solid
+      background_color: "#ffffff"

@@ -1,0 +1,563 @@
+# EnlyAI 默认配置
+# 所有配置项均可通过环境变量覆盖，环境变量格式：KRVOICEAI_<大写路径>
+# 例如：KRVOICEAI_LLM_API_KEY 覆盖 llm.api_key
+
+project:
+  name: EnlyAI
+  version: 0.3.0
+  # 工作根目录，所有任务产物存放于此
+  work_root: ./workspace_data
+  # 临时目录
+  temp_root: ./workspace_data/tmp
+
+# 日志配置
+logging:
+  level: INFO  # DEBUG / INFO / WARNING / ERROR
+  file: ./workspace_data/logs/krvoiceai.log
+  rotation: "10 MB"
+  retention: "30 days"
+  console: true
+
+# LLM 配置（文案/标题生成）
+# 全本地链路：Ollama 提供 OpenAI 兼容 /v1/chat/completions 端点，零代码改动对接 llm_client.py
+# 启动 Ollama 后拉取模型：ollama pull qwen3:8b
+llm:
+  provider: ollama  # ollama(本地,Qwen3-8B Q4) / deepseek(云端兜底) / mock
+  api_key: "ollama"  # Ollama 不校验，任意非空串（llm_client.py 要求非空否则走 mock）
+  base_url: http://localhost:11434/v1
+  model: qwen3:8b  # Qwen3-8B（2025-04发布，/think+/no_think双模式，中文天花板，Apache 2.0）
+  temperature: 0.7
+  max_tokens: 2000
+  timeout: 120  # 本地 8B CPU/GPU 推理较慢，放宽超时
+
+# TTS 配置（声音克隆）
+tts:
+  provider: qwen3_tts  # qwen3_tts(默认,9预置音色+情绪) / qwen3_tts_clone(声音克隆) / moss_nano(CPU降级) / edge_tts(免费) / mimo / gpt_sovits / mock
+  # GPT-SoVITS 云端服务地址
+  api_base: http://localhost:9880
+  api_key: ""
+  timeout: 180
+  # MiMo TTS 配置（provider=mimo 时使用）
+  mimo_model: mimo-v2.5-tts
+  # edge-tts 降级配置
+  edge_voice: zh-CN-XiaoxiaoNeural
+  # 音色库目录
+  voices_dir: ./config/voices
+  # 默认音色（edge_tts: zh-CN-XiaoxiaoNeural 等10个；moss_nano: Zhiming/Trump/Ava/Bella/Adam/Nathan）
+  # 注：Junhao 已从音色列表移除，默认替换为 Zhiming（同为中文男声）
+  default_voice: Zhiming
+  # MOSS-TTS-Nano 配置（provider=moss_nano 时使用，本地 CPU 声音克隆）
+  moss_nano:
+    # MOSS-TTS-Nano 仓库根目录（含 onnx_tts_runtime.py）
+    repo_dir: ../MOSS-TTS-Nano
+    # ONNX 模型目录（含 MOSS-TTS-Nano-100M-ONNX 和 MOSS-Audio-Tokenizer-Nano-ONNX）
+    model_dir: ../MOSS-TTS-Nano/models
+    # CPU 线程数（建议等于物理核数，超线程对 ONNX 推理反而更慢）
+    cpu_threads: 4
+    # 执行后端：cpu / cuda
+    execution_provider: cpu
+    # 内置音色（无参考音频时使用）：Zhiming / Trump / Ava / Bella / Adam / Nathan
+    # 注：Junhao 已移除，默认替换为 Zhiming
+    builtin_voice: Zhiming
+    # 文本归一化是否启用 WeTextProcessing（需 pynini，已安装启用）
+    enable_wetext: true
+    # 是否启用 robust normalizer
+    enable_normalize_tts_text: true
+    # 长文本分块 token 预算
+    voice_clone_max_text_tokens: 75
+    # 最大生成音频帧数
+    max_new_frames: 375
+    # 实时流式解码（更快）
+    realtime_streaming: true
+  # Qwen3-TTS 配置（provider=qwen3_tts 时使用，本地 0.6B 模型，9 预置音色 + 指令控制）
+  qwen3_tts:
+    # 模型 ID（HuggingFace/ModelScope）。首次运行自动下载到 HF 缓存（~2.5GB）
+    # 指向官方仓库 ID 即可，from_pretrained 会自动拉取；也可改成本地已下载路径
+    model_id: Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
+    # 推理设备：cpu / cuda:0（RTX 5060 8GB 用 cuda:0，bfloat16 约 2-4GB 显存）
+    device: cuda:0
+    # 默认音色（9 预置音色：Vivian/Serena/Uncle_Fu/Dylan/Eric/Ryan/Aiden/Ono_Anna/Sohee）
+    default_speaker: Vivian
+  # Qwen3-TTS 声音克隆配置（provider=qwen3_tts_clone 时使用，0.6B Base 模型，3 秒参考音频克隆）
+  qwen3_tts_clone:
+    # 模型 ID（Base 版，支持声音克隆）
+    model_id: Qwen/Qwen3-TTS-12Hz-0.6B-Base
+    # 推理设备：cpu / cuda:0
+    device: cuda:0
+    # 参考音频路径（3 秒以上清晰人声样本，相对路径基于 PROJECT_ROOT）
+    ref_audio: ""
+    # 参考音频对应文本（与音频内容一致，提升克隆精度）
+    ref_text: ""
+    # 合成语言：Chinese / English / Japanese / Korean 等
+    language: Chinese
+  # CosyVoice3 配置（provider=cosyvoice 时使用，本地 Fun-CosyVoice3-0.5B-2512 服务）
+  # 2025/12 最新版，9 语言 + 18 中文方言 + instruct2 指令控制 + 零样本声音克隆
+  # 部署：独立 conda 环境 + HTTP 服务（因 torch 版本与主环境冲突），见 scripts/setup_cosyvoice_env.bat
+  # 启动服务：conda activate CosyVoice && cd CosyVoice && python ../krvoiceai/modules/cosyvoice_server.py --port 8012
+  cosyvoice:
+    # 服务地址（cosyvoice_server.py 监听）
+    server_url: http://localhost:8012
+    # API Key 鉴权（可选，目前服务端未启用）
+    api_key: ""
+    # 请求超时（秒）
+    timeout: 180
+    # 是否启用 instruct 指令控制（情绪/方言/语速）。关闭则纯零样本克隆
+    use_instruct: true
+    # 音色库目录（预置音色样本音频存放于此，每音色一个子目录含 sample.wav + ref_text.txt）
+    voices_dir: ./config/voices
+    # 默认音色（COSYVOICE_PRESET_VOICES 中的 key）
+    default_voice: anchor_female
+
+# 语音播客配置
+podcast:
+  # 默认角色切换停顿（秒）
+  role_switch_pause: 0.4
+  # 同角色连续说话停顿（秒）
+  same_role_pause: 0.12
+  # 片段前引导静音（秒）
+  lead_in_silence: 0.10
+  # 默认风格
+  default_style: "轻松对话"
+  # 默认角色数量
+  default_role_count: 3
+  # 默认时长（分钟）
+  default_duration_minutes: 5
+  # 输出采样率
+  output_sample_rate: 24000
+  # BGM 默认音量（0-1），与 composer.bgm_volume 保持一致
+  bgm_volume: 0.15
+
+# 数字人配置（口播生成）
+avatar:
+  provider: latentsync  # latentsync(默认,本地GPU高精度) / wav2lip(本地CPU) / musetalk / longcat / echomimic / mock
+  # 云端服务地址（musetalk/latentsync 用）
+  api_base: http://localhost:8010
+  api_key: ""
+  timeout: 300
+  # 形象库目录
+  avatars_dir: ./config/avatars
+  default_avatar: default
+  # 输出视频参数
+  output_fps: 25
+  output_resolution: [720, 1280]  # 竖版（匹配standard形象原始720×1280，避免无意义放大）
+  # Wav2Lip 配置（本地 CPU 唇形同步，嘴会动）
+  wav2lip:
+    # 模型权重（wav2lip_gan.pth 比 wav2lip.pth 画质略好）
+    checkpoint_path: ../Wav2Lip/checkpoints/wav2lip_gan.pth
+    # 独立 Python 环境路径（Wav2Lip 需要 Python 3.8 + torch 1.13）
+    # 由 scripts/setup_wav2lip_env.bat 创建
+    env_python: ../wav2lip_env/Scripts/python.exe
+    # 推理脚本路径（Wav2Lip 仓库的 inference.py）
+    inference_script: ../Wav2Lip/inference.py
+    face_det_batch_size: 2
+    wav2lip_batch_size: 2
+    # 扩大 padding：上10/下40/左10/右10，确保头部移动时人脸框不切到嘴部
+    pads: [10, 40, 10, 10]
+    # resize_factor=1 用原分辨率推理（人脸检测精度最高，头部移动时嘴部对齐准确）
+    # CPU 模式较慢（1分钟视频约30-60分钟），但嘴唇替换效果最佳
+    resize_factor: 1
+    # 启用平滑（T=5 居中窗口）：以当前帧为中心取前后帧均值，减少头部移动时人脸框滞后/漂移
+    # 配合 resize_factor=1 高精度检测 + 扩大 pads，既保证精度又避免崩溃
+    nosmooth: false
+    # inference.py 已内置羽化嘴部聚焦融合：
+    #   - 下 65% 区域（嘴部）完全用 Wav2Lip 生成结果
+    #   - 上 35% 区域（眼睛/额头）保留原始帧，边缘羽化过渡
+    #   - 消除"整张脸块状替换"伪影，头部移动时错位不可见
+    # 推理设备：auto=自动检测GPU（不可用时回退cpu）/ cpu=强制CPU / cuda=强制GPU
+    device: auto
+  # 微动作层（FFmpeg 后处理，缓解"只有嘴动"的恐怖谷）
+  # 给静态照片/Wav2Lip 输出加：呼吸缩放 + 微抖动 + 眨眼亮度节奏
+  micro_motion:
+    enabled: false        # 默认关，避免对高质量云端输出过度处理；本地 wav2lip 建议开
+    breathing_scale: 0.02 # 呼吸缩放幅度（1.0 ± 此值，0.02 = 2% 缩放）
+    breathing_period: 4.0 # 呼吸周期（秒）
+    shake_amplitude: 0.3  # 微抖动幅度（度，±0.3° 摆动）
+    shake_period: 2.0     # 抖动周期（秒）
+    blink_enabled: true   # 眨眼（用周期性亮度脉冲近似闭眼节奏）
+    blink_interval: 4.0   # 眨眼间隔（秒）
+  # GFPGAN 人脸增强（提升 Wav2Lip 脸部清晰度）
+  # 注意：CPU 模式较慢（逐帧约9秒），stride 跳帧会导致动作卡顿。
+  # 建议：追求流畅用 enabled:false；追求清晰度且能接受长时间处理用 enabled:true + stride:1
+  gfpgan:
+    enabled: false               # 默认关（保证动作流畅）；开启需 stride=1 逐帧处理
+    model_path: ../Wav2Lip/gfpgan_weights/GFPGANv1.4.pth
+    enhance_script: ../wav2lip_env/enhance.py
+    weight: 0.5                  # 增强权重（0-1）
+    device: cpu
+    stride: 1                    # 1=逐帧（流畅但慢），>1=跳帧（快但卡顿）
+  # LatentSync 1.5 配置（本地 GPU 服务，provider=latentsync 时使用）
+  # 字节跳动开源 Apache 2.0，潜在扩散模型，口型质量超过 MuseTalk，适合高质量口播/无人直播
+  # 部署：scripts/setup_latentsync_env.bat 创建独立 conda 环境，运行 latentsync_server.py（端口 8011）
+  # Blackwell sm_120 兼容：需 PyTorch 2.7+cu128，fp16 推理，8GB 显存用 resolution=256
+  latentsync:
+    server_url: http://localhost:8011  # LatentSync 本地服务地址
+    api_key: ""                       # API Key 鉴权（可选）
+    config: high_quality  # 兼容字段（服务端按 resolution 自动选配置）
+    inference_steps: 15   # 扩散步数（15 平衡速度与质量，25 更高质量，10 最快）
+    resolution: 256       # 处理分辨率（256 适配 8GB 显存，512 需 12GB+）
+    seed: -1              # 随机种子（-1 随机）
+    timeout: 600          # 请求超时秒数
+  # LongCat-Video-Avatar 1.5 配置（云端 GPU，provider=longcat 时使用）
+  # 美团开源，MIT 协议，Whisper-large-v3 音频编码器，商用级唇形同步
+  # 优势：唇形同步精准（头部移动不丢同步）+ 全身时序稳定 + DMD 蒸馏 8 步生成
+  # 要求：云端需 8GB+ 显存 GPU（配合 INT8 量化），本地仅需网络连接
+  # 部署：将 krvoiceai/modules/longcat_server.py 部署到 GPU 服务器
+  longcat:
+    server_url: ""                 # 云端服务地址，如 http://xxx.xxx.xxx.xxx:8000
+    api_key: ""                    # API Key 鉴权（可选）
+    model_type: avatar-v1.5        # avatar-v1.5（推荐）或 avatar-v1.0
+    resolution: 480p               # 480p（更快）或 720p（更清晰）
+    timeout: 600                   # 请求超时秒数（长视频可能较慢）
+  # MuseTalk 配置（本地高质量引擎，provider=musetalk 时使用）
+  # 腾讯开源 MIT 协议，256×256 逐帧人脸对齐，解决 Wav2Lip 头部移动唇形精度下降
+  # 优势：单步潜空间 inpainting（非扩散），v1.5 加 GAN+感知+sync loss
+  # 要求：NVIDIA GPU（官方最低 4GB fp16），独立 Python 3.10 conda 环境
+  # 部署：将 krvoiceai/modules/musetalk_server.py 部署到 MuseTalk conda 环境运行
+  musetalk:
+    server_url: ""                 # MuseTalk 服务地址，如 http://localhost:8010
+    api_key: ""                    # API Key 鉴权（可选）
+    version: v15                   # v15（推荐，质量更好）或 v10
+    use_float16: true              # fp16 推理（降低显存，2GB 显存必须启用）
+    fps: 25                        # 输出帧率
+    bbox_shift: 5                  # 人脸裁剪框偏移（正值下移）
+    timeout: 600                   # 请求超时秒数
+
+# ASR 配置（字幕/文案提取）
+asr:
+  # provider 优先级（本地优先）：
+  #   whisper_local: faster-whisper CPU int8，词级时间戳，本地推荐（需 pip install -e ".[local]"）
+  #   sherpa_funasr: sherpa-onnx 调用 Fun-ASR-Nano ONNX 模型（paraformer + VAD + 热词，纯 CPU）
+  #   funasr:        FunASR 服务（本地或云端，需 GPU）
+  #   mimo:          小米 MiMo ASR API（云端）
+  #   mock:          降级（复用 TTS 时间戳或按字数估算）
+  provider: whisper_local
+  model: paraformer-zh
+  # 本地运行时模型缓存目录
+  model_cache: ./workspace_data/models/asr
+  language: zh
+  # 文案提取：yt-dlp 自动从本机浏览器读取 cookies（用户无感知，无需手动上传）
+  # 抖音/快手强力反爬，yt-dlp 需 cookies 才能下载。设置后自动从已登录浏览器读取。
+  # 支持值：chrome / edge / firefox / brave / opera / safari / chromium / "" (禁用)
+  # 前提：用户在本机浏览器登录过 douyin.com 即可，yt-dlp 自动提取 cookies
+  cookies_from_browser: "chrome"
+  # cookies 文件路径（Netscape 格式 .txt，手动指定，优先级低于 cookies_from_browser）
+  cookies_file: ""
+  # MiMo ASR 配置（provider=mimo 时使用）
+  api_base: https://token-plan-cn.xiaomimimo.com/v1
+  api_key: ""
+  mimo_model: mimo-v2.5-asr
+  timeout: 120
+  # faster-whisper 本地配置（provider=whisper_local 时使用）
+  whisper:
+    # model_size: large-v3 准确度最高（中文专有名词/同音字识别显著优于 medium）
+    # RTX 5060 8GB GPU 跑 large-v3 fp16 约 4.5GB 显存，比 medium CPU 快 10-20 倍
+    model_size: large-v3   # tiny/base/small/medium/large-v3
+    device: cuda           # RTX 5060 8GB 用 cuda；ASR 阶段与 TTS/MuseTalk 时序错开可独占 GPU
+    # ⚠️ Blackwell sm_120 必须用 float16：CTranslate2 v4.6.2+ 禁用 int8 on sm120
+    # 需 ctranslate2>=4.6.3（支持 CUDA 12.8 / sm_120）
+    compute_type: float16  # Blackwell 只能用 float16，不能用 int8/int8_float16
+    beam_size: 5           # GPU 用 5（速度/准确度平衡）；CPU 文案提取用 10 最准
+    vad_filter: true        # 启用 VAD 静音过滤，提升字幕对齐精度
+    download_root: ""       # 模型下载根目录（空则用 ~/AppData/Local/cache 或 HuggingFace 默认）
+    # 静态热词（硬编码，对所有视频生效）。留空则仅依赖动态热词（从分享文本话题标签自动提取）
+    # 示例："脓毒症 造影 动脉 医疗事故 卫健局"（医疗领域专用）
+    hotwords: ""
+    # 动态热词开关：开启后自动从分享文本提取 #话题标签 作为 hotwords（针对具体视频主题）
+    dynamic_hotwords: true
+    # LLM 后处理纠错：ASR 转写后用 LLM 结合视频标题/话题标签纠正错别字（同音字/形近字）
+    # 显著提升中文识别准确度，+5-10 秒 LLM 调用。需配置 llm.provider（agnes/deepseek 等）
+    llm_correct: true
+  # sherpa-onnx Fun-ASR-Nano 配置（provider=sherpa_funasr 时使用）
+  # Fun-ASR-Nano 是 Qwen3-0.6B LLM-based ASR 模型（非 paraformer）
+  # 模型目录需包含：encoder_adaptor.int8.onnx + llm.int8.onnx + embedding.int8.onnx + Qwen3-0.6B/ (tokenizer 目录)
+  # 支持：中文（含7方言+26口音）、英文、日文、歌词、说唱语音识别
+  # 性能：CPU 4线程 RTF~0.19（5倍实时速度），加载约 4.4s，纯 ONNX 推理零 PyTorch 依赖
+  # VAD 模型需单独下载 silero_vad.onnx（https://github.com/k2-fsa/sherpa-onnx/releases）
+  sherpa_funasr:
+    model_dir: ./workspace_data/models/asr/funasr_nano/sherpa-onnx-funasr-nano-int8-2025-12-30
+    num_threads: 4
+    decoding_method: greedy_search  # greedy_search / modified_beam_search
+    hotwords: ""
+    use_vad: true
+    vad_silero_model: ./workspace_data/models/asr/silero_vad.onnx
+  # 字幕基础样式
+  subtitle:
+    font_size: 24
+    font_color: "&HFFFFFF"
+    outline_color: "&H000000"
+    outline_width: 2
+    max_chars_per_line: 18
+
+# 字幕高级样式与效果（对标剪映/Sayatoo/腾讯智影）
+subtitle:
+  # 样式预设：douyin_hot(抖音爆款黄字) / minimal_white / tech_blue / classic_gold / pop_pink / news_red
+  preset: douyin_hot
+  # 入场动画：none / fade / slide / zoom / bounce / typewriter / karaoke
+  animation: fade
+  # 字体名称（系统字体）
+  font_name: "Source Han Sans CN"
+  # 字号（1080x1920 下 56 较醒目，对标剪映抖音爆款）
+  font_size: 56
+  # 主色（ASS 格式 &HBBGGRR）
+  primary_color: "&H00FFFFFF"
+  # 描边色
+  outline_color: "&H00000000"
+  # 描边宽度
+  outline_width: 2
+  # 阴影色
+  shadow_color: "&H80000000"
+  # 阴影距离
+  shadow_distance: 1
+  # 字间距
+  letter_spacing: 0
+  # 行高倍数
+  line_spacing: 1.2
+  # 位置：top / center / bottom
+  position: bottom
+  # 水平对齐：left / center / right
+  alignment: center
+  # 垂直边距（像素，120 避开手机底部手势区）
+  margin_v: 120
+  # 双行字幕（长句自动折行）
+  dual_line: true
+  # 卡拉OK逐字点亮（开启后配合 whisper 词级时间戳，逐字高亮按真实发音时长）
+  karaoke: true
+  # 加粗
+  bold: true
+  # 斜体
+  italic: false
+
+# 数字人场景设置（对标腾讯智影/HeyGen）
+scene:
+  # 姿态预设：standing / sitting / half_body / closeup
+  pose: half_body
+  # 水平位置：left / center / right
+  position: center
+  # 数字人大小（0.5-2.0，1.0 为原始）
+  scale: 1.0
+  # 背景类型：transparent / solid / image / green_screen
+  background_type: transparent
+  # 纯色背景色（#RRGGBB）
+  background_color: "#1A1A2E"
+  # 背景图片路径
+  background_image: ""
+  # 是否显示 Logo
+  show_logo: false
+  # Logo 位置：top_left / top_right / bottom_left / bottom_right
+  logo_position: top_right
+  # Logo 路径
+  logo_image: ""
+
+# 音频效果设置（对标剪映/腾讯智影）
+audio:
+  # 语速（0.5-2.0，1.0 为正常）
+  speed: 1.0
+  # 音量（0-200，100 为正常）
+  volume: 100
+  # 音高（-12 到 +12 半音）
+  pitch: 0
+  # 默认音色（向后兼容字段；TTS 引擎实际读取 tts.default_voice）
+  # 注：Junhao 已移除，默认替换为 Zhiming
+  default_voice: Zhiming
+  # 情感：neutral / calm / excited / gentle / serious / cheerful
+  emotion: neutral
+  # 句间停顿（秒）
+  pause_duration: 0.5
+  # 自动去除静音
+  remove_silence: true
+  # 人声增强
+  voice_enhance: true
+  # BGM 设置
+  bgm:
+    # 是否启用 BGM
+    enabled: true
+    # BGM 曲目（从 bgm_library 选择）
+    track: "soft_piano"
+    # BGM 音量（0-100，建议 20-30，口播人声为主，BGM 作为背景陪衬）
+    volume: 25
+    # 淡入时长（秒）
+    fade_in: 1.0
+    # 淡出时长（秒）
+    fade_out: 1.0
+
+# 视频效果设置（对标 vsub/剪映）
+effects:
+  # 转场效果：none / fade / slide / zoom / swipe
+  transition: fade
+  # 转场时长（秒）
+  transition_duration: 0.5  # 滤镜：none / warm / cool / bw / vintage / vivid
+  filter: none
+  # 滤镜强度（0-100）
+  filter_intensity: 50
+  # 水印
+  watermark:
+    enabled: false
+    text: "EnlyAI"
+    position: bottom_right
+    opacity: 50
+  # 片头
+  intro:
+    enabled: false
+    text: ""
+    duration: 2.0
+  # 片尾
+  outro:
+    enabled: false
+    text: "关注点赞支持一下"
+    duration: 2.0
+
+# BGM 素材库（预设曲目）
+bgm_library:
+  soft_piano:
+    label: "轻柔钢琴"
+    mood: "舒缓"
+    duration: 102
+  upbeat_corporate:
+    label: "企业活力"
+    mood: "激昂"
+    duration: 289
+  tech_electronic:
+    label: "科技电子"
+    mood: "科技"
+    duration: 97
+  warm_acoustic:
+    label: "温暖原声"
+    mood: "温馨"
+    duration: 97
+  chinese_guzheng:
+    label: "古风古筝"
+    mood: "古风"
+    duration: 134
+  news_serious:
+    label: "新闻严肃"
+    mood: "严肃"
+    duration: 127
+  # 新增曲目（扩充曲库，覆盖更多场景）
+  lofi_chill:
+    label: "Lo-Fi 轻松"
+    mood: "轻松"
+    duration: 108
+  cinematic_epic:
+    label: "电影史诗"
+    mood: "史诗"
+    duration: 160
+  happy_ukulele:
+    label: "欢快尤克里里"
+    mood: "欢快"
+    duration: 130
+  emotional_strings:
+    label: "深情弦乐"
+    mood: "深情"
+    duration: 101
+  jazz_cafe:
+    label: "爵士咖啡"
+    mood: "慵懒"
+    duration: 140
+  ambient_pad:
+    label: "氛围铺底"
+    mood: "氛围"
+    duration: 113
+  corporate_uplifting:
+    label: "积极企业"
+    mood: "积极"
+    duration: 124
+  sad_piano:
+    label: "忧伤钢琴"
+    mood: "忧伤"
+    duration: 115
+
+# 视频合成配置
+composer:
+  ffmpeg_path: ffmpeg  # 可指定绝对路径
+  # 输出参数
+  output_fps: 30
+  output_resolution: [720, 1280]
+  video_bitrate: "8M"
+  audio_bitrate: "192k"
+  # BGM 库
+  bgm_dir: ./config/bgm
+  bgm_volume: 0.15  # BGM 音量（0-1）
+
+# 封面生成配置
+cover:
+  mode: frame_overlay  # frame_overlay / sdxl / template
+  # 布局：bottom(人物上2/3+标题下1/3，口播标准) / center / top / full
+  layout: bottom
+  # 模板目录
+  templates_dir: ./config/cover_templates
+  # 字体（空则用系统粗体中文）
+  font_path: ""
+  # 标题最大字数
+  title_max_chars: 18
+
+# 发布配置
+publisher:
+  mode: semi_auto  # auto / semi_auto / manual
+  # Cookie 存储目录
+  cookies_dir: ./config/cookies
+  # 平台配置
+  platforms:
+    bilibili:
+      enabled: true
+      api_base: https://api.bilibili.com
+    douyin:
+      enabled: false
+      method: playwright
+    kuaishou:
+      enabled: false
+      method: playwright
+    wechat_video:
+      enabled: false
+      method: playwright
+  # 发布间隔（秒），避免频率限制
+  publish_interval: 60
+
+# 文案原创度与风控配置（script_write 之后检测）
+originality:
+  # 是否启用（关闭则跳过该步骤）
+  enabled: true
+  # SimHash 查重相似度阈值（0~1，≥ 视为重复，0.85 约等于海明距离 9 位）
+  simhash_threshold: 0.85
+  # 历史文案库（SQLite，自动创建）
+  history_db: ./workspace_data/originality_history.db
+  # 违禁词库文件（用户可编辑）
+  banned_words_file: ./config/banned_words.txt
+  # 命中违禁词时最多报告多少个
+  banned_words_max_report: 10
+  # 是否启用 LLM 语义级风控（mock 模式自动跳过）
+  llm_risk_check: true
+  # 命中违禁词时是否自动调 LLM 修正（替换为合规表达，避免流程卡死）
+  auto_fix_banned: true
+
+# 编排配置
+pipeline:
+  # 任务数据库
+  db_path: ./workspace_data/jobs.db
+  # 最大重试次数
+  max_retries: 3
+  # 重试退避基数（秒）
+  retry_backoff: 5
+  # 并发数
+  concurrency: 1
+  # 是否启用 GPU 模块（false 时使用 mock）
+  gpu_enabled: false
+
+# GPU 调度配置
+gpu_runner:
+  # 云 GPU 服务地址（TTS + Avatar API）
+  tts_endpoint: http://localhost:9880
+  avatar_endpoint: http://localhost:8010
+  # 健康检查超时
+  health_check_timeout: 10
+
+# Wav2Lip 服务化配置（avatar.provider=wav2lip 时启用）
+# 将 Wav2Lip 推理从"每次启动子进程"改为"常驻 HTTP 服务"，模型加载一次复用
+# 主应用启动时自动后台拉起（参见 app.py::_start_wav2lip_service_in_background）
+# 也可通过 scripts/start_wav2lip_server.bat 独立启动用于调试
+wav2lip_service:
+  host: 127.0.0.1
+  port: 8011
+  # 服务启动超时（秒）—— 冷启动（首次加载 torch + checkpoint）约 30-60s，热启动约 7s
+  startup_timeout: 120
+  # 单次推理超时（秒）—— 默认 30 分钟（1 分钟视频 CPU 模式约 20-60 分钟）
+  generate_timeout: 1800

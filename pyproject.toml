@@ -1,0 +1,85 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "krvoiceai"
+version = "0.1.0"
+description = "虚拟人口播智能体 - 对标旗博士的离线批量口播视频自动化生成系统"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "EnlyAI Team" }]
+
+dependencies = [
+    # 基础
+    "pyyaml>=6.0",
+    "pydantic>=2.5",
+    "python-dotenv>=1.0",
+    # 日志
+    "loguru>=0.7",
+    # HTTP
+    "requests>=2.31",
+    "httpx>=0.25",
+    # 媒体
+    "ffmpeg-python>=0.2",
+    "Pillow>=10.0",
+    "numpy>=1.24",
+    # LLM
+    "openai>=1.10",
+    # 下载
+    "yt-dlp>=2024.0",
+    # 无头浏览器（抖音文案提取，用系统已装的 Edge/Chrome，无需下载 Chromium）
+    "playwright>=1.40",
+    # 界面
+    "gradio>=4.0",
+    # 任务
+    "rq>=1.16",
+    # 工具
+    "tqdm>=4.66",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "pytest-mock>=3.12",
+    "ruff>=0.1",
+]
+gpu = [
+    # GPU 模块按需在云端安装，本地不强制
+    "torch>=2.1",
+    "torchaudio>=2.1",
+]
+tts = [
+    "edge-tts>=6.1",  # CPU 降级方案
+]
+# Qwen3-TTS 本地高质量 TTS（0.6B，9 预置音色 + 情绪控制，Apache 2.0）
+qwen3_tts = [
+    "qwen-tts>=0.1",
+    "torch>=2.1",
+    "soundfile>=0.12",
+]
+# 本地增强层（纯 CPU 友好，MX450 2GB 显存可跑）
+local = [
+    "faster-whisper>=1.0",  # 词级时间戳字幕精对齐（CPU int8，约 500MB）
+    "jieba>=0.42",  # 文案查重 SimHash 中文分词
+]
+# 云端 GPU 服务依赖（在云 GPU 机器上安装，本地无需）
+cloud = []
+
+[project.scripts]
+krvoiceai = "krvoiceai.ui.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

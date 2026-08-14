@@ -1,0 +1,135 @@
+# 预制数字人形象库
+# 对标腾讯智影/HeyGen/剪映的"直接选形象即可使用"能力
+# 由于版权限制，预制形象使用占位图，用户可上传真人照片替换
+# 每个形象有推荐的使用场景和搭配音色
+
+avatars:
+  anchor_male_pro:
+    label: "专业男主播"
+    icon: "👨‍💼"
+    gender: male
+    description: "西装革履，适合新闻播报、企业宣传、财经解读"
+    recommended_scenes: [news_broadcast, factory_intro, company_profile]
+    recommended_voice: zh-CN-YunxiNeural
+    recommended_emotion: neutral
+    placeholder_color: "#1e3a5f"
+    note: "预制占位形象，建议上传真人正面照替换以获得最佳效果"
+
+  anchor_female_pro:
+    label: "专业女主播"
+    icon: "👩‍💼"
+    gender: female
+    description: "知性大方，适合新闻资讯、知识科普、企业介绍"
+    recommended_scenes: [news_broadcast, knowledge_popular, company_profile]
+    recommended_voice: zh-CN-XiaoxiaoNeural
+    recommended_emotion: neutral
+    placeholder_color: "#5f1e3a"
+    note: "预制占位形象，建议上传真人正面照替换以获得最佳效果"
+
+  seller_energetic:
+    label: "活力带货官"
+    icon: "🤵"
+    gender: male
+    description: "热情洋溢，适合电商带货、产品种草、促销宣传"
+    recommended_scenes: [product_selling, course_intro]
+    recommended_voice: zh-CN-YunjianNeural
+    recommended_emotion: excited
+    placeholder_color: "#ff6b35"
+    note: "预制占位形象，建议上传真人正面照替换以获得最佳效果"
+
+  teacher_friendly:
+    label: "亲切老师"
+    icon: "👩‍🏫"
+    gender: female
+    description: "温和亲切，适合知识科普、课程介绍、教育培训"
+    recommended_scenes: [knowledge_popular, course_intro]
+    recommended_voice: zh-CN-XiaoyiNeural
+    recommended_emotion: cheerful
+    placeholder_color: "#4a90d9"
+    note: "预制占位形象，建议上传真人正面照替换以获得最佳效果"
+
+  storyteller_warm:
+    label: "暖心故事人"
+    icon: "🧑‍🎤"
+    gender: female
+    description: "温柔细腻，适合情感故事、治愈内容、人生感悟"
+    recommended_scenes: [emotional_story, personal_ip]
+    recommended_voice: zh-CN-XiaohanNeural
+    recommended_emotion: gentle
+    placeholder_color: "#f5a623"
+    note: "预制占位形象，建议上传真人正面照替换以获得最佳效果"
+
+  tech_reviewer:
+    label: "极客测评官"
+    icon: "👨‍💻"
+    gender: male
+    description: "硬核专业，适合科技测评、数码解读、产品对比"
+    recommended_scenes: [tech_review]
+    recommended_voice: zh-CN-YunyangNeural
+    recommended_emotion: neutral
+    placeholder_color: "#0f172a"
+    note: "预制占位形象，建议上传真人正面照替换以获得最佳效果"
+
+  culture_scholar:
+    label: "文化学者"
+    icon: "🧓"
+    gender: male
+    description: "儒雅沉稳，适合古风文化、历史故事、国学经典"
+    recommended_scenes: [chinese_culture]
+    recommended_voice: zh-CN-YunjianNeural
+    recommended_emotion: calm
+    placeholder_color: "#2d1810"
+    note: "预制占位形象，建议上传真人正面照替换以获得最佳效果"
+
+  ip_creator:
+    label: "个人IP博主"
+    icon: "🧑‍🎨"
+    gender: female
+    description: "时尚活力，适合个人IP打造、自我介绍、账号定位"
+    recommended_scenes: [personal_ip]
+    recommended_voice: zh-CN-XiaoyiNeural
+    recommended_emotion: cheerful
+    placeholder_color: "#ec4899"
+    note: "预制占位形象，建议上传真人正面照替换以获得最佳效果"
+
+# 预制音色库（基于 Edge TTS 免费音色，按场景分类）
+voices:
+  zh-CN-XiaoxiaoNeural:
+    label: "晓晓（女·温暖）"
+    gender: female
+    description: "温暖亲切，通用性强，适合大多数场景"
+    recommended_scenes: [knowledge_popular, company_profile, personal_ip]
+
+  zh-CN-XiaoyiNeural:
+    label: "晓伊（女·活泼）"
+    gender: female
+    description: "活泼可爱，适合教育、科普、轻松内容"
+    recommended_scenes: [knowledge_popular, course_intro]
+
+  zh-CN-YunxiNeural:
+    label: "云希（男·沉稳）"
+    gender: male
+    description: "沉稳专业，适合新闻播报、企业宣传"
+    recommended_scenes: [news_broadcast, factory_intro, company_profile]
+
+  zh-CN-YunjianNeural:
+    label: "云健（男·阳刚）"
+    gender: male
+    description: "阳刚有力，适合带货、运动、激情内容"
+    recommended_scenes: [product_selling]
+
+  zh-CN-YunyangNeural:
+    label: "云扬（男·专业）"
+    gender: male
+    description: "专业理性，适合科技测评、知识解读"
+    recommended_scenes: [tech_review, knowledge_popular]
+
+  zh-CN-XiaoxuanNeural:
+    label: "晓萱（女·活力）"
+    gender: female
+    description: "活力开朗，适合综艺、娱乐内容"
+
+  zh-CN-YunxiaNeural:
+    label: "夏（男·少年）"
+    gender: male
+    description: "少年男声，适合动画、游戏内容"

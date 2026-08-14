@@ -1,0 +1,144 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+
+# 测试缓存
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 项目运行时数据（不入库）
+workspace_data/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# 模型文件（体积大，不入库）
+models/
+*.pth
+*.bin
+*.onnx
+*.safetensors
+
+# Wav2Lip 第三方依赖（用户自行克隆，见 README）
+Wav2Lip/
+
+# MOSS-TTS-Nano 第三方依赖（用户自行克隆，见 README）
+MOSS-TTS-Nano/
+
+# Wav2Lip 独立 Python 环境（用户自行创建）
+wav2lip_env/
+
+# 配置中的敏感信息
+config/secrets.yaml
+config/.env
+config/user_config.yaml
+.env
+.env.local
+.env.cloud
+
+# Cookie 文件（含登录凭据）
+config/cookies/
+*.cookies
+*.cookie
+
+# 音色/形象样本（用户私有数据）
+config/voices/*/sample.*
+config/voices/*/*.wav
+config/voices/*/*.mp3
+config/voices/*/*.m4a
+config/voices/*/*.aac
+config/avatars/*/reference*
+config/avatars/*/meta.json
+
+# B-roll 素材库（用户上传的画中画素材）
+config/broll_assets/
+
+# 临时输出目录（预览音频/封面等，不入库）
+output/
+
+# 提取缓存（yt-dlp/ASR 等中间产物）
+.extract_cache/
+
+# PyInstaller 构建产物
+*.spec
+
+# 临时文件
+*.tmp
+*.bak
+*.orig
+
+# 系统文件
+Thumbs.db
+
+# MuseTalk 独立环境与仓库（用户自行创建，见调研方案）
+MuseTalk/
+musetalk_env/
+
+# 安装/调试日志
+install_main.log
+install_*.log
+debug_*.log
+
+# PyInstaller 产物（不入库，按需重新打包）
+EnlyAI.exe
+
+# BGM 大文件需 git-lfs，未装 lfs 时先排除（按需恢复）
+config/bgm/*.mp3
+
+# Qwen3-TTS 本地模型缓存
+models/
+Qwen3-TTS-*/
+
+# PyTorch wheel 安装包（体积大，不入库）
+*.whl
+
+# CosyVoice 第三方仓库（用户自行 clone，见 scripts/setup_cosyvoice_env.bat）
+CosyVoice/
+
+# ZCode CLI 会话缓存
+.zcode/
+
+# 临时调试/启动脚本（开发过程产物，不入库）
+start_cosyvoice*.py
+debug_*.py
+test_asr_*.py
+test_cosyvoice_direct.py
+test_engine_direct.py
+test_latentsync.py
+test_llm_ollama.py
+test_web_tts_debug.py
+web_err.txt
+web_out.txt
+latentsync.log
+cosyvoice.log
+
+# 用户输入素材（不入库）
+input/
+
+# modelscope 缓存
+modelscope_cache/
