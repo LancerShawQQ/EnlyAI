@@ -124,3 +124,7 @@ timeout /t 3 /nobreak >nul
 start "" http://localhost:8000
 
 pause
+
+REM 清除 Python 缓存（避免代码更新后旧 .pyc 生效）
+for /r "%PROJECT_ROOT%\krvoiceai" %%f in (*.pyc) do del "%%f" 2>nul
+for /d %%d in (%PROJECT_ROOT%\krvoiceai\**\__pycache__) do rmdir /s /q "%%d" 2>nul
