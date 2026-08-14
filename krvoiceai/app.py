@@ -924,6 +924,87 @@ class EnlyAI:
 
     # ============ 健康检查 ============
 
+    def preflight_check(self) -> list[str]:
+        """生成前预检：验证当前配置所需的所有外部服务是否就绪
+
+        根据配置的 provider 映射依赖服务，逐个探测。
+        用户点"生成"前就发现服务未启动，立即得到明确指引，
+        而不是任务跑到一半才失败（避免长时间等待后报错）。
+
+        Returns:
+            问题列表（空列表 = 全部就绪）。每条含服务名+启动指引。
+        """
+        import httpx as _httpx
+        problems: list[str] = []
+
+        def _probe(url: str, timeout: float = 3.0) -> bool:
+            try:
+                r = _httpx.get(url, timeout=timeout)
+                return r.status_code < 500
+            except Exception:
+                return False
+
+        # LLM 依赖
+        llm_provider = self.config.get("llm.provider", "mock")
+        if llm_provider == "ollama":
+            base = self.config.get("llm.base_url", "")
+            if base and not _probe(f"{base.rstrip('/').rsplit('/v1', 1)[0]}/api/tags"):
+                problems.append(
+                    "Ollama LLM 服务未运行（文案生成/标题/风控都依赖它）。"
+                    "请运行 `ollama serve` 或 scripts/start_all.bat 后重试。"
+                )
+        elif llm_provider not in ("mock",):
+            base = self.config.get("llm.base_url", "")
+            if base and not _probe(f"{base.rstrip('/')}/models"):
+                problems.append(
+                    f"LLM 服务（{llm_provider}）无法连接：{base}。"
+                    "请在设置中心检查 API 地址。"
+                )
+
+        # TTS 依赖
+        tts_provider = self.config.get("tts.provider", "mock")
+        if tts_provider == "cosyvoice":
+            url = self.config.get("tts.cosyvoice.server_url", "http://localhost:8012")
+            if not _probe(f"{url.rstrip('/')}/api/health"):
+                problems.append(
+                    "CosyVoice TTS 服务未运行（语音合成依赖它）。"
+                    "请运行 scripts/start_all.bat，或手动启动："
+                    "conda activate CosyVoice && cd CosyVoice && "
+                    "python ../krvoiceai/modules/cosyvoice_server.py --port 8012 --fp16"
+                )
+        elif tts_provider in ("mimo", "gpt_sovits"):
+            url = self.config.get("tts.api_base", "")
+            if url and not _probe(f"{url.rstrip('/')}/"):
+                problems.append(
+                    f"TTS 服务（{tts_provider}）无法连接：{url}。请在设置中心检查服务地址。"
+                )
+
+        # 数字人依赖
+        avatar_provider = self.config.get("avatar.provider", "mock")
+        if avatar_provider == "latentsync":
+            url = self.config.get("avatar.latentsync.server_url", "http://localhost:8011")
+            if not _probe(f"{url.rstrip('/')}/api/health"):
+                problems.append(
+                    "LatentSync 数字人服务未运行（唇形同步依赖它）。"
+                    "请运行 scripts/start_all.bat，或手动启动："
+                    "cd ../LatentSync && conda activate LatentSync && "
+                    "python latentsync_server.py --port 8011 --resolution 256 --inference_steps 15"
+                )
+        elif avatar_provider == "musetalk":
+            url = self.config.get("avatar.musetalk.server_url", "")
+            if url and not _probe(f"{url.rstrip('/')}/api/health"):
+                problems.append(
+                    f"MuseTalk 数字人服务无法连接：{url}。请在设置中心检查服务地址。"
+                )
+        elif avatar_provider == "longcat":
+            url = self.config.get("avatar.longcat.server_url", "")
+            if url and not _probe(f"{url.rstrip('/')}/api/health"):
+                problems.append(
+                    f"LongCat 云端服务无法连接：{url}。请确认云端 GPU 服务器已启动。"
+                )
+
+        return problems
+
     def health_check(self) -> dict:
         """系统健康检查"""
         import httpx as _httpx

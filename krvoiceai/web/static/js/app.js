@@ -27,7 +27,7 @@ async function api(path, options = {}) {
   return resp.json();
 }
 
-function toast(message, type = 'info') {
+function toast(message, type = 'info', duration = 4000) {
   const container = document.getElementById('toast-container');
   const el = document.createElement('div');
   el.className = `toast ${type}`;
@@ -51,7 +51,7 @@ function toast(message, type = 'info') {
       el.style.animation = 'slideIn 0.3s ease reverse';
       setTimeout(() => el.remove(), 300);
     }
-  }, 4000);
+  }, duration);
 }
 
 // 图片加载失败时回退为 Lucide 图标（供 onerror 内联调用）
@@ -2835,14 +2835,16 @@ async function wizardGenerate() {
   } catch (e) {
     // 友好化错误提示
     let errMsg = e.message || '未知错误';
-    if (errMsg.includes('Gateway') || errMsg.includes('502') || errMsg.includes('503') || errMsg.includes('504')) {
+    if (errMsg.includes('生成前检查未通过')) {
+      // 预检错误已含具体服务名+启动指引，原样透传（不被通用 503 提示覆盖）
+    } else if (errMsg.includes('Gateway') || errMsg.includes('502') || errMsg.includes('503') || errMsg.includes('504')) {
       errMsg = 'AI 服务暂时不可用（网关错误），请稍后重试。可能是 LLM/TTS API 限流或服务端临时故障。';
     } else if (errMsg.includes('timeout') || errMsg.includes('Timeout')) {
       errMsg = '请求超时，请检查网络或稍后重试。';
     } else if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError')) {
       errMsg = '网络连接失败，请检查服务器是否运行。';
     }
-    toast(`生成失败: ${errMsg}`, 'error');
+    toast(`生成失败: ${errMsg}`, 'error', 10000);
     console.error(e);
     // 模态框显示错误
     finishProgressModalError(errMsg);

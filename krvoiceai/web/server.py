@@ -293,6 +293,14 @@ def create_app() -> FastAPI:
     async def generate(req: GenerateRequest):
         """一键生成视频（全流程）"""
         krvoice = _get_app()
+        # 预检：依赖服务未就绪时立即拒绝（避免任务跑一半失败）
+        problems = krvoice.preflight_check()
+        if problems:
+            msg = "生成前检查未通过：" + "；".join(problems)
+            return JSONResponse(
+                {"success": False, "detail": msg, "error": msg},
+                status_code=503,
+            )
         # publish_platforms 透传到 metadata
         _extra_meta = {}
         if req.publish_platforms:
@@ -321,6 +329,14 @@ def create_app() -> FastAPI:
     async def generate_async(req: GenerateRequest):
         """异步提交视频生成任务，立即返回 job_id，前端轮询 /api/jobs/{job_id} 获取进度"""
         krvoice = _get_app()
+        # 预检：依赖服务未就绪时立即拒绝（避免任务跑一半失败）
+        problems = krvoice.preflight_check()
+        if problems:
+            msg = "生成前检查未通过：" + "；".join(problems)
+            return JSONResponse(
+                {"success": False, "detail": msg, "error": msg},
+                status_code=503,
+            )
         # avatar_id 为 "default" 时，从配置读取 default_id（如 e2e_anchor）
         avatar_id = req.avatar_id
         if avatar_id == "default":
