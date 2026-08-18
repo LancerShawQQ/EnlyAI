@@ -142,3 +142,8 @@ input/
 
 # modelscope 缓存
 modelscope_cache/
+
+# PyInstaller 构建产物
+build_pyinstaller/
+EnlyAI.exe.bak
+web_verify.log

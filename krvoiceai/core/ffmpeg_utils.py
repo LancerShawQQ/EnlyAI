@@ -102,38 +102,77 @@ class FFmpegRunner:
             return 0.0
 
     def probe_video_info(self, path: Path) -> Optional[VideoInfo]:
-        """获取视频信息"""
-        if not shutil.which(self.ffprobe):
-            return None
+        """获取视频信息（时长/分辨率/帧率）。
+
+        ffprobe 缺失时（imageio-ffmpeg 不提供 ffprobe，PATH 里也没有）回退解析
+        `ffmpeg -i` 的 stderr（Duration/分辨率/帧率），保证任何环境都能拿到时长。
+        时长探测失败曾导致 xfade offset 算成 0：封面不再推后正片，而音频延迟
+        仍按封面时长施加，最终音视频整体错位 1 秒——必须兜底。
+        """
+        import re
+
+        ffprobe_path = Path(self.ffprobe)
+        ffprobe_exists = (
+            ffprobe_path.exists() if str(ffprobe_path) != "ffprobe"
+            else bool(shutil.which("ffprobe"))
+        )
+        if ffprobe_exists:
+            try:
+                r = subprocess.run(
+                    [
+                        self.ffprobe, "-v", "error",
+                        "-select_streams", "v:0",
+                        "-show_entries", "stream=width,height,r_frame_rate,duration",
+                        "-show_entries", "format=duration",
+                        "-of", "json",
+                        str(path),
+                    ],
+                    capture_output=True, text=True,
+                )
+                import json
+                data = json.loads(r.stdout)
+                stream = data.get("streams", [{}])[0]
+                width = int(stream.get("width", 0))
+                height = int(stream.get("height", 0))
+                fps_str = stream.get("r_frame_rate", "30/1")
+                num, den = fps_str.split("/")
+                fps = float(num) / float(den) if float(den) > 0 else 30.0
+                duration = float(data.get("format", {}).get("duration", 0) or 0)
+                if duration == 0:
+                    duration = float(stream.get("duration", 0) or 0)
+                if duration > 0:
+                    return VideoInfo(
+                        path=Path(path), duration=duration,
+                        width=width, height=height, fps=fps,
+                    )
+            except Exception as e:
+                self.logger.debug(f"probe 失败: {e}")
+
+        # 兜底：解析 ffmpeg -i 的 stderr（无 ffprobe 的环境也能拿到时长）
         try:
             r = subprocess.run(
-                [
-                    self.ffprobe, "-v", "error",
-                    "-select_streams", "v:0",
-                    "-show_entries", "stream=width,height,r_frame_rate,duration",
-                    "-show_entries", "format=duration",
-                    "-of", "json",
-                    str(path),
-                ],
-                capture_output=True, text=True,
+                [self.ffmpeg, "-i", str(path)],
+                capture_output=True, text=True, timeout=15,
             )
-            import json
-            data = json.loads(r.stdout)
-            stream = data.get("streams", [{}])[0]
-            width = int(stream.get("width", 0))
-            height = int(stream.get("height", 0))
-            fps_str = stream.get("r_frame_rate", "30/1")
-            num, den = fps_str.split("/")
-            fps = float(num) / float(den) if float(den) > 0 else 30.0
-            duration = float(data.get("format", {}).get("duration", 0) or 0)
-            if duration == 0:
-                duration = float(stream.get("duration", 0) or 0)
+            text = r.stderr or ""
+            m = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)", text)
+            if not m:
+                return None
+            duration = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+            width = height = 0
+            fps = 25.0
+            ms = re.search(r"Video:.*?,\s*(\d+)x(\d+)", text)
+            if ms:
+                width, height = int(ms.group(1)), int(ms.group(2))
+            mf = re.search(r"(\d+(?:\.\d+)?)\s*fps", text)
+            if mf:
+                fps = float(mf.group(1))
             return VideoInfo(
                 path=Path(path), duration=duration,
                 width=width, height=height, fps=fps,
             )
-        except Exception as e:
-            self.logger.debug(f"probe 失败: {e}")
+        except Exception:
+            self.logger.warning(f"视频信息探测失败: {path}")
             return None
 
     def image_audio_to_video(

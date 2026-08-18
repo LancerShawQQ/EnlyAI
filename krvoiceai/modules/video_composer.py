@@ -231,9 +231,16 @@ class VideoComposer(BaseModule):
         )
 
         # 如果有封面，先合成"封面+视频"
+        # lead_delay_ms：正片内容在成片中的实际起点（毫秒）。
+        # 人声 adelay 与字幕偏移都必须用它，而不是名义封面时长——
+        # xfade 转场会让正片提前 transition_duration 秒出现，用名义值会让人声比嘴型晚
         main_video = video
+        lead_delay_ms = 0
         if cover and Path(cover).exists():
-            main_video = self._prepend_cover(video, Path(cover), output.parent)
+            main_video, cover_lead_ms = self._prepend_cover(
+                video, Path(cover), output.parent
+            )
+            lead_delay_ms += cover_lead_ms
 
         # 生成片头/片尾片段（若启用）
         intro_clip = None
@@ -249,18 +256,14 @@ class VideoComposer(BaseModule):
 
         # 若有片头/片尾，先拼接到主视频前后
         if intro_clip or outro_clip:
-            main_video = self._concat_intro_outro(
+            main_video, intro_lead_ms = self._concat_intro_outro(
                 main_video, intro_clip, outro_clip, output.parent
             )
+            lead_delay_ms += intro_lead_ms
 
-        # 音视频同步：如果视频开头插入了封面（_prepend_cover 固定 1.5s）或片头，
-        # TTS 人声必须加等量静音延迟，否则声音会比嘴型提前播放（封面段视频静音，但音频已开始）
+        # 音视频同步：正片实际起点 = lead_delay_ms（封面/片头时长，扣除 xfade 转场重叠）
         # 字幕也必须同步偏移，否则字幕会比人声提前显示
-        cover_delay_ms = 0
-        if cover and Path(cover).exists():
-            cover_delay_ms = 1500  # _prepend_cover 固定 1.5 秒封面
-        if self.intro_enabled and self.intro_text:
-            cover_delay_ms += int(self.intro_duration * 1000)  # 加片头时长
+        cover_delay_ms = lead_delay_ms
 
         # 字幕时间戳偏移：和人声延迟保持一致
         shifted_segments = subtitle_segments
@@ -650,13 +653,20 @@ class VideoComposer(BaseModule):
 
     def _prepend_cover(
         self, video: Path, cover: Path, work_dir: Path
-    ) -> Path:
-        """在视频开头插入封面图（1.5 秒）"""
+    ) -> tuple[Path, int]:
+        """在视频开头插入封面图（1.5 秒）
+
+        Returns:
+            (拼接后视频路径, 正片实际起点毫秒数)。
+            xfade 转场与封面重叠 transition_duration 秒，正片提前出现，
+            人声/字幕延迟必须按返回值而不是名义 1500ms。
+        """
         self.logger.info(f"插入封面首帧: {cover.name}")
 
         # 将封面图转为 1.5 秒的视频片段
         cover_clip = work_dir / "_tmp_cover_intro.mp4"
         w, h = self.output_resolution
+        cover_duration = 1.5
 
         # 调整封面尺寸
         resized_cover = work_dir / "_tmp_cover_resized.jpg"
@@ -670,7 +680,7 @@ class VideoComposer(BaseModule):
             "-i", str(resized_cover),
             "-f", "lavfi",
             "-i", "anullsrc=channel_layout=mono:sample_rate=44100",
-            "-t", "1.5",
+            "-t", str(cover_duration),
             "-vf", f"scale={w}:{h},fps={self.output_fps},format=yuv420p",
             "-c:v", self._vcodec,
             "-preset", self._vpreset,
@@ -708,23 +718,29 @@ class VideoComposer(BaseModule):
         self.ffmpeg.run(args)
 
         # 拼接封面 + 原视频
+        # 封面→正片固定用 fade：slide 类转场在首帧暴露未初始化的 YUV 边缘
+        # （RGB 下显示为绿色竖线，恰好是视频缩略图帧），fade 无此问题且观感更专业
         combined = work_dir / "_tmp_with_cover.mp4"
         if self.transition != "none":
-            # xfade 转场拼接（封面→主视频）
+            # xfade 转场拼接（封面→主视频），正片起点 = 封面时长 - 转场重叠
             try:
                 combined = self._xfade_concat(
-                    [cover_clip, normalized_video], work_dir, "_tmp_with_cover.mp4"
+                    [cover_clip, normalized_video], work_dir, "_tmp_with_cover.mp4",
+                    transition="fade",
                 )
+                lead_ms = int((cover_duration - self.transition_duration) * 1000)
             except Exception as e:
                 self.logger.warning(f"xfade 转场失败，回退 concat: {e}")
                 combined = self._plain_concat(
                     [cover_clip, normalized_video], work_dir, "_tmp_with_cover.mp4"
                 )
+                lead_ms = int(cover_duration * 1000)
         else:
             combined = self._plain_concat(
                 [cover_clip, normalized_video], work_dir, "_tmp_with_cover.mp4"
             )
-        return combined
+            lead_ms = int(cover_duration * 1000)
+        return combined, lead_ms
 
     def pick_bgm(self, style: str = "default") -> Optional[Path]:
         """从 BGM 库选择 BGM
@@ -781,26 +797,33 @@ class VideoComposer(BaseModule):
             segments.append(outro)
 
         if len(segments) == 1:
-            return normalized
+            return normalized, 0
 
         combined = work_dir / "_tmp_with_intro_outro.mp4"
         if self.transition != "none" and len(segments) >= 2:
             # xfade 转场拼接（片头→主视频→片尾）
+            # 片头与主视频转场重叠 transition_duration 秒 → 正片起点相应提前
             try:
                 combined = self._xfade_concat(
                     segments, work_dir, "_tmp_with_intro_outro.mp4"
+                )
+                intro_lead_ms = (
+                    int(self.intro_duration * 1000 - self.transition_duration * 1000)
+                    if intro else 0
                 )
             except Exception as e:
                 self.logger.warning(f"xfade 转场失败，回退 concat: {e}")
                 combined = self._plain_concat(
                     segments, work_dir, "_tmp_with_intro_outro.mp4"
                 )
+                intro_lead_ms = int(self.intro_duration * 1000) if intro else 0
         else:
             combined = self._plain_concat(
                 segments, work_dir, "_tmp_with_intro_outro.mp4"
             )
+            intro_lead_ms = int(self.intro_duration * 1000) if intro else 0
         self.logger.info(f"拼接片头片尾完成: {len(segments)} 段")
-        return combined
+        return combined, intro_lead_ms
 
     def _plain_concat(
         self, segments: list[Path], work_dir: Path, output_name: str
@@ -827,8 +850,18 @@ class VideoComposer(BaseModule):
         self.ffmpeg.run(args)
         return output
 
+    # slide/wipe 类方向性转场会在画面边缘暴露未初始化像素（YUV 零值 = RGB 绿色竖线）
+    _DIRECTIONAL_TRANSITIONS = {
+        "slideleft", "slideright", "slideup", "slidedown",
+        "smoothleft", "smoothright", "smoothup", "smoothdown",
+        "wipeleft", "wiperight", "wipeup", "wipedown",
+        "squeezeh", "squeezev", "hlwind", "hrwind", "vslidestr",
+    }
+    _EDGE_PAD = 16  # 方向性转场的边缘保护带（像素）
+
     def _xfade_concat(
-        self, segments: list[Path], work_dir: Path, output_name: str
+        self, segments: list[Path], work_dir: Path, output_name: str,
+        transition: Optional[str] = None,
     ) -> Path:
         """使用 xfade 转场拼接多段视频
 
@@ -839,15 +872,27 @@ class VideoComposer(BaseModule):
             segments: 视频片段列表（至少 2 段）
             work_dir: 临时文件目录
             output_name: 输出文件名
+            transition: 覆盖转场类型（None 用 self.transition）。
+                方向性转场自动加 pad/crop 保护带，避免边缘绿色伪影。
         """
         td = self.transition_duration
-        transition = self.transition
+        transition = transition or self.transition
 
-        # 探测每段时长
+        # 方向性转场：输入先加黑色保护带、输出再裁掉，
+        # 转场过程中未覆盖区域显示黑色而非未初始化的绿色像素
+        guard = transition in self._DIRECTIONAL_TRANSITIONS
+        pad_px = self._EDGE_PAD if guard else 0
+
+        # 探测每段时长（探测失败则中止 xfade——duration=0 会把 offset 算成 0，
+        # 封面不再推后正片，而音频延迟仍按封面时长施加，音视频整体错位 1 秒）
         durations: list[float] = []
         for seg in segments:
             info = self.ffmpeg.probe_video_info(Path(seg))
-            durations.append(info.duration if info else 0)
+            if not info or info.duration <= 0:
+                raise RuntimeError(
+                    f"无法探测分段时长: {seg}（xfade offset 依赖它，中止转场走 concat 回退）"
+                )
+            durations.append(info.duration)
 
         # 构建 xfade 滤镜链
         # offset 计算示例（3段，时长 d0/d1/d2，转场时长 td）：
@@ -858,17 +903,34 @@ class VideoComposer(BaseModule):
             inputs += ["-i", str(seg)]
 
         filter_parts: list[str] = []
-        prev_label = "0:v"
+        # 方向性转场的保护带：每个输入 pad 后进入 xfade，最终统一裁回原尺寸
+        if guard:
+            for i in range(len(segments)):
+                filter_parts.append(
+                    f"[{i}:v]pad=iw+{pad_px*2}:ih+{pad_px*2}:"
+                    f"{pad_px}:{pad_px}:black[p{i}]"
+                )
+        prev_label = "p0" if guard else "0:v"
         cum_duration = durations[0]
         for i in range(1, len(segments)):
             offset = max(0, cum_duration - td)
-            out_label = "vxout" if i == len(segments) - 1 else f"vx{i:02d}"
+            is_last = i == len(segments) - 1
+            # 最后一节：方向性转场先输出中间标签，再裁掉保护带得 [vxout]
+            out_label = ("vxraw" if (is_last and guard) else
+                         "vxout" if is_last else f"vx{i:02d}")
+            next_input = f"p{i}" if guard else f"{i}:v"
             filter_parts.append(
-                f"[{prev_label}][{i}:v]xfade=transition={transition}"
+                f"[{prev_label}][{next_input}]xfade=transition={transition}"
                 f":duration={td}:offset={offset:.3f}[{out_label}]"
             )
             prev_label = out_label
             cum_duration = cum_duration + durations[i] - td
+
+        # 裁掉保护带，恢复原始分辨率
+        if guard:
+            filter_parts.append(
+                f"[vxraw]crop=iw-{pad_px*2}:ih-{pad_px*2}:{pad_px}:{pad_px}[vxout]"
+            )
 
         # 音频 concat（xfade 不支持音频转场，音频用 concat 保持简单）
         audio_concat = "".join(f"[{i}:a]" for i in range(len(segments)))

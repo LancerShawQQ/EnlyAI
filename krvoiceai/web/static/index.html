@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
   <title>EnlyAI · 虚拟人口播智能体</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260729lg3">
-  <link rel="stylesheet" href="/static/css/liquid_glass.css?v=20260729lg3">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260815lg4">
+  <link rel="stylesheet" href="/static/css/liquid_glass.css?v=20260815lg4">
   <script src="https://unpkg.com/lucide@0.460.0"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
   <!-- 移动端点击修复（内联确保优先级，避免外部CSS缓存导致失效） -->
@@ -120,6 +120,9 @@
           <div class="status-dot" id="status-dot"></div>
           <span id="status-text">检查中...</span>
         </div>
+        <button class="nav-item nav-exit" id="nav-exit" title="停止全部服务并退出 EnlyAI">
+          <span class="nav-icon"><i data-lucide="power"></i></span><span>退出 EnlyAI</span>
+        </button>
       </div>
     </aside>
 
@@ -3175,7 +3178,7 @@
   <!-- Toast 容器 -->
   <div class="toast-container" id="toast-container"></div>
 
-  <script src="/static/js/app.js?v=20260731lg1"></script>
+  <script src="/static/js/app.js?v=20260815lg4"></script>
   <script src="/static/js/settings.js?v=20260731lg2"></script>
 
   <!-- ========== Liquid Glass SVG 滤镜定义（边缘折射变形效果） ========== -->

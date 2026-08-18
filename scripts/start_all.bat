@@ -16,6 +16,10 @@ set PYTHON_LATENTSYNC=%CONDA_ENVS%\LatentSync\python.exe
 
 cd /d "%PROJECT_ROOT%"
 
+REM 清除 Python 缓存（避免代码更新后旧 .pyc 生效）——必须在启动服务之前执行
+for /r "%PROJECT_ROOT%\krvoiceai" %%f in (*.pyc) do del "%%f" 2>nul
+for /d /r "%PROJECT_ROOT%\krvoiceai" %%d in (__pycache__) do rmdir /s /q "%%d" 2>nul
+
 echo ╔══════════════════════════════════════════════════════════╗
 echo ║         EnlyAI 全本地服务一键启动器 v0.3.0               ║
 echo ╚══════════════════════════════════════════════════════════╝
@@ -126,7 +130,3 @@ timeout /t 3 /nobreak >nul
 start "" http://localhost:8000
 
 pause
-
-REM 清除 Python 缓存（避免代码更新后旧 .pyc 生效）
-for /r "%PROJECT_ROOT%\krvoiceai" %%f in (*.pyc) do del "%%f" 2>nul
-for /d %%d in (%PROJECT_ROOT%\krvoiceai\**\__pycache__) do rmdir /s /q "%%d" 2>nul

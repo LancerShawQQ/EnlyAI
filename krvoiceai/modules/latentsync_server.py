@@ -35,8 +35,10 @@ from __future__ import annotations
 import argparse
 import math
 import os
+import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -219,6 +221,7 @@ _pipeline = None
 _config = None
 _resolution = 256
 _inference_steps = 25
+_gfpgan = None  # GFPGAN 人脸增强器（懒加载；修复嘴部模糊/口内黑影）
 
 
 def get_gpu_info() -> dict:
@@ -340,6 +343,128 @@ def load_pipeline(resolution: int = _resolution):
     return _pipeline
 
 
+def _normalize_video_fps(video_path: Path) -> Path:
+    """将非 25fps 的参考视频预转码为 25fps
+
+    LipsyncPipeline 按 video_fps=25 切分音频特征（硬编码），输入视频帧率不一致时
+    画面动作会变速（如 30fps 素材被慢放 0.83 倍）且头部动作与音频特征错位，
+    表现为"动作不自然、嘴型对不上"。此处统一归一化到 25fps。
+    """
+    try:
+        import cv2
+
+        cap = cv2.VideoCapture(str(video_path))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+        cap.release()
+    except Exception as e:
+        print(f"[LatentSync] 读取视频帧率失败（跳过归一化）: {e}")
+        return video_path
+
+    if fps <= 0 or abs(fps - 25.0) <= 0.5:
+        return video_path
+
+    out = video_path.parent / "input_video_25fps.mp4"
+    cmd = [
+        _ffmpeg_exe, "-y", "-loglevel", "error", "-nostdin",
+        "-i", str(video_path),
+        "-vf", "fps=25",
+        "-an", "-c:v", "libx264", "-preset", "veryfast",
+        "-crf", "18", "-pix_fmt", "yuv420p",
+        str(out),
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, timeout=600)
+        print(f"[LatentSync] 参考视频 {fps:.2f}fps → 25fps 归一化完成")
+        return out
+    except Exception as e:
+        print(f"[LatentSync] 25fps 归一化失败（按原视频继续）: {e}")
+        return video_path
+
+
+def _enhance_video_gfpgan(video_path: Path, weight: float = 0.5) -> bool:
+    """GFPGAN 人脸增强后处理：修复嘴部模糊 / 口内黑影（LatentSync 1.5 已知痛点）
+
+    逐帧检测人脸并做生成式修复（只动脸部区域，背景/身位不变），GPU 约 0.1-0.3s/帧。
+    音轨直接从原视频拷贝，无重编码损失；视频重编码一次（crf 17，近无损）。
+    失败时返回 False（调用方使用原视频，不影响主流程）。
+    """
+    global _gfpgan
+    try:
+        if _gfpgan is None:
+            from gfpgan import GFPGANer
+
+            print("[LatentSync] 加载 GFPGAN v1.4（人脸增强）...")
+            _gfpgan = GFPGANer(
+                model_path="checkpoints/GFPGANv1.4.pth",
+                upscale=1,
+                arch="clean",
+                channel_multiplier=2,
+                bg_upsampler=None,
+                device="cuda" if torch.cuda.is_available() else "cpu",
+            )
+
+        import cv2
+
+        cap = cv2.VideoCapture(str(video_path))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        if w == 0 or h == 0:
+            cap.release()
+            return False
+
+        out_path = video_path.parent / "enhanced.mp4"
+        ff_cmd = [
+            _ffmpeg_exe, "-y", "-loglevel", "error", "-nostdin",
+            "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{w}x{h}",
+            "-r", f"{fps:.3f}", "-i", "-",
+            "-i", str(video_path),
+            "-map", "0:v", "-map", "1:a:0?",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "17",
+            "-pix_fmt", "yuv420p", "-c:a", "copy",
+            str(out_path),
+        ]
+        proc = subprocess.Popen(ff_cmd, stdin=subprocess.PIPE)
+        n_done, n_fail = 0, 0
+        try:
+            while True:
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                try:
+                    _, _, restored_img = _gfpgan.enhance(
+                        frame, has_aligned=False, only_center_face=True,
+                        paste_back=True, weight=weight,
+                    )
+                    # paste_back=True 时返回整帧 ndarray；仅人脸模式返回 list
+                    if isinstance(restored_img, np.ndarray) and restored_img.size:
+                        frame = restored_img
+                    elif isinstance(restored_img, (list, tuple)) and len(restored_img):
+                        frame = restored_img[0]
+                except Exception:
+                    n_fail += 1  # 个别帧人脸检测失败时保留原帧
+                    if n_fail == 1:  # 首次异常打印完整栈，便于定位兼容性问题
+                        import traceback
+                        print("[LatentSync] GFPGAN 首帧增强异常栈:\n" + traceback.format_exc())
+                proc.stdin.write(frame.astype(np.uint8).tobytes())
+                n_done += 1
+                if n_done % 100 == 0:
+                    print(f"[LatentSync] GFPGAN 增强进度 {n_done} 帧")
+        finally:
+            proc.stdin.close()
+            cap.release()
+        proc.wait()
+        if proc.returncode != 0 or not out_path.exists() or out_path.stat().st_size < 1024:
+            print("[LatentSync] GFPGAN 增强编码失败，保留原视频")
+            return False
+        out_path.replace(video_path)
+        print(f"[LatentSync] GFPGAN 增强完成 {n_done} 帧（{n_fail} 帧跳过），已替换输出")
+        return True
+    except Exception as e:
+        print(f"[LatentSync] GFPGAN 增强异常（保留原视频）: {e}")
+        return False
+
+
 @app.get("/api/health")
 async def health():
     """健康检查"""
@@ -396,6 +521,7 @@ async def generate_avatar(
     resolution: int = Form(256),
     guidance_scale: float = Form(1.5),
     seed: int = Form(-1),
+    face_enhance: bool = Form(True),
 ):
     """生成唇形同步视频
 
@@ -429,6 +555,9 @@ async def generate_avatar(
         with open(video_path, "wb") as f:
             content = await video.read()
             f.write(content)
+
+        # 帧率归一化：管线按 25fps 对齐音频特征，非 25fps 素材先转码
+        video_path = _normalize_video_fps(video_path)
 
         output_path = tmpdir / "output_video.mp4"
         temp_dir = str(tmpdir / "temp")
@@ -489,6 +618,15 @@ async def generate_avatar(
                     status_code=500,
                 )
 
+            # GFPGAN 人脸增强（默认开；修复 LatentSync 1.5 嘴部模糊/口内黑影）
+            if face_enhance:
+                enhance_start = time.time()
+                _enhance_video_gfpgan(output_path)
+                elapsed = time.time() - start
+                print(
+                    f"[LatentSync] GFPGAN 后处理耗时 {time.time() - enhance_start:.0f}s"
+                )
+
             video_bytes = output_path.read_bytes()
             print(
                 f"[LatentSync] 生成完成 耗时={elapsed:.1f}s size={len(video_bytes)} bytes"
@@ -513,6 +651,51 @@ async def generate_avatar(
             )
 
 
+def _parent_alive(pid: int) -> bool:
+    """探测父进程是否存活（Windows：OpenProcess + GetExitCodeProcess）"""
+    if pid <= 0:
+        return False
+    if os.name != "nt":
+        return True
+    import ctypes
+
+    k = ctypes.windll.kernel32
+    h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not h:
+        return False
+    try:
+        code = ctypes.c_ulong()
+        if k.GetExitCodeProcess(h, ctypes.byref(code)):
+            return code.value == 259  # STILL_ACTIVE
+        return False
+    finally:
+        k.CloseHandle(h)
+
+
+def _start_parent_watchdog():
+    """父进程退出后自动退出，避免孤儿服务进程占用显存/端口
+
+    本服务通常由 EnlyAI Web 后端（或 start_all.bat 的 cmd 窗口）拉起。
+    父进程无论以何种方式退出（用户关窗 / 崩溃 / taskkill），本服务
+    都会在数秒内自动关闭——"谁启动谁负责，关闭即全部退出"。
+    """
+    parent = os.getppid()
+    if parent <= 0:
+        return
+
+    def _watch():
+        while True:
+            time.sleep(3)
+            try:
+                if os.getppid() != parent or not _parent_alive(parent):
+                    print(f"[LatentSync] 父进程（pid={parent}）已退出，本服务自动关闭")
+                    os._exit(0)
+            except Exception:
+                pass
+
+    threading.Thread(target=_watch, daemon=True, name="parent-watchdog").start()
+
+
 def main():
     """启动服务"""
     global _resolution, _inference_steps
@@ -527,6 +710,8 @@ def main():
     )
     parser.add_argument("--preload", action="store_true", help="启动时预加载 pipeline")
     args = parser.parse_args()
+
+    _start_parent_watchdog()
 
     _resolution = args.resolution
     _inference_steps = args.inference_steps

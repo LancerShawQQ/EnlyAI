@@ -1,13 +1,20 @@
 
 /* ============================================
-   Liquid Glass 液态玻璃视觉语言（macOS 27 风格 - 增强版）
-   核心：半透明 + 实时光影折射 + 动态高光 + 鼠标跟随光晕 + 弹跳动画
+   Liquid Glass 液态玻璃视觉语言（Apple 风格 · 性能校准版）
+   原则（对照 Apple 平台规范实践）：
+   1. 毛玻璃只用在"大表面"（卡片/侧栏/弹窗/Toast）——
+      小控件（按钮/输入框/徽章）不做 backdrop-filter，
+      每个滤镜层都要求合成器持续重算，层越多整页越卡；
+   2. 背景层保持静止——极光漂移等无限动画会迫使所有玻璃层
+      逐帧重算模糊，是"整页抖动"的主要来源；
+   3. 动效预算留给有意义的交互（hover/按压/页面切换），
+      微交互用轻盈的 ease-out，只在小元素上用弹性曲线。
    ============================================ */
 :root {
-  --lg-blur: 60px;
-  --lg-blur-heavy: 80px;
-  --lg-blur-light: 30px;
-  --lg-saturation: 200%;
+  --lg-blur: 36px;
+  --lg-blur-heavy: 48px;
+  --lg-blur-light: 20px;
+  --lg-saturation: 160%;
   --lg-opacity: 0.45;
   --lg-opacity-hover: 0.6;
   --lg-opacity-active: 0.75;
@@ -19,32 +26,25 @@
   --lg-shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.18);
   --lg-inner-glow: inset 0 1px 1px rgba(255, 255, 255, 0.5);
   --lg-inner-glow-strong: inset 0 1px 2px rgba(255,255,255,0.8), inset 0 -1px 1px rgba(255,255,255,0.25);
-  --lg-transition: 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  --lg-spring: 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-  --lg-spring-bounce: 0.7s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  /* Apple 风格曲线：大表面用轻盈 ease-out，小元素才允许弹性 */
+  --lg-transition: 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --lg-spring: 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
+  --lg-spring-bounce: 0.45s cubic-bezier(0.34, 1.4, 0.5, 1);
 }
 
-/* ---------- 极光漂移动画（增强动态感） ---------- */
-@keyframes lg-aurora-drift {
-  0% { transform: translate(0, 0) scale(1) rotate(0deg); }
-  33% { transform: translate(3%, -2%) scale(1.08) rotate(1deg); }
-  66% { transform: translate(-2%, 3%) scale(1.05) rotate(-1deg); }
-  100% { transform: translate(1%, -1%) scale(1.03) rotate(0.5deg); }
-}
-
-/* ---------- 卡片入场动画 ---------- */
+/* ---------- 卡片入场动画 ----------
+   仅在显式添加 .lg-enter 时播放（页面切换时由 JS 添加后自动移除），
+   不能常驻在 .card 上——任何局部重渲染都会让动画重播，视觉上持续脉动 */
 @keyframes lg-card-enter {
   0% { opacity: 0; transform: translateY(12px) scale(0.98); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* ---------- 光晕脉冲（用于 active 状态） ---------- */
-@keyframes lg-glow-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 113, 227, 0.0), var(--lg-inner-glow-strong); }
-  50% { box-shadow: 0 0 20px 4px rgba(0, 113, 227, 0.15), var(--lg-inner-glow-strong); }
+.card.lg-enter {
+  animation: lg-card-enter 0.4s var(--lg-spring) backwards;
 }
 
-/* ---------- 卡片液态玻璃增强 ---------- */
+/* ---------- 卡片液态玻璃 ---------- */
 .card {
   position: relative;
   background: rgba(255, 255, 255, var(--lg-opacity));
@@ -54,7 +54,6 @@
   box-shadow: var(--lg-shadow-ambient), var(--lg-inner-glow);
   transition: var(--lg-spring);
   overflow: hidden;
-  animation: lg-card-enter 0.5s var(--lg-spring) backwards;
 }
 
 /* 135° 对角高光层 */
@@ -93,18 +92,18 @@
 .card:hover {
   background: rgba(255, 255, 255, var(--lg-opacity-hover));
   box-shadow: var(--lg-shadow-hover), var(--lg-inner-glow-strong);
-  transform: translateY(-4px) scale(1.008);
+  transform: translateY(-2px);
   border-color: var(--lg-edge-highlight);
 }
 
-/* ---------- 按钮液态玻璃（增强） ---------- */
+/* ---------- 按钮 ----------
+   小控件不做 backdrop-filter（滤镜层过多会拖垮整页合成），
+   用半透明底 + 边缘高光 + 内阴影营造玻璃质感 */
 .btn,
 .btn-primary,
 .btn-secondary,
 .btn-ghost {
   position: relative;
-  backdrop-filter: blur(var(--lg-blur-light)) saturate(180%);
-  -webkit-backdrop-filter: blur(var(--lg-blur-light)) saturate(180%);
   border: 1px solid var(--lg-edge-highlight-soft);
   box-shadow: var(--lg-shadow-ambient), var(--lg-inner-glow);
   transition: var(--lg-spring-bounce);
@@ -159,11 +158,9 @@
   transition: 0.1s ease;
 }
 
-/* ---------- 主按钮（Apple 黑色风格）液态玻璃 ---------- */
+/* ---------- 主按钮（Apple 黑色风格） ---------- */
 .btn-primary {
   background: rgba(20, 20, 22, 0.75);
-  backdrop-filter: blur(var(--lg-blur)) saturate(200%);
-  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(200%);
   border: 1px solid rgba(255, 255, 255, 0.18);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.25), inset 0 -1px 1px rgba(0, 0, 0, 0.3);
 }
@@ -176,8 +173,8 @@
 
 /* ---------- 侧边栏液态玻璃 ---------- */
 .sidebar {
-  backdrop-filter: blur(var(--lg-blur-heavy)) saturate(200%);
-  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(200%);
+  backdrop-filter: blur(var(--lg-blur-heavy)) saturate(var(--lg-saturation));
+  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(var(--lg-saturation));
   background: rgba(255, 255, 255, 0.5);
   border-right: 1px solid var(--lg-edge-highlight-soft);
 }
@@ -186,28 +183,32 @@
   position: relative;
   background: transparent;
   border: 1px solid transparent;
-  backdrop-filter: blur(var(--lg-blur-light));
-  -webkit-backdrop-filter: blur(var(--lg-blur-light));
   transition: var(--lg-spring);
   overflow: hidden;
 }
 
 .nav-item:hover {
   background: rgba(255, 255, 255, 0.45);
-  backdrop-filter: blur(var(--lg-blur)) saturate(200%);
-  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(200%);
   border-color: var(--lg-edge-highlight-soft);
   box-shadow: var(--lg-shadow-ambient), var(--lg-inner-glow);
   transform: translateX(2px);
 }
 
+/* active 静态高亮：不用无限脉冲动画（见文件头原则 2） */
 .nav-item.active {
   background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(var(--lg-blur)) saturate(220%);
-  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(220%);
   border-color: var(--lg-edge-highlight);
   box-shadow: var(--lg-shadow-float), var(--lg-inner-glow-strong);
-  animation: lg-glow-pulse 3s ease-in-out infinite;
+}
+
+/* 退出按钮（红色调，与常规导航区分） */
+.nav-item.nav-exit {
+  color: #d7263d;
+  margin-top: 6px;
+}
+.nav-item.nav-exit:hover {
+  background: rgba(215, 38, 61, 0.08);
+  border-color: rgba(215, 38, 61, 0.25);
 }
 
 .nav-item.active::after {
@@ -224,8 +225,8 @@
 
 /* ---------- 移动端顶部栏液态玻璃 ---------- */
 .mobile-topbar {
-  backdrop-filter: blur(var(--lg-blur-heavy)) saturate(220%);
-  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(220%);
+  backdrop-filter: blur(var(--lg-blur-heavy)) saturate(var(--lg-saturation));
+  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(var(--lg-saturation));
   background: rgba(255, 255, 255, 0.6);
   border-bottom: 1px solid var(--lg-edge-highlight-soft);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
@@ -235,14 +236,14 @@
 .modal,
 .modal-content,
 .modal-body {
-  backdrop-filter: blur(var(--lg-blur-heavy)) saturate(220%);
-  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(220%);
+  backdrop-filter: blur(var(--lg-blur-heavy)) saturate(var(--lg-saturation));
+  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(var(--lg-saturation));
   background: rgba(255, 255, 255, 0.75);
   border: 1px solid var(--lg-edge-highlight);
   box-shadow: var(--lg-shadow-deep), var(--lg-inner-glow-strong);
 }
 
-/* ---------- 输入框液态玻璃 ---------- */
+/* ---------- 输入框（不做 backdrop-filter，小控件） ---------- */
 input[type="text"],
 input[type="email"],
 input[type="password"],
@@ -251,9 +252,7 @@ input[type="search"],
 input[type="url"],
 textarea,
 select {
-  backdrop-filter: blur(var(--lg-blur-light)) saturate(180%);
-  -webkit-backdrop-filter: blur(var(--lg-blur-light)) saturate(180%);
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.55);
   border: 1px solid var(--lg-edge-highlight-soft);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
   transition: var(--lg-transition);
@@ -262,16 +261,15 @@ select {
 input:focus,
 textarea:focus,
 select:focus {
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.75);
   border-color: #0071E3;
   box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.18), inset 0 1px 2px rgba(0, 0, 0, 0.04);
-  transform: translateY(-1px);
 }
 
 /* ---------- 向导面板液态玻璃 ---------- */
 .wizard-panel {
-  backdrop-filter: blur(var(--lg-blur)) saturate(200%);
-  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(200%);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturation));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturation));
   background: rgba(255, 255, 255, 0.5);
   border: 1px solid var(--lg-edge-highlight-soft);
   box-shadow: var(--lg-shadow-ambient), var(--lg-inner-glow);
@@ -279,25 +277,23 @@ select:focus {
 
 /* ---------- Toast 液态玻璃 ---------- */
 .toast {
-  backdrop-filter: blur(var(--lg-blur-heavy)) saturate(220%);
-  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(220%);
+  backdrop-filter: blur(var(--lg-blur-heavy)) saturate(var(--lg-saturation));
+  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(var(--lg-saturation));
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid var(--lg-edge-highlight);
   box-shadow: var(--lg-shadow-float), var(--lg-inner-glow-strong);
 }
 
-/* ---------- 标签 / 徽章液态玻璃 ---------- */
+/* ---------- 标签 / 徽章（小控件，不做 backdrop-filter） ---------- */
 .badge,
 .tag,
 .chip {
-  backdrop-filter: blur(var(--lg-blur-light)) saturate(180%);
-  -webkit-backdrop-filter: blur(var(--lg-blur-light)) saturate(180%);
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.55);
   border: 1px solid var(--lg-edge-highlight-soft);
   box-shadow: var(--lg-inner-glow);
 }
 
-/* ---------- 滚动条液态玻璃 ---------- */
+/* ---------- 滚动条 ---------- */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -308,8 +304,6 @@ select:focus {
 ::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.2);
   border-radius: 4px;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.35);

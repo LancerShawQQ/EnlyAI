@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import atexit
 import json
+import os
 import shutil
 import threading
 import time
@@ -18,6 +19,10 @@ from .core.ffmpeg_utils import FFmpegRunner
 from .core.gpu_runner import GPURunner
 from .core.llm_client import LLMClient
 from .core.logger import get_logger, setup_logging
+from .core.service_supervisor import (
+    get_service_supervisor,
+    start_dependency_services_in_background,
+)
 from .core.settings_manager import get_settings_manager
 from .core.storage import Storage
 from .modules.avatar_engine import AvatarEngine
@@ -124,6 +129,13 @@ class EnlyAI:
         self._wav2lip_thread: Optional[threading.Thread] = None
         self._start_wav2lip_service_in_background()
         atexit.register(self._shutdown_wav2lip_service)
+
+        # 依赖服务监管：Web 后端启动即自动拉起缺失的 Ollama/CosyVoice/LatentSync，
+        # 用户双击 EnlyAI.exe 无需再手动运行 scripts/start_all.bat
+        # （测试环境下禁用，避免单测意外拉起真实 GPU 服务）
+        if not os.environ.get("PYTEST_CURRENT_TEST") and \
+                not os.environ.get("KRVOICEAI_NO_SERVICE_AUTOSTART"):
+            start_dependency_services_in_background()
 
         self.logger.info(
             f"EnlyAI 初始化完成 "
@@ -936,6 +948,7 @@ class EnlyAI:
         """
         import httpx as _httpx
         problems: list[str] = []
+        sup = get_service_supervisor()
 
         def _probe(url: str, timeout: float = 3.0) -> bool:
             try:
@@ -947,12 +960,13 @@ class EnlyAI:
         # LLM 依赖
         llm_provider = self.config.get("llm.provider", "mock")
         if llm_provider == "ollama":
-            base = self.config.get("llm.base_url", "")
-            if base and not _probe(f"{base.rstrip('/').rsplit('/v1', 1)[0]}/api/tags"):
-                problems.append(
-                    "Ollama LLM 服务未运行（文案生成/标题/风控都依赖它）。"
-                    "请运行 `ollama serve` 或 scripts/start_all.bat 后重试。"
-                )
+            snap = sup.ensure("ollama")
+            if not snap.get("healthy"):
+                problems.append(sup.preflight_message(
+                    "ollama",
+                    "手动运行 `ollama serve`（模型：`ollama pull qwen3:8b`），"
+                    "或运行 scripts/start_all.bat",
+                ))
         elif llm_provider not in ("mock",):
             base = self.config.get("llm.base_url", "")
             if base and not _probe(f"{base.rstrip('/')}/models"):
@@ -964,14 +978,13 @@ class EnlyAI:
         # TTS 依赖
         tts_provider = self.config.get("tts.provider", "mock")
         if tts_provider == "cosyvoice":
-            url = self.config.get("tts.cosyvoice.server_url", "http://localhost:8012")
-            if not _probe(f"{url.rstrip('/')}/api/health"):
-                problems.append(
-                    "CosyVoice TTS 服务未运行（语音合成依赖它）。"
-                    "请运行 scripts/start_all.bat，或手动启动："
-                    "conda activate CosyVoice && cd CosyVoice && "
-                    "python ../krvoiceai/modules/cosyvoice_server.py --port 8012 --fp16"
-                )
+            snap = sup.ensure("cosyvoice")
+            if not snap.get("healthy"):
+                problems.append(sup.preflight_message(
+                    "cosyvoice",
+                    "手动启动：conda activate CosyVoice && cd CosyVoice && "
+                    "python cosyvoice_server.py --port 8012 --fp16",
+                ))
         elif tts_provider in ("mimo", "gpt_sovits"):
             url = self.config.get("tts.api_base", "")
             if url and not _probe(f"{url.rstrip('/')}/"):
@@ -982,14 +995,13 @@ class EnlyAI:
         # 数字人依赖
         avatar_provider = self.config.get("avatar.provider", "mock")
         if avatar_provider == "latentsync":
-            url = self.config.get("avatar.latentsync.server_url", "http://localhost:8011")
-            if not _probe(f"{url.rstrip('/')}/api/health"):
-                problems.append(
-                    "LatentSync 数字人服务未运行（唇形同步依赖它）。"
-                    "请运行 scripts/start_all.bat，或手动启动："
-                    "cd ../LatentSync && conda activate LatentSync && "
-                    "python latentsync_server.py --port 8011 --resolution 256 --inference_steps 15"
-                )
+            snap = sup.ensure("latentsync")
+            if not snap.get("healthy"):
+                problems.append(sup.preflight_message(
+                    "latentsync",
+                    "手动启动：cd ../LatentSync && conda activate LatentSync && "
+                    "python latentsync_server.py --port 8011 --resolution 256",
+                ))
         elif avatar_provider == "musetalk":
             url = self.config.get("avatar.musetalk.server_url", "")
             if url and not _probe(f"{url.rstrip('/')}/api/health"):

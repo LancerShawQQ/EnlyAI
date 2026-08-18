@@ -18,6 +18,26 @@ logging:
   retention: "30 days"
   console: true
 
+# 本地依赖服务自动启动（Web 后端启动时自动拉起缺失服务，用户双击 EnlyAI.exe 即可）
+# 覆盖场景：Ollama(LLM) / CosyVoice(TTS) / LatentSync(数字人)，按当前 provider 决定拉起哪些
+services:
+  # 总开关：false 时完全禁用自动拉起（退回手动运行 scripts/start_all.bat 的模式）
+  auto_start: true
+  # conda 安装根目录（留空自动探测：CONDA_EXE / ~/miniconda3 / ~/anaconda3 等常见位置）
+  conda_base: ""
+  # CosyVoice TTS 服务（独立 conda 环境 CosyVoice，端口取 tts.cosyvoice.server_url）
+  cosyvoice:
+    # 指定 python.exe（留空用 <conda_base>/envs/CosyVoice/python.exe）
+    python: ""
+    # 半精度推理（8GB 显存推荐开启）
+    fp16: true
+  # LatentSync 数字人服务（独立 conda 环境 LatentSync，参数取 avatar.latentsync.*）
+  latentsync:
+    # 指定 python.exe（留空用 <conda_base>/envs/LatentSync/python.exe）
+    python: ""
+    # LatentSync 项目目录（含 latentsync_server.py；留空探测 ../LatentSync 和 C:\AI_projects\LatentSync）
+    project_dir: ""
+
 # LLM 配置（文案/标题生成）
 # 全本地链路：Ollama 提供 OpenAI 兼容 /v1/chat/completions 端点，零代码改动对接 llm_client.py
 # 启动 Ollama 后拉取模型：ollama pull qwen3:8b
@@ -193,8 +213,10 @@ avatar:
     server_url: http://localhost:8011  # LatentSync 本地服务地址
     api_key: ""                       # API Key 鉴权（可选）
     config: high_quality  # 兼容字段（服务端按 resolution 自动选配置）
-    inference_steps: 12   # 扩散步数（12 平衡档；15 高质量；10 最快）
-    guidance_scale: 1.5   # CFG 引导强度（1.5 官方默认唇形引导最强；1.0 关闭=U-Net 减半提速，唇形引导略降）
+    inference_steps: 15   # 扩散步数（15 高质量，唇形张合更充分；12 平衡；10 最快）
+    guidance_scale: 2.5   # CFG 引导强度（2.5 口型张合充分，实测优于官方默认 1.5；过高易生牙形伪影）
+    # GFPGAN 人脸增强后处理（修复嘴部模糊/口内黑影，GPU 约 0.1-0.3s/帧）
+    face_enhance: true
     resolution: 256       # 处理分辨率（256 适配 8GB 显存，512 需 12GB+）
     seed: -1              # 随机种子（-1 随机）
     timeout: 600          # 请求超时秒数

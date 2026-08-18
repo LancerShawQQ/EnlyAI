@@ -155,7 +155,9 @@ body {
   position: relative;
 }
 
-/* Liquid Glass 动态极光背景（macOS 27 风格） */
+/* Liquid Glass 极光背景（Apple 风格 · 静态）
+   不加漂移动画：极光层位于所有 backdrop-filter 玻璃层之下，
+   持续动画会迫使每个玻璃层逐帧重算模糊，导致整页卡顿抖动 */
 body::before {
   content: '';
   position: fixed;
@@ -171,7 +173,6 @@ body::before {
     #f5f5f7;
   pointer-events: none;
   z-index: 0;
-  animation: lg-aurora-drift 30s ease-in-out infinite alternate;
 }
 
 /* 微妙噪点纹理（增加质感） */
@@ -1039,7 +1040,8 @@ body::after {
   padding: 14px 20px;
   max-width: 1100px;
   margin: 0 auto;
-  animation: fadeInUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* 页面级切换用轻盈 ease-out（不带回弹），整页回弹会有"晃动"感 */
+  animation: fadeInUp 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
 .page.active {

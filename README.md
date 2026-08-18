@@ -83,13 +83,35 @@ python -m playwright install chromium
 
 ### 启动服务
 
-**Web UI（推荐，现代化界面）**
+**双击 EnlyAI.exe（推荐，全自动）**
+
+双击项目根目录的 `EnlyAI.exe` 即可：启动 Web UI 并自动打开浏览器，
+同时后台自动拉起缺失的依赖服务（Ollama / CosyVoice TTS / LatentSync 数字人），
+无需先手动运行 `scripts/start_all.bat`。
+
+**退出机制（关得干净）**：
+
+- 关闭 exe 窗口（或崩溃/被结束时）——Windows Job Object 由内核保证
+  Web 后端及其拉起的全部服务进程一并终止，不残留显存/端口占用；
+- Web 界面侧边栏「退出 EnlyAI」按钮——先停止本次自动拉起的服务再退出
+  （`POST /api/shutdown`）；
+- 手动另开的服务（如 `start_all.bat` 各窗口）不受影响，谁启动谁负责。
+
+其他说明：
+
+- 依赖服务由 Web 后端的"服务监管器"管理（`krvoiceai/core/service_supervisor.py`），
+  按 `config/user_config.yaml` 中的 provider 决定拉起哪些；
+- 服务已在运行则直接复用；CosyVoice 模型加载约 50 秒，期间点「生成」会提示稍候；
+- 服务日志：`workspace_data/logs/*_service.log`，状态接口：`GET /api/services`；
+- conda 环境/项目目录探测不到时，可在 `config/default.yaml` 的 `services` 段显式指定。
+
+**Web UI（命令行方式）**
 
 ```bash
 python -m krvoiceai.web.server --port 8000
 ```
 
-访问 http://localhost:8000
+访问 http://localhost:8000（依赖服务同样会自动拉起）
 
 **Gradio UI（备用，精简界面）**
 

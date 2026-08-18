@@ -885,40 +885,36 @@ class AvatarEngine(BaseModule):
     def _suspend_cosyvoice_for_gpu(self) -> bool:
         """GPU 分时复用：暂停 CosyVoice 服务释放显存，供 LatentSync 使用
 
-        CosyVoice 和 LatentSync 各需 ~5GB 显存，8GB 卡无法同时运行。
-        此方法通过 HTTP 通知 CosyVoice 服务暂停（释放模型权重），
-        返回 True 表示已暂停（调用方需在 finally 中恢复）。
+        CosyVoice 和 LatentSync 各需 ~4-5GB 显存，8GB 卡无法同时运行；
+        不暂停会导致 LatentSync 溢出到系统内存，推理速度劣化 10 倍
+        （实测 1-3s/it → 8.5s/it，40s 音频 2043s 超时失败）。
 
-        CosyVoice 服务支持 /api/pause 和 /api/resume 端点（见 cosyvoice_server.py）。
-        如果服务不支持或不可用，返回 False（不影响功能，LatentSync 可能因显存不足而变慢）。
+        直接调用幂等的 /api/unload（服务不在时快速失败），
+        不做 health 前置探测——TTS 大任务刚结束时 health 可能响应缓慢，
+        3s 探测超时会静默跳过暂停（2026-08-16 超时事故根因）。
         """
         import httpx
         cosyvoice_url = self.config.get("tts.cosyvoice.server_url", "http://localhost:8012")
-        try:
-            # 检查 CosyVoice 服务是否在运行
-            r = httpx.get(f"{cosyvoice_url}/api/health", timeout=3)
-            if r.status_code != 200:
-                return False
-            health = r.json()
-            if not health.get("model_loaded"):
-                return False  # 模型未加载，无需暂停
-
-            self.logger.info(
-                "GPU 分时复用：暂停 CosyVoice 服务释放显存（供 LatentSync 使用）"
-            )
-            # 请求 CosyVoice 卸载模型释放显存
-            r = httpx.post(f"{cosyvoice_url}/api/unload", timeout=30)
-            if r.status_code == 200:
-                self.logger.info("CosyVoice 模型已卸载，显存已释放")
-                # 等待显存释放
-                time.sleep(3)
-                return True
-            else:
+        for attempt in range(2):
+            try:
+                r = httpx.post(f"{cosyvoice_url}/api/unload", timeout=30)
+                if r.status_code == 200:
+                    self.logger.info(
+                        "GPU 分时复用：CosyVoice 模型已卸载，显存让给 LatentSync"
+                        + ("（重试后成功）" if attempt else "")
+                    )
+                    time.sleep(3)  # 等待显存释放
+                    return True
                 self.logger.warning(f"CosyVoice 卸载失败: HTTP {r.status_code}")
-                return False
-        except Exception as e:
-            self.logger.debug(f"CosyVoice 暂停跳过（服务不可用或不支持）: {e}")
-            return False
+            except Exception as e:
+                # 连接拒绝 = 服务不在运行（无需暂停）；其他异常记录后重试一次
+                self.logger.warning(
+                    f"GPU 分时复用：暂停 CosyVoice 异常（尝试 {attempt + 1}/2）: {e}"
+                )
+                if "ConnectError" in type(e).__name__ or isinstance(e, httpx.ConnectError):
+                    return False
+                time.sleep(2)
+        return False
 
     def _resume_cosyvoice(self) -> None:
         """GPU 分时复用：恢复 CosyVoice 服务（LatentSync 完成后重新加载模型）"""
@@ -975,16 +971,18 @@ class AvatarEngine(BaseModule):
         )
 
         # 防呆：根据音频时长动态调整超时和推理步数
-        # 经验值：15步 × 256分辨率 × CFG1.5，每秒音频约需 18s 推理（含 face detect + restore）
+        # 实测（RTX 5060 8GB / 256分辨率 / 15步 / CFG1.5）：
+        # 稳态约 1s/it，但长任务后半段会劣化到 5s/it（显存/桌面合成争用），
+        # 按保守 28s/每秒音频估算；管线懒加载冷启动 60-100s 另计入固定缓冲
         audio_dur = ctx.audio_duration or 5.0
         # CFG 关闭（guidance_scale≤1.0）时 U-Net 计算减半，推理时间约 ×0.55
         cfg_factor = 1.0 if self.latentsync_guidance_scale > 1.0 else 0.55
         estimated_inference_time = (
-            audio_dur * 18 * (self.latentsync_inference_steps / 15.0) * cfg_factor
+            audio_dur * 28 * (self.latentsync_inference_steps / 15.0) * cfg_factor
         )
-        # 动态超时 = 预估 × 1.5 安全系数 + 150s 固定缓冲（GPU 分时复用下管线懒加载
-        # 重启需 60-100s，加上 Ollama 等其他 GPU 进程争用的余量），最少 400s
-        dynamic_timeout = max(400, int(estimated_inference_time * 1.5) + 150)
+        # 动态超时 = 预估 × 1.5 安全系数 + 350s 固定缓冲（冷加载 60-100s +
+        # GPU 分时复用切换 + Ollama 等其他 GPU 进程争用余量），最少 900s
+        dynamic_timeout = max(900, int(estimated_inference_time * 1.5) + 350)
 
         # 长音频自动降级：超过 60s 的音频降到 10 步推理（质量微降但避免超时）
         actual_steps = self.latentsync_inference_steps
@@ -996,9 +994,9 @@ class AvatarEngine(BaseModule):
             )
             # 降级后重新计算超时
             estimated_inference_time = (
-                audio_dur * 18 * (10 / 15.0) * cfg_factor
+                audio_dur * 28 * (10 / 15.0) * cfg_factor
             )
-            dynamic_timeout = max(400, int(estimated_inference_time * 1.5) + 150)
+            dynamic_timeout = max(900, int(estimated_inference_time * 1.5) + 350)
 
         self.logger.info(
             f"LatentSync 预估推理时间: {estimated_inference_time:.0f}s, "
@@ -1042,6 +1040,8 @@ class AvatarEngine(BaseModule):
             "seed": str(self.latentsync_seed),
             # CFG 引导强度：1.0=关闭（U-Net 计算减半，快速档）；1.5=官方默认（高质量/平衡档）
             "guidance_scale": str(self.latentsync_guidance_scale),
+            # GFPGAN 人脸增强：修复 LatentSync 1.5 嘴部模糊/口内黑影（社区标准补救）
+            "face_enhance": str(bool(self.latentsync_cfg.get("face_enhance", True))).lower(),
         }
         headers = {"Accept": "video/mp4"}
         if self.latentsync_api_key:

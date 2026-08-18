@@ -2673,6 +2673,18 @@ async function _pollJobLoop(jobId) {
 
   // 轮询任务状态
   const wizPipeline = document.getElementById('wiz-pipeline');
+  // 流水线 DOM 只构建一次，之后差量更新（整块 innerHTML 重建会让
+  // 玻璃卡片的入场动画每 1.5s 重播一次，视觉上持续抖动）
+  const PIPE_ICONS = { pending: '○', running: '⟳', success: '✓', failed: '✕', skipped: '−' };
+  const PIPE_STATUS_TEXT = { pending: '等待中', running: '执行中...', success: '已完成', failed: '失败', skipped: '已跳过' };
+  if (wizPipeline && !wizPipeline.dataset.built) {
+    wizPipeline.innerHTML = STEP_ORDER.map(step => {
+      const info = STEP_INFO[step];
+      return `<div class="pipeline-step pending" data-step="${step}"><div class="step-icon">○</div><div class="step-info"><div class="step-name">${info.icon} ${info.name}</div><div class="step-status">等待中</div></div></div>`;
+    }).join('');
+    wizPipeline.dataset.built = '1';
+  }
+  const wizStepStates = {};
   // 最长等待 180 分钟（Wav2Lip GPU 模式约 20-30 分钟，CPU 模式长文案可达 90-120 分钟，留充足余量）
   const maxWait = 10800000;
   const pollInterval = 1500;
@@ -2743,16 +2755,18 @@ async function _pollJobLoop(jobId) {
       toast('已耗时 60 分钟。如需加速：减少文案长度 / 设置中切换 resize_factor=2 / 使用 GPU 服务器', 'warning');
     }
 
-    // 更新向导页内 pipeline
+    // 差量更新向导页内 pipeline：仅状态发生变化的步骤才改 DOM
     if (wizPipeline) {
-      wizPipeline.innerHTML = STEP_ORDER.map(step => {
-        const info = STEP_INFO[step];
+      for (const step of STEP_ORDER) {
         const status = stepsState[step] || 'pending';
-        const icons = { pending: '○', running: '⟳', success: '✓', failed: '✕', skipped: '−' };
-        const statusText = { pending: '等待中', running: '执行中...', success: '已完成', failed: '失败', skipped: '已跳过' };
-        return `<div class="pipeline-step ${status}"><div class="step-icon">${icons[status] || '○'}</div><div class="step-info"><div class="step-name">${info.icon} ${info.name}</div><div class="step-status">${statusText[status] || status}</div></div></div>`;
-      }).join('');
-      if (window.lucide) lucide.createIcons();
+        if (wizStepStates[step] === status) continue;
+        wizStepStates[step] = status;
+        const el = wizPipeline.querySelector(`.pipeline-step[data-step="${step}"]`);
+        if (!el) continue;
+        el.className = `pipeline-step ${status}`;
+        el.querySelector('.step-icon').textContent = PIPE_ICONS[status] || '○';
+        el.querySelector('.step-status').textContent = PIPE_STATUS_TEXT[status] || status;
+      }
     }
 
     // 更新模态框进度
@@ -5624,6 +5638,21 @@ async function handleMatrixGenerate(scripts, mode, platform) {
   }, 2000);
 }
 
+// ========== 彻底退出 EnlyAI ==========
+// 后端会停止本次自动拉起的 TTS/数字人/LLM 服务并关闭 Web 进程；
+// 通过 EnlyAI.exe 启动时，Job Object 亦保证关闭窗口即全部退出
+async function shutdownApp() {
+  if (!confirm('确定退出 EnlyAI 吗？\n\n将停止 Web 服务及本次自动启动的 TTS / 数字人服务，释放显存与端口。')) return;
+  try {
+    await api('/api/shutdown', { method: 'POST' });
+    document.body.innerHTML = '<div style="display:flex;height:100vh;align-items:center;justify-content:center;background:#f5f5f7;color:#1d1d1f;font-size:16px;letter-spacing:.5px">EnlyAI 已退出，此页面可以关闭。</div>';
+  } catch (e) {
+    // 服务可能已停止，无法返回响应——同样视为已退出
+    document.body.innerHTML = '<div style="display:flex;height:100vh;align-items:center;justify-content:center;background:#f5f5f7;color:#1d1d1f;font-size:16px;letter-spacing:.5px">EnlyAI 已退出，此页面可以关闭。</div>';
+  }
+  setTimeout(() => window.close(), 1500);
+}
+
 // ========== 初始化 ==========
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -5631,20 +5660,18 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.lucide) lucide.createIcons();
 
   // ========== Liquid Glass 鼠标跟随高光 ==========
-  // 在所有 .card 元素上跟踪鼠标位置，更新 --mouse-x/--mouse-y CSS 变量
-  // 配合 .card::after 的 radial-gradient 实现鼠标跟随光晕效果
+  // rAF 节流 + 只更新指针所在卡片：逐卡 getBoundingClientRect 会在每次
+  // 鼠标移动时强制布局计算（layout thrash），是界面卡顿抖动的来源之一
+  let _mouseGlowPending = null;
   document.addEventListener('mousemove', (e) => {
-    const cards = document.querySelectorAll('.card');
-    cards.forEach(card => {
+    if (_mouseGlowPending) return;
+    _mouseGlowPending = requestAnimationFrame(() => {
+      _mouseGlowPending = null;
+      const card = e.target && e.target.closest ? e.target.closest('.card') : null;
+      if (!card) return;
       const rect = card.getBoundingClientRect();
-      // 只处理鼠标在卡片上或接近卡片的情况（性能优化）
-      if (e.clientX >= rect.left - 50 && e.clientX <= rect.right + 50 &&
-          e.clientY >= rect.top - 50 && e.clientY <= rect.bottom + 50) {
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        card.style.setProperty('--mouse-x', x + 'px');
-        card.style.setProperty('--mouse-y', y + 'px');
-      }
+      card.style.setProperty('--mouse-x', (e.clientX - rect.left) + 'px');
+      card.style.setProperty('--mouse-y', (e.clientY - rect.top) + 'px');
     });
   }, { passive: true });
 
@@ -5653,6 +5680,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const nav = document.getElementById(`nav-${p}`);
     if (nav) nav.addEventListener('click', () => navigate(p));
   });
+
+  // 退出按钮（彻底退出：停止依赖服务 + Web）
+  document.getElementById('nav-exit')?.addEventListener('click', shutdownApp);
 
   // 资源中心 / 设置中心 分组导航绑定
   // nav-resources 已整合到 nav-settings，无需单独绑定

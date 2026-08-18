@@ -484,7 +484,55 @@ async def list_voices():
         return {"success": False, "error": str(e)}
 
 
+def _parent_alive(pid: int) -> bool:
+    """探测父进程是否存活（Windows：OpenProcess + GetExitCodeProcess）"""
+    if pid <= 0:
+        return False
+    if os.name != "nt":
+        return True
+    import ctypes
+
+    k = ctypes.windll.kernel32
+    h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not h:
+        return False
+    try:
+        code = ctypes.c_ulong()
+        if k.GetExitCodeProcess(h, ctypes.byref(code)):
+            return code.value == 259  # STILL_ACTIVE
+        return False
+    finally:
+        k.CloseHandle(h)
+
+
+def _start_parent_watchdog():
+    """父进程退出后自动退出，避免孤儿服务进程占用显存/端口
+
+    本服务通常由 EnlyAI Web 后端（或 start_all.bat 的 cmd 窗口）拉起。
+    父进程无论以何种方式退出（用户关窗 / 崩溃 / taskkill），本服务
+    都会在数秒内自动关闭——"谁启动谁负责，关闭即全部退出"。
+    """
+    parent = os.getppid()
+    if parent <= 0:
+        return
+
+    def _watch():
+        while True:
+            time.sleep(3)
+            try:
+                if os.getppid() != parent or not _parent_alive(parent):
+                    print(f"[CosyVoice] 父进程（pid={parent}）已退出，本服务自动关闭")
+                    os._exit(0)
+            except Exception:
+                pass
+
+    import threading
+    threading.Thread(target=_watch, daemon=True, name="parent-watchdog").start()
+
+
 if __name__ == "__main__":
+    _start_parent_watchdog()
+
     parser = argparse.ArgumentParser(description="CosyVoice3 TTS Server")
     parser.add_argument("--port", type=int, default=8012, help="服务端口")
     parser.add_argument(

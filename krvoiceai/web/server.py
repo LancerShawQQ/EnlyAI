@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import tempfile
 import time
@@ -259,6 +260,36 @@ def create_app() -> FastAPI:
         except Exception as e:
             data["gpu"] = {"error": str(e)}
         return data
+
+    @app.get("/api/services")
+    async def services_status():
+        """本地依赖服务（Ollama/CosyVoice/LatentSync）监管状态"""
+        from ..core.service_supervisor import get_service_supervisor
+
+        return get_service_supervisor().status()
+
+    @app.post("/api/shutdown")
+    async def shutdown_app():
+        """彻底退出 EnlyAI：停止本进程拉起的 TTS/数字人/LLM 服务后关闭 Web
+
+        响应发送成功后再执行退出，避免前端收不到确认。
+        """
+        import threading
+
+        def _do_shutdown():
+            time.sleep(0.5)
+            try:
+                from ..core.service_supervisor import get_service_supervisor
+
+                stopped = get_service_supervisor().shutdown_owned()
+                logger.info(f"[shutdown] 已停止依赖服务: {stopped or '无'}")
+            except Exception as e:
+                logger.warning(f"[shutdown] 停止依赖服务异常: {e}")
+            finally:
+                os._exit(0)
+
+        threading.Thread(target=_do_shutdown, daemon=True).start()
+        return {"success": True, "message": "EnlyAI 正在退出，页面可安全关闭"}
 
     @app.get("/api/debug/tts")
     async def debug_tts():
