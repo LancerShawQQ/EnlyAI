@@ -486,18 +486,27 @@ async def unload_model():
 
     管线为懒加载（首次请求自动重建），卸载后下一次生成请求会重新加载（约 30-60s），
     但标准化缓存与人脸检测器配置仍在，重载后处理速度不变。
+    GFPGAN 增强器一并释放（~1.5GB）：不释放会让后续 CosyVoice 可用显存长期吃紧，
+    fp16 推理在显存压力下变慢 4-10 倍，曾导致 TTS 180s 超时产出无声视频。
     """
-    global _pipeline
-    if _pipeline is None:
+    global _pipeline, _gfpgan
+    released = []
+    if _pipeline is None and _gfpgan is None:
         return {"status": "ok", "message": "pipeline already unloaded"}
-    del _pipeline
-    _pipeline = None
+    if _pipeline is not None:
+        del _pipeline
+        _pipeline = None
+        released.append("pipeline")
+    if _gfpgan is not None:
+        del _gfpgan
+        _gfpgan = None
+        released.append("gfpgan")
     import gc
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    print("[LatentSync] 管线已卸载，显存已释放")
-    return {"status": "ok", "message": "pipeline unloaded, VRAM released"}
+    print(f"[LatentSync] 已释放: {','.join(released)}，显存已让出")
+    return {"status": "ok", "message": f"{','.join(released)} unloaded, VRAM released"}
 
 
 @app.post("/api/load")

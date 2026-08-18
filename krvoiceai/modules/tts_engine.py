@@ -271,16 +271,20 @@ class TTSEngine(BaseModule):
                         pause_duration=pause_duration,
                         voice_enhance=voice_enhance,
                     )
-                    # 重新计算时长
-                    import subprocess as _sp
-                    r = _sp.run(
-                        [self.ffmpeg.ffprobe, "-v", "error", "-show_entries", "format=duration",
-                         "-of", "csv=p=0", str(processed_path)],
-                        capture_output=True, text=True,
-                    )
-                    if r.stdout.strip():
-                        duration = float(r.stdout.strip())
-                    audio_path = processed_path
+                    # 产物校验：静音消除曾把"全静音的降级音频"裁成空 WAV（78 字节），
+                    # 后续 avatar 拿空音频生成无口型视频——近空产物必须拒绝
+                    import soundfile as _sf
+
+                    pdata, psr = _sf.read(str(processed_path), dtype="float32")
+                    p_dur = len(pdata) / psr if psr else 0.0
+                    if p_dur < max(1.0, duration * 0.4):
+                        self.logger.error(
+                            f"后处理产物异常（{p_dur:.2f}s vs 原始 {duration:.2f}s），"
+                            f"疑似源音频为静音，保留原始音频"
+                        )
+                    else:
+                        duration = p_dur
+                        audio_path = processed_path
                     self.logger.info(f"音频后处理完成: remove_silence={remove_silence}, voice_enhance={voice_enhance}, duration={duration:.2f}s")
                 except Exception as e:
                     self.logger.warning(f"音频后处理失败，使用原始音频: {e}")
@@ -739,13 +743,26 @@ class TTSEngine(BaseModule):
         timeout = int(cfg.get("timeout", 180))
         use_instruct = bool(cfg.get("use_instruct", True))
 
+        # 预热：服务懒加载模型（冷启动 10-60s）不该占用合成超时——
+        # 曾出现"懒加载+GPU 显存紧张下推理变慢"吃满 180s 超时，
+        # 客户端降级 mock 产出无声视频
+        try:
+            import httpx as _hx
+
+            h = _hx.get(f"{server_url}/api/health", timeout=5)
+            if h.status_code == 200 and not h.json().get("model_loaded"):
+                self.logger.info("CosyVoice 模型未加载，预热中（不计入合成超时）...")
+                _hx.post(f"{server_url}/api/load", timeout=180)
+        except Exception as e:
+            self.logger.warning(f"CosyVoice 预热跳过（服务不可用则按超时失败）: {e}")
+
         # 确定参考音频和文本
         prompt_audio_path, prompt_text = self._resolve_cosyvoice_voice(voice_id, cfg)
         if prompt_audio_path is None:
-            self.logger.error(
-                f"CosyVoice 未找到音色 {voice_id} 的参考音频，降级到 mock"
+            raise RuntimeError(
+                f"CosyVoice 未找到音色 {voice_id} 的参考音频，"
+                f"请在设置中心检查音色配置（config/voices/{voice_id}/sample.wav）"
             )
-            return self._synth_mock(text, voice_id, output_path)
 
         # 情绪 → instruct 指令
         instruct = EMOTION_COSYVOICE_INSTRUCT_MAP.get(emotion or 'neutral', '')
@@ -768,19 +785,25 @@ class TTSEngine(BaseModule):
             if not seg.strip():
                 continue
             self.logger.info(f"CosyVoice calling API with seg={repr(seg)} prompt_text={repr(prompt_text)}")
+            # 超时自适应：配置值 vs 按字数估算（每字约 1.2s，含冷启余量）取大者。
+            # 固定 180s 曾在 GPU 显存紧张（推理变慢 4-10 倍）时被吃满
+            seg_timeout = max(timeout, 60 + int(len(seg) * 1.2))
             wav_bytes = self._call_cosyvoice_api(
                 server_url, seg, prompt_audio_path, prompt_text,
                 instruct=use_instruct and instruct,
                 speed=speed or 1.0,
-                timeout=timeout,
+                timeout=seg_timeout,
             )
             self.logger.info(f"CosyVoice seg wav_bytes={len(wav_bytes) if wav_bytes else 'None'}")
             if wav_bytes:
                 all_wavs.append(wav_bytes)
 
         if not all_wavs:
-            self.logger.warning("CosyVoice 未生成音频，降级到 mock")
-            return self._synth_mock(text, voice_id, output_path)
+            # 快速失败，绝不静默降级 mock——无声视频比任务失败更难排查
+            raise RuntimeError(
+                "CosyVoice 合成失败（服务超时或无输出）。"
+                "请稍后重试；若持续失败请查看 workspace_data/logs/cosyvoice_service.log"
+            )
 
         # 合并音频 bytes（WAV 格式，需解码后拼接再编码）
         try:
