@@ -557,6 +557,33 @@ class SubtitleEngine(BaseModule):
                 "samples": samples,
             }]
 
+        # 长段二次切分：连续语音 VAD 切不开时整段可达数十秒，
+        # Fun-ASR-Nano (Qwen3-0.6B) 对超长段会输出空文本（实测 39.8s 全空、8s 正常），
+        # 按 ≤15s 硬切保证识别成功率
+        MAX_ASR_SEG_S = 15.0
+        split_segments = []
+        for vs in vad_segments:
+            seg_dur = float(vs["end"]) - float(vs["start"])
+            if seg_dur <= MAX_ASR_SEG_S + 1.0:
+                split_segments.append(vs)
+                continue
+            n = max(2, int(seg_dur / MAX_ASR_SEG_S) + 1)
+            step = seg_dur / n
+            total_samples = len(vs["samples"])
+            for k in range(n):
+                a = int(k * step / seg_dur * total_samples)
+                b = int(min((k + 1) * step, seg_dur) / seg_dur * total_samples)
+                split_segments.append({
+                    "start": float(vs["start"]) + k * step,
+                    "end": float(vs["start"]) + min((k + 1) * step, seg_dur),
+                    "samples": vs["samples"][a:b],
+                })
+        if len(split_segments) != len(vad_segments):
+            self.logger.info(
+                f"sherpa_funasr 长段切分: {len(vad_segments)} 段 → {len(split_segments)} 段（>{MAX_ASR_SEG_S}s 强制切分）"
+            )
+        vad_segments = split_segments
+
         # 逐段识别
         segments: list[dict] = []
         for vs in vad_segments:
@@ -713,12 +740,17 @@ class SubtitleEngine(BaseModule):
         vad_config.sample_rate = sample_rate
         vad_config.provider = "cpu"
 
+        # 环形缓冲必须 ≥ 音频总长：固定 30s 时超长音频前段被覆盖
+        # （实测 40.5s 音频只吐出一个 start=end=29.67 的零长度残段，
+        #  导致识别器收到 0 样本、字幕降级为估算时间戳）
+        buffer_seconds = max(30, int(len(samples) / sample_rate) + 5)
         vad = sherpa_onnx.VoiceActivityDetector(
-            vad_config, buffer_size_in_seconds=30
+            vad_config, buffer_size_in_seconds=buffer_seconds
         )
 
-        # 分块喂入（每块 30 秒，避免内存爆炸）
-        chunk_size = int(sample_rate * 30)
+        # 小块喂入（100ms，官方推荐）：一次喂 30s 大块会导致 VAD 内部
+        # 丢弃前段音频（实测 40.5s 音频只识别出尾部 10.8s）
+        chunk_size = int(sample_rate * 0.1)
         total = len(samples)
         for i in range(0, total, chunk_size):
             chunk = samples[i:i + chunk_size]
@@ -733,25 +765,20 @@ class SubtitleEngine(BaseModule):
         segments: list[dict] = []
         while not vad.empty():
             seg = vad.front
-            vad.pop()
-
-            # 兼容 sherpa-onnx 不同版本返回格式
-            seg_start_sec = 0.0
-            seg_samples = None
-
-            if hasattr(seg, "start") and hasattr(seg, "samples"):
-                # SpeechSegment 对象（sherpa-onnx 1.10+）
-                seg_start_sec = float(seg.start) / sample_rate
-                seg_samples = np.array(seg.samples, dtype=np.float32)
-            elif hasattr(seg, "samples"):
-                seg_samples = np.array(seg.samples, dtype=np.float32)
-                if hasattr(seg, "start"):
-                    seg_start_sec = float(seg.start) / sample_rate
+            # 注意顺序：1.12.x 的 SpeechSegment.samples 是底层缓冲视图，
+            # pop() 之后内容会被清空——必须先拷贝再 pop（曾因此产出 0 样本空段）
+            if hasattr(seg, "samples"):
+                seg_samples = np.array(seg.samples, dtype=np.float32).copy()
+                seg_start_sec = (
+                    float(seg.start) / sample_rate if hasattr(seg, "start") else 0.0
+                )
             elif isinstance(seg, (list, np.ndarray)):
-                # 仅返回样本列表（旧版本，无绝对时间戳）
                 seg_samples = np.array(seg, dtype=np.float32)
+                seg_start_sec = 0.0
             else:
+                vad.pop()
                 continue
+            vad.pop()
 
             seg_end_sec = seg_start_sec + len(seg_samples) / sample_rate
             segments.append({
@@ -931,14 +958,18 @@ class SubtitleEngine(BaseModule):
                 if len(text) > self.max_chars:
                     sub_segs = split_text_to_segments(text, self.max_chars)
                     dur = ts["end"] - ts["start"]
-                    for j, sub in enumerate(sub_segs):
-                        s = ts["start"] + j * dur / len(sub_segs)
-                        e = ts["start"] + (j + 1) * dur / len(sub_segs)
+                    # 按字数比例分配时长（等分会让短句拖长、长句赶拍，
+                    # 卡拉OK逐字进度与语音脱节）
+                    total_chars = sum(len(s) for s in sub_segs)
+                    cursor = ts["start"]
+                    for sub in sub_segs:
+                        share = dur * len(sub) / max(total_chars, 1)
                         segments.append({
                             "text": sub,
-                            "start": round(s, 3),
-                            "end": round(e, 3),
+                            "start": round(cursor, 3),
+                            "end": round(cursor + share, 3),
                         })
+                        cursor += share
                 else:
                     segments.append(ts)
             return segments
