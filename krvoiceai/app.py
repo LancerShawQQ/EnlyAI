@@ -692,7 +692,9 @@ class EnlyAI:
             })
             seen_ids.add(vid)
 
-        # 4. 已注册的自定义克隆音色（provider=moss_nano 零样本克隆）
+        # 4. 已注册的自定义克隆音色（provider 跟随当前 TTS 引擎——当前 cosyvoice
+        #     零样本克隆即可使用这些样本；标注 moss_nano 是历史遗留，会导致误路由）
+        current_provider = self.config.get("tts.provider", "mock")
         if voices_dir.exists():
             for d in sorted(voices_dir.iterdir()):
                 if not d.is_dir():
@@ -701,13 +703,23 @@ class EnlyAI:
                     continue
                 if d.name == "samples":
                     continue
+                # 目录内 meta.json 可携带注册时写入的标签（label/gender/description）
+                meta = {}
+                meta_path = d / "meta.json"
+                if meta_path.exists():
+                    try:
+                        import json as _json
+                        meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+                    except Exception:
+                        meta = {}
                 info = {
                     "voice_id": d.name,
-                    "label": d.name + "（克隆）",
-                    "gender": "",
+                    "label": meta.get("label") or (d.name + "（克隆）"),
+                    "gender": meta.get("gender", ""),
+                    "description": meta.get("description", ""),
                     "type": "custom",
-                    "provider": "moss_nano",
-                    "supports_emotion": False,
+                    "provider": "cosyvoice" if current_provider == "cosyvoice" else current_provider,
+                    "supports_emotion": current_provider == "cosyvoice",
                 }
                 for ext in (".wav", ".mp3", ".flac", ".m4a"):
                     samples = list(d.glob(f"*{ext}"))
@@ -716,6 +728,10 @@ class EnlyAI:
                         break
                 result.append(info)
                 seen_ids.add(d.name)
+
+        # 当前引擎的音色排最前（用户正在用的 provider 优先选择；
+        # 此前 cosyvoice 预置排在 edge_tts/moss/qwen 之后，要翻很久才能找到）
+        result.sort(key=lambda v: 0 if v.get("provider") == current_provider else 1)
         return result
 
     def register_avatar(self, avatar_id: str, reference_video: Path) -> bool:

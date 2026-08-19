@@ -956,6 +956,22 @@ def create_app() -> FastAPI:
         """一键应用创作模板"""
         return get_settings_manager().apply_template(req.template_id)
 
+    @app.get("/api/bgm/preview/{track}")
+    async def bgm_preview(track: str):
+        """BGM 试听：返回曲目音频文件（白名单校验防路径穿越）"""
+        from ..core.config import PROJECT_ROOT
+
+        library = _get_app().config.get("bgm_library", {}) or {}
+        if track not in library:
+            raise HTTPException(404, f"曲目不存在: {track}")
+        bgm_dir = (PROJECT_ROOT / _get_app().config.get("composer.bgm_dir", "./config/bgm")).resolve()
+        for ext in (".mp3", ".m4a"):
+            f = bgm_dir / f"{track}{ext}"
+            if f.exists() and f.stat().st_size > 1024:
+                return FileResponse(str(f), media_type="audio/mpeg",
+                                    headers={"Cache-Control": "no-cache"})
+        raise HTTPException(404, f"曲目音频缺失: {track}")
+
     @app.get("/api/bgm/library")
     async def get_bgm_library():
         """获取 BGM 素材库"""
