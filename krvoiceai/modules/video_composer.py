@@ -308,6 +308,9 @@ class VideoComposer(BaseModule):
             chain = f"[{voice_input_idx}:a]volume=1.0"
             if cover_delay_ms > 0:
                 chain += f",adelay={cover_delay_ms}|{cover_delay_ms}"
+                # 人声淡入 250ms：避免语音在封面切换瞬间"炸"出来（前几个字听不清）
+                fade_start = cover_delay_ms / 1000.0
+                chain += f",afade=t=in:st={fade_start:.3f}:d=0.25"
             chain += f"[{out_label}]"
             return chain
 
@@ -663,10 +666,11 @@ class VideoComposer(BaseModule):
         """
         self.logger.info(f"插入封面首帧: {cover.name}")
 
-        # 将封面图转为 1.5 秒的视频片段
+        # 将封面图转为视频片段
+        # 2.5s：给观众反应时间（1.5s 时人声紧贴封面结束出现，前几个字容易被漏听）
         cover_clip = work_dir / "_tmp_cover_intro.mp4"
         w, h = self.output_resolution
-        cover_duration = 1.5
+        cover_duration = 2.5
 
         # 调整封面尺寸
         resized_cover = work_dir / "_tmp_cover_resized.jpg"

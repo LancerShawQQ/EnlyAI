@@ -45,6 +45,53 @@ class BRollEngine(BaseModule):
         self.logger.info("B-roll 画中画模块初始化完成")
         super().setup()
 
+    def _relocate_clips_by_anchor(self, ctx: JobContext) -> None:
+        """把带 anchor_text 的片段重新定位到真实字幕时间戳
+
+        前端按句卡插入 B-roll 时记录台词文本；此处在该任务的真实字幕段
+        （ASR 对齐）中找最相似的一句，把 start 移到该句的真实起点，
+        保持用户设定的片段时长。
+        """
+        segments = ctx.metadata.get("subtitle_segments") or []
+        if not segments:
+            return
+        for clip in ctx.broll_clips or []:
+            anchor = (clip.get("anchor_text") or "").strip()
+            if not anchor:
+                continue
+            best_i, best_score = -1, 0.0
+            for i, seg in enumerate(segments):
+                text = seg.get("text", "")
+                # 双向包含/最长公共子串比例打分（识别文本与文案可能有标点差异）
+                a, b = anchor.replace(" ", ""), text.replace(" ", "")
+                if not a or not b:
+                    continue
+                common = 0
+                for L in range(min(len(a), len(b)), 2, -1):
+                    for s in range(0, len(a) - L + 1):
+                        if a[s:s + L] in b:
+                            common = L
+                            break
+                    if common:
+                        break
+                score = common / max(len(a), len(b))
+                if score > best_score:
+                    best_score, best_i = score, i
+            if best_i < 0 or best_score < 0.3:
+                self.logger.warning(
+                    f"B-roll 锚点未匹配到字幕（保留原时间）: '{anchor[:20]}'"
+                )
+                continue
+            seg = segments[best_i]
+            duration = max(1.0, float(clip.get("end", 0)) - float(clip.get("start", 0)))
+            old = (clip.get("start"), clip.get("end"))
+            clip["start"] = float(seg["start"])
+            clip["end"] = min(float(seg["start"]) + duration, float(seg.get("end", seg["start"] + duration)) + 2.0)
+            self.logger.info(
+                f"B-roll 台词重定位: '{anchor[:16]}' {old} → "
+                f"({clip['start']:.2f}, {clip['end']:.2f}) 匹配度={best_score:.2f}"
+            )
+
     def run(self, ctx: JobContext) -> ModuleResult:
         """根据 ctx.broll_clips 将 B-roll 叠加到口播视频上"""
         # 无 B-roll 片段时跳过
@@ -57,6 +104,11 @@ class BRollEngine(BaseModule):
 
         if not ctx.raw_video_path or not ctx.raw_video_path.exists():
             return ModuleResult(success=False, error="无口播视频，无法叠加 B-roll")
+
+        # 按台词锚点重定位：前端时间轴是估算值（匀速每字 0.35s），与真实 TTS
+        # 语速（5-9 字/秒不定）偏差可达数秒，导致 B-roll 插错台词。
+        # 真实字幕时间戳（ASR 对齐）在此步骤已就绪，按 anchor_text 重新映射
+        self._relocate_clips_by_anchor(ctx)
 
         # 校验所有 B-roll 文件存在
         from ..core.config import PROJECT_ROOT

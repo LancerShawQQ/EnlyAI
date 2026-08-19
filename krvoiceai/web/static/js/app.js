@@ -6882,6 +6882,7 @@ function openWizardClipModal(start, editIdx, maxEnd) {
       <select id="wiz-clip-subtitle-seg" onchange="onWizardSubtitleSegChange(this.value)" style="width:100%;padding:8px;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:8px;color:var(--text-primary);font-size:13px">
         <option value="-1">自定义时间</option>
       </select>
+      <input type="hidden" id="wiz-clip-anchor" value="${(clip.anchor_text || '').replace(/"/g, '&quot;')}">
     </div>
     <div style="display:flex;gap:12px;margin-bottom:12px">
       <div style="flex:1">
@@ -6957,7 +6958,11 @@ function fillWizardSubtitleSegs() {
 
 // Wizard弹窗字幕段落选择联动
 function onWizardSubtitleSegChange(idx) {
-  if (idx === '-1' || idx === -1) return;
+  const anchorEl = document.getElementById('wiz-clip-anchor');
+  if (idx === '-1' || idx === -1) {
+    if (anchorEl) anchorEl.value = '';  // 自定义时间无锚点
+    return;
+  }
   const segs = wizBrollState.subtitleSegments || [];
   const seg = segs[parseInt(idx)];
   if (!seg) return;
@@ -6965,6 +6970,8 @@ function onWizardSubtitleSegChange(idx) {
   const endEl = document.getElementById('wiz-clip-end');
   if (startEl) startEl.value = seg.start.toFixed(1);
   if (endEl) endEl.value = seg.end.toFixed(1);
+  // 记录台词锚点：后端用真实 ASR 字幕时间戳重新定位（前端时间轴是估算值）
+  if (anchorEl) anchorEl.value = seg.text || '';
 }
 
 // 保存片段
@@ -6975,6 +6982,7 @@ function saveWizardClip(editIdx) {
   const transition = document.getElementById('wiz-clip-trans').value;
   const pipPos = document.getElementById('wiz-clip-pip-pos')?.value || 'bottom_right';
   const pipScale = parseFloat(document.getElementById('wiz-clip-pip-scale')?.value || 0.3);
+  const anchorText = (document.getElementById('wiz-clip-anchor')?.value || '').trim();
 
   if (end <= start) {
     toast('结束时间必须大于开始时间', 'error');
@@ -6987,7 +6995,8 @@ function saveWizardClip(editIdx) {
     asset_path: wizBrollState.selectedAsset?.path || (existing?.asset_path || ''),
     filename: wizBrollState.selectedAsset?.filename || (existing?.filename || ''),
     pip_position: pipPos,
-    pip_scale: pipScale
+    pip_scale: pipScale,
+    anchor_text: anchorText || (existing?.anchor_text || '')
   };
 
   if (editIdx !== null && editIdx !== undefined) {

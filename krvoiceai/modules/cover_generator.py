@@ -135,7 +135,15 @@ class CoverGenerator(BaseModule):
 
         try:
             if self.mode == "frame_overlay" and ctx.raw_video_path and ctx.raw_video_path.exists():
-                cover = self._generate_from_frame(ctx.raw_video_path, title, output_path)
+                # 取帧避开 B-roll 画中画时段：抽到画中画帧会让封面变成素材截图而非真人口播
+                avoid = [
+                    (float(c.get("start", 0)), float(c.get("end", 0)))
+                    for c in (ctx.broll_clips or [])
+                    if float(c.get("end", 0)) > float(c.get("start", 0))
+                ]
+                cover = self._generate_from_frame(
+                    ctx.raw_video_path, title, output_path, avoid_intervals=avoid
+                )
             else:
                 cover = self._generate_template(title, output_path, style_id=self.style_id)
 
@@ -179,18 +187,32 @@ class CoverGenerator(BaseModule):
     def _generate_from_frame(
         self, video: Path, title: str, output: Path,
         style_id: str | None = None,
+        avoid_intervals: list[tuple[float, float]] | None = None,
     ) -> Path:
-        """从视频抽帧 + 标题叠加（智能选帧 + 色彩适配）"""
+        """从视频抽帧 + 标题叠加（智能选帧 + 色彩适配）
+
+        avoid_intervals: 需要避开的取帧时间区间（B-roll 画中画时段），
+        抽帧落在其中时重抽。
+        """
         style = get_cover_style(style_id or self.style_id) if style_id else None
         self.logger.info(f"从视频抽帧生成封面: {video.name} style={style['id'] if style else 'default'}")
 
         info = self.ffmpeg.probe_video_info(video)
         duration = info.duration if info else 5.0
 
-        # 智能选帧：在 30%-60% 区间抽 3 帧，选信息量最大的（方差最大）
+        # 智能选帧：在 30%-60% 区间抽 3 帧，选信息量最大的（方差最大）；
+        # 避开 B-roll 画中画时段（封面应是真人口播画面而非素材截图）
+        avoid = avoid_intervals or []
+        def _in_avoid(t: float) -> bool:
+            return any(a - 0.5 <= t <= b + 0.5 for a, b in avoid)
+
         frame_candidates = []
-        for _ in range(3):
+        attempts = 0
+        while len(frame_candidates) < 3 and attempts < 12:
+            attempts += 1
             seek_time = duration * random.uniform(0.3, 0.6)
+            if _in_avoid(seek_time):
+                continue
             frame_path = output.parent / f"_cover_frame_{len(frame_candidates)}.jpg"
             try:
                 subprocess.run(
