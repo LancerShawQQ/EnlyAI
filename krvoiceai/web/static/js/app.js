@@ -4294,6 +4294,7 @@ let podcastState = {
   script: '',                // 改写后的剧本
   voiceMap: {},              // {角色名: 音色ID}
   voiceList: [],             // 可用音色列表
+  voicesError: null,         // 音色列表加载失败原因（非空时 UI 显示错误+重试）
   jobId: null,               // 当前生成任务 ID
   result: null,              // 生成结果
   pollTimer: null,           // 轮询定时器
@@ -4320,13 +4321,23 @@ function initPodcast() {
 }
 
 // 加载可用音色列表
+// 音色列表加载失败后的手动重试
+async function retryLoadPodcastVoices() {
+  podcastState.voicesError = null;
+  await loadPodcastVoices();
+  renderPodcastVoiceList();
+  if (!podcastState.voicesError) toast('音色列表已加载', 'success');
+}
+
 async function loadPodcastVoices() {
   try {
     const data = await api('/api/podcast/voices');
     podcastState.voiceList = data.voices || [];
+    podcastState.voicesError = null;
   } catch (e) {
     console.warn('加载播客音色列表失败:', e.message);
     podcastState.voiceList = [];
+    podcastState.voicesError = e.message || '音色列表加载失败';
   }
 }
 
@@ -4793,8 +4804,16 @@ function renderPodcastVoiceList() {
     if (window.lucide) lucide.createIcons();
     return;
   }
-  // 如果音色列表为空，尝试加载
+  // 如果音色列表为空，尝试加载（失败显式提示，可重试——不再无限静默重试）
   if (podcastState.voiceList.length === 0) {
+    if (podcastState.voicesError) {
+      container.innerHTML = `
+        <div style="text-align:center;padding:16px">
+          <div style="color:var(--color-error);margin-bottom:8px">音色列表加载失败：${escapeHtml(podcastState.voicesError)}</div>
+          <button class="btn btn-secondary btn-sm" type="button" onclick="retryLoadPodcastVoices()">重新加载</button>
+        </div>`;
+      return;
+    }
     container.innerHTML = '<div class="hint" style="text-align:center;padding:16px"><i data-lucide="loader-2" class="spin"></i> 正在加载音色列表...</div>';
     if (window.lucide) lucide.createIcons();
     loadPodcastVoices().then(() => renderPodcastVoiceList());
