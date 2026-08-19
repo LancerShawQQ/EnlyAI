@@ -45,6 +45,7 @@ async function loadAllSettings() {
   try {
     await ensurePresets();
     _currentSettings = await api('/api/settings');
+    window.__lastSettings = _currentSettings;  // 供测试连接等按 provider 取真实服务地址
     loadLLMSettings();
     loadTTSSettings();
     loadASRSettings();
@@ -475,9 +476,18 @@ async function resetTTSSettings() {
 }
 
 async function testTTSConnection() {
+  const provider = document.getElementById('tts-provider').value;
+  let apiBase = document.getElementById('tts-api-base')?.value || '';
+  // api_base 字段是云端 TTS 时代的通用地址（默认 9880=GPT-SoVITS），
+  // 对 cosyvoice 会探测错误服务——按 provider 解析真实地址
+  if (provider === 'cosyvoice') {
+    apiBase = document.getElementById('tts-cosyvoice-server')?.value
+      || (window.__lastSettings?.tts?.cosyvoice?.server_url)
+      || 'http://localhost:8012';
+  }
   const payload = {
-    provider: document.getElementById('tts-provider').value,
-    api_base: document.getElementById('tts-api-base').value,
+    provider,
+    api_base: apiBase,
     api_key: document.getElementById('tts-api-key').value,
   };
   const btn = document.getElementById('tts-test-btn');

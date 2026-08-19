@@ -4229,32 +4229,55 @@ async function previewBgm() {
 // ========== 系统状态页面 ==========
 
 async function loadHealth() {
+  const container = document.getElementById('health-content');
+  if (container) container.innerHTML = '<div class="hint" style="text-align:center;padding:24px"><i data-lucide="loader-2" class="spin"></i> 正在检测各模块状态...</div>';
   try {
-    const health = await api('/api/health');
+    // 并行请求（串行时 /api/health + /api/services 合计可达 15s+）
+    const [health, svcResp] = await Promise.all([
+      api('/api/health'),
+      api('/api/services').catch(() => ({})),
+    ]);
+    const health0 = health;
+    // 三大本地依赖服务状态（服务监管器数据，与生成预检同一来源）
+    const svc = svcResp.services || {};
+    const svcBadge = (name) => {
+      const s = svc[name];
+      if (!s) return '<span class="badge badge-info">未启用</span>';
+      if (s.healthy) return '<span class="badge badge-success">运行中</span>';
+      if (s.state === 'starting') return '<span class="badge badge-warning">启动中</span>';
+      return '<span class="badge badge-error">未运行</span>';
+    };
     const container = document.getElementById('health-content');
     const items = [
+      { key: '_ollama', label: 'Ollama LLM（本地文案）', icon: '<i data-lucide="brain"></i>' },
+      { key: '_cosyvoice', label: 'CosyVoice TTS（本地语音）', icon: '<i data-lucide="mic"></i>' },
+      { key: '_latentsync', label: 'LatentSync 数字人（本地口型）', icon: '<i data-lucide="user-round"></i>' },
       { key: 'ffmpeg', label: 'FFmpeg 视频处理', icon: '<i data-lucide="film"></i>' },
-      { key: 'gpu_tts', label: '云端 TTS 服务', icon: '<i data-lucide="mic"></i>' },
-      { key: 'gpu_avatar', label: '云端数字人服务', icon: '<i data-lucide="user-round"></i>' },
-      { key: 'llm_mock', label: 'LLM 模式', icon: '<i data-lucide="brain"></i>' },
+      { key: 'llm_mock', label: 'LLM 模式', icon: '<i data-lucide="sparkles"></i>' },
       { key: 'avatars_count', label: '已注册形象', icon: '<i data-lucide="users"></i>' },
       { key: 'voices_count', label: '已注册音色', icon: '<i data-lucide="music"></i>' },
       { key: 'gpu.cuda_available', label: 'GPU CUDA 加速', icon: '<i data-lucide="cpu"></i>' },
       { key: 'gpu.nvenc_available', label: 'NVENC 硬件编码', icon: '<i data-lucide="video"></i>' },
     ];
     container.innerHTML = items.map(item => {
-      const val = item.key.includes('.') ? item.key.split('.').reduce((obj, k) => (obj == null ? undefined : obj[k]), health) : health[item.key];
       let display;
-      if (typeof val === 'boolean') {
-        display = val
-          ? '<span class="badge badge-success">可用</span>'
-          : '<span class="badge badge-error">不可用</span>';
-      } else if (item.key === 'llm_mock') {
-        display = val
-          ? '<span class="badge badge-warning">Mock 模式</span>'
-          : '<span class="badge badge-success">真实 API</span>';
-      } else {
-        display = `<span class="badge badge-info">${val}</span>`;
+      if (item.key === '_ollama') display = svcBadge('ollama');
+      else if (item.key === '_cosyvoice') display = svcBadge('cosyvoice');
+      else if (item.key === '_latentsync') display = svcBadge('latentsync');
+      else {
+        const val = item.key.includes('.') ? item.key.split('.').reduce((obj, k) => (obj == null ? undefined : obj[k]), health) : health[item.key];
+        if (item.key === 'llm_mock') {
+          // 注意须先于 boolean 分支：llm_mock 是 bool，语义反转（true=未配置）
+          display = val
+            ? '<span class="badge badge-warning">Mock 模式</span>'
+            : '<span class="badge badge-success">已就绪</span>';
+        } else if (typeof val === 'boolean') {
+          display = val
+            ? '<span class="badge badge-success">可用</span>'
+            : '<span class="badge badge-error">不可用</span>';
+        } else {
+          display = `<span class="badge badge-info">${val}</span>`;
+        }
       }
       return `
         <div class="card" style="display:flex;align-items:center;justify-content:space-between">
@@ -4718,11 +4741,19 @@ async function podRewriteScript(mode = 'polish', btn = null) {
   let content = podcastState.content;
   if (!content) {
     content = collectPodcastContent();
-    if (!content) {
-      toast('请先输入或提取内容', 'error');
-      return;
+  }
+  if (!content) {
+    // 用户可能直接把底稿粘进了剧本编辑器——同样作为改写输入
+    // （此前不读编辑器，导致"编辑器有内容却提示请先输入"的困惑）
+    const editorText = (document.getElementById('pod-script-editor')?.value || '').trim();
+    if (editorText && !/^>\s/.test(editorText)) {
+      content = editorText;
+      podcastState.content = editorText;
     }
-    podcastState.content = content;
+  }
+  if (!content) {
+    toast('请先输入或提取内容', 'error');
+    return;
   }
 
   const roleCount = parseInt(document.getElementById('pod-role-count').value);

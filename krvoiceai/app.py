@@ -570,6 +570,16 @@ class EnlyAI:
         for d in sorted(avatars_dir.iterdir()):
             if not d.is_dir():
                 continue
+            # 有效形象必须有参考素材（视频/图片）；空目录（如上传中断残留）
+            # 不展示，否则 UI 出现无预览、生成必失败的幽灵形象
+            has_reference = any(
+                (d / n).exists()
+                for n in ("reference_video.mp4", "reference.jpg", "reference.png",
+                          "placeholder.jpg", "reference.jpeg")
+            ) or any(d.glob("reference*.*"))
+            if not has_reference:
+                self.logger.debug(f"跳过无参考素材的形象目录: {d.name}")
+                continue
             info = {"avatar_id": d.name}
             meta_file = d / "meta.json"
             if meta_file.exists():

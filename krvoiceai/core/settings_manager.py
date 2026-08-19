@@ -895,6 +895,27 @@ class SettingsManager:
                 return {"success": False, "message": f"MOSS NANO 模型目录不存在：{model_dir}"}
             except Exception as e:
                 return {"success": False, "message": f"MOSS NANO 检查失败: {e}"}
+        if provider == "cosyvoice":
+            # 本地 CosyVoice 服务：地址取配置的 server_url（UI 的 api_base 是云端
+            # TTS 时代的通用字段，默认 9880 会探测到错误服务）
+            base = api_base
+            if not base or ":9880" in base:
+                base = get_config().get("tts.cosyvoice.server_url", "http://localhost:8012")
+            base = base.rstrip("/")
+            try:
+                import httpx
+
+                r = httpx.get(f"{base}/api/health", timeout=5)
+                if r.status_code == 200:
+                    loaded = r.json().get("model_loaded")
+                    return {
+                        "success": True,
+                        "message": f"CosyVoice 服务就绪（{base}，"
+                                   f"模型{'已加载' if loaded else '懒加载中，首次合成约需 10-60s'}）",
+                    }
+                return {"success": False, "message": f"CosyVoice 服务响应异常 HTTP {r.status_code}（{base}）"}
+            except Exception as e:
+                return {"success": False, "message": f"CosyVoice 服务不可达（{base}）: {e}"}
         if not api_base:
             return {"success": False, "message": "服务地址未填写"}
 
@@ -944,9 +965,10 @@ class SettingsManager:
             try:
                 r = httpx.get(f"{api_base}{path}", headers=headers, timeout=10)
                 if r.status_code < 500:
+                    note = "" if r.status_code == 200 else f"（HTTP {r.status_code}，服务在线但该路径无内容）"
                     return {
                         "success": True,
-                        "message": f"GPT-SoVITS 服务可达 ({r.status_code})",
+                        "message": f"GPT-SoVITS 服务可达{note}",
                         "endpoint": f"{api_base}{path}",
                     }
             except Exception:
@@ -960,6 +982,17 @@ class SettingsManager:
 
         if provider == "mock":
             return {"success": True, "message": "Mock 模式无需测试，始终可用"}
+        # 本地 LatentSync：地址取配置 server_url
+        if provider == "latentsync":
+            if not api_base or ":8010" in api_base:
+                api_base = get_config().get("avatar.latentsync.server_url", "http://localhost:8011").rstrip("/")
+            try:
+                r = httpx.get(f"{api_base}/api/health", timeout=5)
+                if r.status_code == 200:
+                    return {"success": True, "message": f"LatentSync 服务就绪（{api_base}）"}
+                return {"success": False, "message": f"LatentSync 服务响应异常 HTTP {r.status_code}（{api_base}）"}
+            except Exception as e:
+                return {"success": False, "message": f"LatentSync 服务不可达（{api_base}）: {e}"}
         if not api_base:
             return {"success": False, "message": "服务地址未填写"}
 
@@ -967,9 +1000,10 @@ class SettingsManager:
             try:
                 r = httpx.get(f"{api_base}{path}", timeout=10)
                 if r.status_code < 500:
+                    note = "" if r.status_code == 200 else f"（HTTP {r.status_code}，服务在线但该路径无内容）"
                     return {
                         "success": True,
-                        "message": f"数字人服务可达 ({r.status_code})",
+                        "message": f"数字人服务可达{note}",
                         "endpoint": f"{api_base}{path}",
                     }
             except Exception:

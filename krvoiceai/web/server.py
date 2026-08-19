@@ -263,10 +263,15 @@ def create_app() -> FastAPI:
 
     @app.get("/api/services")
     async def services_status():
-        """本地依赖服务（Ollama/CosyVoice/LatentSync）监管状态"""
+        """本地依赖服务（Ollama/CosyVoice/LatentSync）监管状态
+
+        探测含 3s 超时的 HTTP 请求，放线程池执行避免阻塞事件循环。
+        """
+        import asyncio
         from ..core.service_supervisor import get_service_supervisor
 
-        return get_service_supervisor().status()
+        sup = get_service_supervisor()
+        return await asyncio.get_event_loop().run_in_executor(None, sup.status)
 
     @app.post("/api/shutdown")
     async def shutdown_app():

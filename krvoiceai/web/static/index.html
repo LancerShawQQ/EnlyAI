@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
   <title>EnlyAI · 虚拟人口播智能体</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260815lg4">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260819lg7">
   <link rel="stylesheet" href="/static/css/liquid_glass.css?v=20260815lg4">
   <script src="https://unpkg.com/lucide@0.460.0"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
@@ -3122,12 +3122,11 @@
             <div class="card-title"><span class="card-title-icon"><i data-lucide="info"></i></span> 状态说明</div>
           </div>
           <div style="color:var(--text-secondary);font-size:13px;line-height:1.8">
+            <p><strong>Ollama / CosyVoice / LatentSync</strong>：三大本地依赖服务，由服务监管器自动拉起与健康监测；「启动中」为模型加载（CosyVoice 约 50 秒），稍候自动就绪</p>
             <p><strong>FFmpeg</strong>：视频处理引擎，必须可用</p>
-            <p><strong>云端 TTS</strong>：语音合成服务状态检查（当前默认 MOSS NANO 本地克隆，无需云端）。该项检查云端 GPU TTS 服务，不可用时本地模式不受影响</p>
-            <p><strong>云端数字人</strong>：口播生成服务状态检查（当前默认 Wav2Lip 本地唇形同步，无需云端）。该项检查云端 GPU 数字人服务，不可用时本地模式不受影响</p>
-            <p><strong>LLM 模式</strong>：Mock 模式表示未配置 API Key，使用模板化文案。配置 DeepSeek/Qwen API Key 后切换为真实生成（当前默认 DeepSeek）</p>
+            <p><strong>LLM 模式</strong>：「已就绪」=本地 Ollama 或云端 API 正常；「Mock 模式」=未配置，文案走模板</p>
             <p style="margin-top:12px;padding:12px;background:rgba(99,102,241,0.1);border-radius:8px">
-              <i data-lucide="lightbulb"></i> <strong>提示</strong>：默认使用本地模式（MOSS NANO + Wav2Lip），无需云端 GPU 即可生成真实音视频。云端 GPU 服务为可选增强。前往「设置 → 模型配置」可切换 provider。
+              <i data-lucide="lightbulb"></i> <strong>提示</strong>：全本地链路（Ollama + CosyVoice + LatentSync）开箱即用，素材不出本机。服务未就绪时点「生成」会给出明确指引。前往「设置中心」可切换 provider 与参数。
             </p>
           </div>
         </div>
@@ -3178,8 +3177,8 @@
   <!-- Toast 容器 -->
   <div class="toast-container" id="toast-container"></div>
 
-  <script src="/static/js/app.js?v=20260819lg6"></script>
-  <script src="/static/js/settings.js?v=20260731lg2"></script>
+  <script src="/static/js/app.js?v=20260819lg8"></script>
+  <script src="/static/js/settings.js?v=20260819lg7"></script>
 
   <!-- ========== Liquid Glass SVG 滤镜定义（边缘折射变形效果） ========== -->
   <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false">

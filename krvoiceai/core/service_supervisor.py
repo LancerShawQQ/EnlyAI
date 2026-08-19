@@ -199,17 +199,36 @@ class ServiceSupervisor:
         return False
 
     def status(self) -> dict[str, Any]:
-        """全部受管服务的状态快照（含实时健康探测）"""
+        """全部受管服务的状态快照（含实时健康探测，三服务并行）"""
+        from concurrent.futures import ThreadPoolExecutor
+
         snap: dict[str, Any] = {}
+        probes: list[tuple[str, Optional[tuple]]] = []
         for name in ("ollama", "cosyvoice", "latentsync"):
             st = self._get_state(name)
             spec, _ = self._build_spec(name)
-            healthy = bool(spec and self._probe(spec[0]))
-            if healthy:
-                with self._lock:
-                    st.state = "running"
-                    st.error = ""
-            snap[name] = st.snapshot(healthy=healthy)
+            probes.append((name, spec))
+            snap[name] = st.snapshot()
+
+        def _probe(spec):
+            if spec is None:
+                return False
+            return self._probe(spec[0])
+
+        # 并行探测（串行时单个 3s 超时会拖满 9s+）
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            for name, healthy in zip((p[0] for p in probes), ex.map(_probe, (p[1] for p in probes))):
+                s = snap[name]
+                s["healthy"] = healthy
+                if healthy:
+                    # 注意：锁内不可调用 _get_state()（其内部再取同一把非重入锁会死锁，
+                    # 曾导致一次 /api/services 请求永久阻塞整个事件循环）
+                    with self._lock:
+                        st = self._states.get(name)
+                        if st is not None:
+                            st.state = "running"
+                            st.error = ""
+                    s["state"] = "running"
         return {"auto_start": self._auto_start_enabled(), "services": snap}
 
     def preflight_message(self, name: str, manual_hint: str) -> str:
