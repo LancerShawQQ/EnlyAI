@@ -1,238 +1,158 @@
-# EnlyAI · 虚拟人口播智能体
+# EnlyAI · AI 口播与播客工作站
 
-对标旗博士的**本地可运行**口播视频自动化生成系统。从文案到成片到发布，全流程一键化，支持纯 CPU 声音克隆 + Wav2Lip 视频驱动数字人。
-
-## ✨ 核心特性
-
-- 🎙️ **本地声音克隆**：基于 MOSS-TTS-Nano（0.1B ONNX），5 秒样本零样本克隆，纯 CPU 实时合成，无需上传云端
-- 🧑 **Wav2Lip 视频驱动数字人**：保留原视频头动/表情/眨眼，仅替换嘴形对齐 TTS 语音（视频驱动模式）
-- ✨ **GFPGAN 人脸增强（可选）**：含嘴部保护遮罩，避免口形失真；可在 UI 一键开关
-- 🎞️ **画中画时间线编辑器**：可视化时间线，支持 `cut`（全屏插播替换）和 `pip`（角窗画中画）两种模式
-- 📝 **AI 文案工作流**：润色/仿写/生成 + 原创检测（simhash + 违禁词 + LLM 风控）
-- 📤 **多平台发布**：抖音 / B站 / 快手 / 视频号，半自动打开创作者中心 + 生成发布清单
-- 🖥️ **7 标签页 Gradio GUI**：一键生成 / 声音克隆 / 形象管理 / 画中画编辑器 / 多平台发布 / 设置 / 任务管理
-- ⚡ **MX450 2GB GPU 可跑**：全部模块支持纯 CPU 运行，无需高端显卡
-
-## 🎬 工作流程
+**全本地部署**的口播视频 / 语音播客一体化生成系统：文案 → 真人级配音 → 数字人口型 → 字幕 → 封面 → BGM → 成片，双击 `EnlyAI.exe` 一键启动与退出。声音、形象、文案模型全部本地运行，素材不出机器。
 
 ```
-文案输入 → [LLM 润色/仿写] → [原创检测] → [MOSS-TTS 声音克隆]
-       → [Wav2Lip 唇形同步] → [字幕生成] → [画中画插播] → [视频合成]
-       → [标题生成] → [封面生成] → [多平台发布清单]
+文案输入 → [Ollama Qwen3 润色/仿写] → [原创检测+风控]
+        → [CosyVoice3 声音合成（31 音色/克隆/情绪指令）]
+        → [LatentSync 扩散唇形同步 + GFPGAN 人脸增强]
+        → [Fun-ASR 字幕对齐（卡拉OK逐字）] → [B-roll 台词锚点插播]
+        → [封面（智能选帧避画中画）] → [BGM 混音] → 成片
 ```
+
+## ✨ 核心能力
+
+**🎙️ 声音：CosyVoice3 本地合成（31 个可选音色）**
+- 6 个预置主播/解说音色 + 15 个真人克隆音色（中/英/日参考，均支持跨语言合成中文）+ 用户自助上传克隆
+- instruct2 自然语言指令控制情绪/语速（"用开心明快的语气说…"）
+- 全软件统一音色体系：口播视频、语音播客、音色面板共用一套音色列表，克隆音色自动路由到当前引擎
+
+**🧑 数字人：LatentSync 1.5 扩散唇形 + GFPGAN 人脸增强**
+- 音频驱动的扩散模型口型生成（CFG 2.5 标定，口型张合充分），同步固有延迟 < 1 帧
+- GFPGAN 生成式人脸修复：嘴部清晰度 P50 +57% / P90 +83%（修复模糊与口内阴影）
+- 非 25fps 参考素材自动归一化（消除慢放）；GPU 分时复用（8GB 显存跑全链路）
+
+**📝 字幕：Fun-ASR-Nano 真实对齐的卡拉OK**
+- sherpa-onnx 识别 + silero VAD 分段，句级时间戳跟随真实语音节奏
+- ASS 卡拉OK逐字高亮、抖音爆款/经典金等 5 种样式预设
+
+**🎞️ 画中画（B-roll）：台词锚点定位**
+- 在文案句卡上插入素材，后端按 ASR 真实字幕时间重新定位（前端估算误差可达数秒）
+- cut 全屏插播 / pip 角窗画中画两种模式
+
+**🎵 BGM：14 首真实曲库 + 一键试听**
+- 按曲目描述定制合成（钢琴/电子/古筝/史诗/爵士…），`scripts/make_bgm.py` 可重新生成
+- UI 试听按钮即点即播
+
+**🖥️ 全生命周期管理**
+- 双击 exe：自动拉起 Ollama / CosyVoice / LatentSync，浏览器自动打开
+- 关闭窗口或 UI「退出」按钮：Windows Job Object + 进程看门狗双重保证，显存/端口零残留
+- 服务监管器：conda 环境自动探测、幂等拉起、失败冷却、`GET /api/services` 状态查询
 
 ## 🛠️ 技术栈
 
-| 模块 | 技术方案 | 说明 |
-|------|---------|------|
-| **LLM 文案** | DeepSeek-V3 / Qwen2.5（agnes） | 文案润色、仿写、标题、风控 |
-| **TTS 声音克隆** | **MOSS-TTS-Nano (ONNX)** | 0.1B 模型，纯 CPU，5s 样本零样本克隆 |
-| **TTS 备选** | MiMo / GPT-SoVITS / edge-tts | 云端或无 GPU 降级方案 |
-| **数字人** | **Wav2Lip（视频驱动）** | Python 3.8 venv + torch 1.13 CPU |
-| **人脸增强** | **GFPGAN** | 嘴部保护遮罩，可开关 |
-| **字幕** | faster-whisper + ASS | 词级时间戳，卡拉OK逐字高亮 |
-| **画中画** | FFmpeg cut/pip | 全屏替换 / 角窗叠加 + 淡入淡出 |
-| **UI** | **Gradio 6.x** | 7 标签页，26 个 API 端点 |
-| **编排** | SQLite 状态机 | 断点续跑 + 指数退避重试 |
+| 模块 | 方案 | 说明 |
+|------|------|------|
+| LLM 文案 | Ollama + Qwen3-8B（本地） | 润色/仿写/标题/风控，DeepSeek 云端可选 |
+| TTS | **Fun-CosyVoice3-0.5B**（独立 conda 服务 :8012） | 零样本克隆 + instruct2 情绪，fp16 GPU |
+| 数字人 | **LatentSync 1.5**（独立 conda 服务 :8011） | 256 分辨率扩散口型，15 步 / CFG 2.5 |
+| 人脸增强 | **GFPGAN v1.4**（LatentSync 服务内置） | 生成式修复，默认开启 |
+| ASR 字幕 | sherpa-onnx **Fun-ASR-Nano** + silero VAD | 纯 CPU，句级真实时间戳 |
+| Web UI | FastAPI + 原生前端（Apple 玻璃态） | 口播向导/播客/音色/形象/设置/系统状态 |
+| 编排 | SQLite 状态机 | 断点续跑、分级超时、GPU 分时 |
+| 退出保障 | Job Object + 父进程看门狗 | 关窗即全停，无残留 |
 
 ## 🚀 快速开始
 
-### 方式一：一键启动（推荐新手）
+### 双击 EnlyAI.exe（推荐，全自动）
+
+双击项目根目录的 `EnlyAI.exe`：Web UI 启动并自动打开浏览器，缺失的依赖服务（Ollama / CosyVoice / LatentSync）自动拉起。CosyVoice 冷加载约 50 秒，期间点「生成」会提示稍候。
+
+**退出**：关闭窗口（内核级 Job Object 保证 Web 与全部服务一并终止）或侧边栏「退出 EnlyAI」按钮；手动另开的服务窗口不受影响。
+
+### 命令行
 
 ```bash
-# 1. 下载代码
 git clone https://github.com/LancerShawQQ/EnlyAI.git
 cd EnlyAI
-
-# 2. 双击 启动.bat（或命令行运行）
-启动.bat
+启动.bat          # 首次运行：创建 .venv + 安装依赖 + 启动 Web
+python -m krvoiceai.web.server --port 8000   # 或直接启动
 ```
 
-脚本会**自动完成**：
-- 检测/创建 Python 虚拟环境
-- 安装所有 Python 依赖（含 Web 服务、本地增强模块）
-- 安装 Playwright 浏览器内核（发布到抖音/快手需要）
-- 检测 FFmpeg（缺失时给出下载提示）
-- 启动 Web UI 并自动打开浏览器
+### 环境要求（本地全链路）
 
-**前置条件**（仅需手动安装一次）：
-1. **Python 3.10+**：https://www.python.org/downloads/ （安装时勾选 "Add Python to PATH"）
-2. **FFmpeg**：https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
-   - 解压后将 `bin` 目录加入系统 PATH
-3. **Git**（用于克隆代码）：https://git-scm.com/
+| 组件 | 要求 | 安装 |
+|------|------|------|
+| Python | 3.10+ | python.org（勾选 Add to PATH） |
+| GPU | NVIDIA ≥8GB（LatentSync 必需；Blackwell 需 torch 2.7+cu128） | — |
+| conda 环境 | `CosyVoice`、`LatentSync` | `scripts/setup_cosyvoice_env.bat` / `scripts/setup_latentsync_env.bat` |
+| Ollama + Qwen3-8B | 本地 LLM | `ollama pull qwen3:8b` |
+| sherpa-onnx | 词句对齐字幕 | `pip install sherpa-onnx`（模型已在 `workspace_data/models/asr/`） |
 
-**首次运行可选**（按需启用对应功能）：
-- **本地声音克隆**：运行 `scripts\setup_moss_tts.bat`（下载 MOSS-TTS-Nano 模型约500MB）
-- **真实唇形同步**：运行 `scripts\setup_wav2lip_env.bat`（下载 Wav2Lip 模型约200MB）
-- **LLM 文案**：在 Web UI「设置」页面填入 DeepSeek API Key
+> 无 GPU 时自动降级：TTS→edge-tts、数字人→mock，流程仍可完整跑通。
 
-> 未安装上述可选组件时，系统自动降级到 edge-tts（微软免费在线TTS）+ mock 数字人，仍可生成完整视频。
-
-### 方式二：手动安装（开发者）
-
-```bash
-# 主环境（Python 3.12）
-cd EnlyAI
-pip install -e ".[local]"
-pip install fastapi uvicorn bilibili-api-python
-python -m playwright install chromium
-
-# Wav2Lip 环境（Python 3.8，独立 venv）
-# 运行 scripts\setup_wav2lip_env.bat 自动安装
-```
-
-### 启动服务
-
-**双击 EnlyAI.exe（推荐，全自动）**
-
-双击项目根目录的 `EnlyAI.exe` 即可：启动 Web UI 并自动打开浏览器，
-同时后台自动拉起缺失的依赖服务（Ollama / CosyVoice TTS / LatentSync 数字人），
-无需先手动运行 `scripts/start_all.bat`。
-
-**退出机制（关得干净）**：
-
-- 关闭 exe 窗口（或崩溃/被结束时）——Windows Job Object 由内核保证
-  Web 后端及其拉起的全部服务进程一并终止，不残留显存/端口占用；
-- Web 界面侧边栏「退出 EnlyAI」按钮——先停止本次自动拉起的服务再退出
-  （`POST /api/shutdown`）；
-- 手动另开的服务（如 `start_all.bat` 各窗口）不受影响，谁启动谁负责。
-
-其他说明：
-
-- 依赖服务由 Web 后端的"服务监管器"管理（`krvoiceai/core/service_supervisor.py`），
-  按 `config/user_config.yaml` 中的 provider 决定拉起哪些；
-- 服务已在运行则直接复用；CosyVoice 模型加载约 50 秒，期间点「生成」会提示稍候；
-- 服务日志：`workspace_data/logs/*_service.log`，状态接口：`GET /api/services`；
-- conda 环境/项目目录探测不到时，可在 `config/default.yaml` 的 `services` 段显式指定。
-
-**Web UI（命令行方式）**
-
-```bash
-python -m krvoiceai.web.server --port 8000
-```
-
-访问 http://localhost:8000（依赖服务同样会自动拉起）
-
-**Gradio UI（备用，精简界面）**
-
-```bash
-python -m krvoiceai.ui.cli serve --port 7860
-```
-
-### 配置
-
-所有配置在 Web UI「设置」标签页热修改，或编辑 `config/user_config.yaml`：
+## ⚙️ 关键配置（config/user_config.yaml，UI 设置中心可热改）
 
 ```yaml
-# LLM 文案（填入 DeepSeek API Key 即可）
 llm:
-  provider: agnes
-  api_key: 你的key
+  provider: ollama           # 本地 Qwen3；也可 deepseek（填 api_key）
 
-# TTS（默认 moss_nano 本地克隆，未安装时自动降级 edge-tts）
 tts:
-  provider: moss_nano
+  provider: cosyvoice        # 31 音色；音色列表见 Web「音色」页
+  cosyvoice:
+    server_url: http://localhost:8012
 
-# 数字人（默认 wav2lip，未安装时用 mock）
 avatar:
-  provider: wav2lip
+  provider: latentsync
+  latentsync:
+    server_url: http://localhost:8011
+    inference_steps: 15      # 扩散步数
+    guidance_scale: 2.5      # 口型张合强度（实测标定，过高易牙形伪影）
+    face_enhance: true       # GFPGAN 人脸增强（关掉省一半时长，清晰度回退）
+
+services:                    # 服务自动拉起（留空自动探测 conda）
+  auto_start: true
 ```
 
-## 📋 GUI 标签页说明
+## 🎬 使用流程
 
-| 标签页 | 功能 |
-|--------|------|
-| 🎬 **一键生成** | 输入文案 → 全流程自动产出视频，含实时进度、成片预览、发布按钮 |
-| 🎙️ **声音克隆** | 上传 5-30s 人声样本注册音色，可试听克隆效果 |
-| 🧑 **形象管理** | 上传正脸口播视频注册 Wav2Lip 形象 |
-| 🎞️ **画中画编辑器** | 时间线可视化，添加/删除插播片段（cut 全屏 / pip 角窗） |
-| 📤 **多平台发布** | 生成发布清单，一键打开抖音/B站/快手/视频号创作者中心 |
-| ⚙️ **设置** | TTS 引擎 / GFPGAN 开关 / Wav2Lip 路径 / 字幕 / LLM / 发布模式，热生效 |
-| 📋 **任务管理** | 历史任务、断点续跑、删除 |
-
-## 📦 使用流程示例
-
-1. **注册形象**：在「形象管理」上传你的口播视频 → 注册为 `anchor_wang`
-2. **克隆声音**：在「声音克隆」上传你的声音样本 → 注册为 `voice_wang`，试听效果
-3. **编辑画中画**（可选）：在「画中画编辑器」添加插播片段
-4. **一键生成**：在「一键生成」输入文案，选择形象和音色 → 点击生成
-5. **发布**：生成完成后点击「发布到抖音」，浏览器自动打开创作者中心
+1. **选音色**：向导第 2 步选 CosyVoice 音色（卡片 ▶ 试听），或「音色」页上传 5-30s 样本注册克隆音色
+2. **选形象**：「形象」页上传正脸口播视频注册（建议 25fps、动作自然、表情丰富——成片表情来自素材）
+3. **写文案**：直接输入 / LLM 润色 / 爆款模板生成；可对任意句子插入 B-roll 画中画
+4. **生成**：一键触发全流程，实时进度 + 分级超时提示；2 分钟视频约 20 分钟（8GB GPU）
+5. **发布**：成片页预览/打开目录，多平台发布清单半自动辅助
 
 ## 📂 项目结构
 
 ```
-你的项目目录/
-├── EnlyAI/                    ← GitHub 克隆的仓库（项目根目录）
-│   ├── krvoiceai/
-│   │   ├── core/              # 基础设施（config/logger/ffmpeg/settings_manager）
-│   │   ├── modules/           # 业务模块
-│   │   │   ├── tts_engine.py      # TTS（含 moss_nano/mimo/gpt_sovits/edge_tts/mock）
-│   │   │   ├── avatar_engine.py   # Wav2Lip 数字人 + GFPGAN 增强
-│   │   │   ├── broll_engine.py    # 画中画（cut 全屏替换 / pip 角窗）
-│   │   │   ├── video_composer.py  # 视频合成（字幕+BGM+画中画）
-│   │   │   ├── publisher.py       # 多平台发布
-│   │   │   └── ...
-│   │   ├── pipeline/          # 编排（orchestrator/state/parallel_runner）
-│   │   ├── web/               # Web UI（FastAPI + 现代化前端）
-│   │   ├── ui/
-│   │   │   └── gradio_app.py      # Gradio GUI（备用）
-│   │   └── app.py             # 主入口
-│   ├── config/                # default.yaml + user_config.yaml + .env
-│   ├── scripts/               # 环境安装脚本
-│   │   ├── setup_wav2lip_env.bat  # Wav2Lip 环境一键安装
-│   │   ├── setup_moss_tts.bat     # MOSS-TTS-Nano 模型下载
-│   │   ├── start_wav2lip_server.bat  # Wav2Lip 服务独立启动
-│   │   └── wav2lip_server.py      # Wav2Lip 常驻服务脚本（自动复制到 Wav2Lip/）
-│   ├── 启动.bat                # 一键启动 Web UI（端口 8000）
-│   └── start_gradio.bat       # Gradio UI 备用启动（端口 7860）
-├── MOSS-TTS-Nano/             ← setup_moss_tts.bat 自动创建（声音克隆模型，约 500MB）
-├── wav2lip_env/               ← setup_wav2lip_env.bat 自动创建（Python 3.8 venv）
-└── Wav2Lip/                   ← setup_wav2lip_env.bat 自动克隆（推理代码 + 模型权重）
+EnlyAI/
+├── EnlyAI.exe                # 双击启动（launcher 打包）
+├── krvoiceai/
+│   ├── core/
+│   │   ├── service_supervisor.py   # 依赖服务监管器（拉起/健康检查/退出清理）
+│   │   └── ffmpeg_utils.py         # ffmpeg 封装（无 ffprobe 环境兜底）
+│   ├── modules/
+│   │   ├── tts_engine.py           # CosyVoice/MOSS/edge 多引擎 + 克隆解析
+│   │   ├── avatar_engine.py        # LatentSync 客户端（动态超时/GPU 分时）
+│   │   ├── subtitle_engine.py      # Fun-ASR 词句对齐 + 卡拉OK
+│   │   ├── broll_engine.py         # 画中画（台词锚点重定位）
+│   │   ├── video_composer.py       # 合成（封面/字幕/BGM/转场，音画同步）
+│   │   ├── cover_generator.py      # 封面（智能选帧，避开画中画时段）
+│   │   └── podcast_engine.py       # 语音播客（多角色/音色路由统一）
+│   ├── pipeline/             # 编排（并行步骤/断点续跑/分级重试）
+│   └── web/                  # FastAPI + 玻璃态前端
+├── config/                   # default.yaml + user_config.yaml + 音色/BGM/模板资产
+├── scripts/
+│   ├── make_bgm.py           # BGM 曲库合成器（14 首，可重新生成）
+│   ├── setup_cosyvoice_env.bat / setup_latentsync_env.bat
+│   └── start_all.bat         # 手动分窗启动（备选）
+├── CosyVoice/  LatentSync/   # 独立 conda 环境项目（setup 脚本创建）
+└── workspace_data/           # 任务产物 / 日志 / ASR 模型
 ```
 
-> **注意**：`MOSS-TTS-Nano/`、`wav2lip_env/`、`Wav2Lip/` 三个目录位于项目根目录的**上一级**（与 `EnlyAI/` 同级），由安装脚本自动创建。这样设计是为了将大文件/第三方仓库与项目代码分离。
+## 🧪 质量工程（实测数据）
 
-## ⚙️ 关键配置（config/default.yaml）
+- **音画同步**：端到端恒定 +1.00s（封面延迟），视频帧匹配与音频包络互相关双向验证 r=1.00；唇形固有滞后 +40ms（<1 帧）
+- **口型质量**：guidance 2.5 使张合动态范围 +57%（对比官方默认 1.5）；GFPGAN 使嘴部清晰度 P50 +57% / P90 +83%
+- **字幕对齐**：句起点 11/13 命中成片人声能量窗口（ASR 真实时间戳）
+- **可靠性**：TTS 失败快速失败（绝不静默降级出无声片）、GPU 分时失效自动重试、服务冷启动超时自适应
+- 测试：`tests/`（服务监管器 18 项、视频合成 9 项全绿）
 
-```yaml
-tts:
-  provider: moss_nano              # moss_nano / mimo / gpt_sovits / edge_tts / mock
-  moss_nano:
-    cpu_threads: 4
-    builtin_voice: Junhao          # 无克隆样本时的内置音色
-    repo_dir: ../MOSS-TTS-Nano
-    model_dir: ../MOSS-TTS-Nano/models
+## 📝 已知限制
 
-avatar:
-  provider: wav2lip
-  wav2lip:
-    env_python: ../wav2lip_env/Scripts/python.exe  # 相对于项目根目录
-    checkpoint_path: ../Wav2Lip/checkpoints/wav2lip_gan.pth
-  gfpgan:
-    enabled: false                 # 默认关闭，避免跳帧；UI 可一键开启
-    stride: 1                      # 1=逐帧最稳
-```
-
-> **路径说明**：配置中的 `../` 前缀表示相对于项目根目录（`EnlyAI/`）的上一级目录，即 `MOSS-TTS-Nano/`、`wav2lip_env/`、`Wav2Lip/` 所在位置。安装脚本会自动在正确位置创建这些目录。
-
-## 🧪 已验证
-
-- ✅ MOSS-TTS-Nano 本地声音克隆（CPU，5s 样本零样本克隆，75s 音频合成）
-- ✅ Wav2Lip 视频驱动数字人（保留头动/表情，嘴形对齐）
-- ✅ GFPGAN 人脸增强（嘴部保护，可开关）
-- ✅ 画中画时间线编辑器（cut 全屏替换 + pip 角窗 + 淡入淡出）
-- ✅ 多平台发布清单生成（抖音/B站/快手/视频号）
-- ✅ Gradio GUI 7 标签页、26 个 API 端点全部通过验收
-- ✅ 设置热生效（tts/avatar/subtitle/llm/publisher 五段配置）
-
-## 📝 开发路线
-
-- [x] P0-P6：核心九模块 + 编排 + CLI + 部署
-- [x] **本地化**：Wav2Lip CPU 推理 + GFPGAN + faster-whisper 字幕
-- [x] **声音克隆**：MOSS-TTS-Nano ONNX 集成（去 torch 依赖）
-- [x] **GUI 重构**：7 标签页 + 画中画编辑器 + 设置热生效
-- [x] **多平台发布**：半自动模式 + 发布清单
-- [ ] PyInstaller 打包为单 exe
+- LatentSync 官方仅发布 whisper-tiny 特征权重（384 维），快速语流下逐音节贴合度有上限；512 分辨率权重（1.6）需 12GB+ 显存
+- LLM/数字人/TTS 三方共享 8GB 显存，靠分时复用调度；生成期间避免同时运行其他大显存任务
+- Windows「智能应用控制」开启时会拦截无签名 DLL（conda 环境）——遇到 `应用程序控制策略已阻止此文件` 时用签名版依赖替换（仓库内 openssl 已处理）
 
 ## License
 
