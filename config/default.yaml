@@ -145,7 +145,7 @@ podcast:
   # 输出采样率
   output_sample_rate: 24000
   # BGM 默认音量（0-1），与 composer.bgm_volume 保持一致
-  bgm_volume: 0.15
+  bgm_volume: 0.22
 
 # 数字人配置（口播生成）
 avatar:
@@ -430,6 +430,14 @@ effects:
     duration: 2.0
 
 # BGM 素材库（预设曲目）
+# 音乐来源：Kevin MacLeod (incompetech.com) · CC BY 4.0
+# 使用成品时请在视频简介注明：Music: Kevin MacLeod (incompetech.com),
+# Licensed under Creative Commons: By Attribution 4.0
+# 曲目对应：轻柔钢琴=Peace of Mind / 企业活力=Life of Riley / 科技电子=Voltaic /
+#   温暖原声=Wholesome / 古风古筝=Ishikari Lore / 新闻严肃=Hidden Agenda /
+#   Lofi=Deliberate Thought / 电影史诗=Rite of Passage / 欢快尤克里里=Carefree /
+#   深情弦乐=Heartbreaking / 爵士=George Street Shuffle / 氛围=Deep Haze /
+#   积极企业=Inspired / 忧伤钢琴=Gymnopedie No.1
 bgm_library:
   soft_piano:
     label: "轻柔钢琴"
@@ -499,7 +507,7 @@ composer:
   audio_bitrate: "192k"
   # BGM 库
   bgm_dir: ./config/bgm
-  bgm_volume: 0.15  # BGM 音量（0-1）
+  bgm_volume: 0.22  # BGM 音量（0-1）
 
 # 封面生成配置
 cover:

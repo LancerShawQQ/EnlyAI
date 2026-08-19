@@ -53,7 +53,7 @@ class VideoComposer(BaseModule):
         if _bgm_vol_pct is not None:
             self.bgm_volume = float(_bgm_vol_pct) / 100.0
         else:
-            self.bgm_volume = self.config.get("composer.bgm_volume", 0.15)
+            self.bgm_volume = self.config.get("composer.bgm_volume", 0.22)
 
         # 字幕样式（新 subtitle 段，对标剪映）
         sub_cfg = self.config.get("subtitle", {})

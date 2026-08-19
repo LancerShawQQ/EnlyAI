@@ -105,10 +105,8 @@ install_*.log
 debug_*.log
 
 # PyInstaller 产物（不入库，按需重新打包）
-EnlyAI.exe
 
 # BGM 大文件需 git-lfs，未装 lfs 时先排除（按需恢复）
-config/bgm/*.mp3
 
 # Qwen3-TTS 本地模型缓存
 models/

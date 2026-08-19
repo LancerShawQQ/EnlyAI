@@ -703,7 +703,7 @@ class PodcastEngine(BaseModule):
         output_dir: Path | str,
         progress_callback: Optional[callable] = None,
         bgm_track: str = "",
-        bgm_volume: float = 0.15,
+        bgm_volume: float = 0.22,
         output_format: str = "wav",
     ) -> dict[str, Any]:
         """生成播客音频（核心方法）
@@ -714,7 +714,7 @@ class PodcastEngine(BaseModule):
             output_dir: 输出目录
             progress_callback: 进度回调 (current, total, message)
             bgm_track: BGM 曲目名（如 "soft_piano"），为空则不混入 BGM
-            bgm_volume: BGM 音量（0-1），默认 0.15
+            bgm_volume: BGM 音量（0-1），默认 0.22
             output_format: 输出音频格式 wav / mp3
 
         Returns:
