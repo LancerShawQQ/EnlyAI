@@ -392,6 +392,11 @@ class EnlyAI:
         ctx = self.orchestrator._build_context(job_id, job["input"])
 
         # 执行目标模块之前的所有模块（准备上下文）
+        # （podcast 等非流水线模块不在 PIPELINE_STEPS 中，index 会抛 ValueError）
+        if module_name not in PIPELINE_STEPS:
+            raise ValueError(
+                f"未知流水线模块: {module_name}（可用: {PIPELINE_STEPS}）"
+            )
         target_idx = PIPELINE_STEPS.index(module_name)
         for step_name in PIPELINE_STEPS[:target_idx]:
             step_def = self.orchestrator._steps.get(step_name)

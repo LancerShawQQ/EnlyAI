@@ -26,6 +26,18 @@ from ..modules.script_extractor import ScriptExtractor
 
 logger = get_logger().bind(component="web_server")
 
+
+def _track_background_job(future, job_id: str) -> None:
+    """记录 fire-and-forget 任务的异常（默认会被静默吞掉）"""
+    def _on_done(f):
+        exc = f.exception()
+        if exc:
+            logger.error(f"后台任务异常 job={job_id}: {exc}")
+    try:
+        future.add_done_callback(_on_done)
+    except Exception:
+        pass
+
 # 全局 app 实例（懒加载）
 _app_instance: Optional[EnlyAI] = None
 
@@ -385,21 +397,35 @@ def create_app() -> FastAPI:
         elif req.platform and req.platform != "douyin":
             # 向后兼容：单选 platform 也写入 publish_platforms
             _meta["publish_platforms"] = [req.platform]
+        # GPU 串行保护：已有任务在跑时拒绝新提交（8GB 显存无法并发两个
+        # 数字人生成任务——batch/matrix 已有同类保护，此处补齐单任务入口）
+        _active = [j for j in krvoice.orchestrator.store.list_jobs(limit=10)
+                   if j.get("status") in ("running", "pending")]
+        if _active:
+            busy_id = _active[0].get("job_id", "?")
+            return JSONResponse(
+                {"success": False,
+                 "detail": f"已有任务正在生成（{busy_id}），请等待完成后再提交（8GB 显存不支持并发）",
+                 "error": "BUSY"},
+                status_code=409,
+            )
         job_id = krvoice.orchestrator.submit_job(
             script=req.script,
             reference_video_url=req.reference_video_url,
             avatar_id=avatar_id,
             voice_id=req.voice_id,
             script_mode=req.script_mode,
-            metadata=_meta,
+            metadata=_meta if _meta else None,
             broll_clips=req.broll_clips,
         )
-        # 在后台线程中运行任务（不等待完成）
+        # 在后台线程中运行任务（不等待完成）；异常显式记录（fire-and-forget
+        # 的 Future 异常默认被静默吞掉）
         loop = asyncio.get_event_loop()
-        loop.run_in_executor(
+        future = loop.run_in_executor(
             None,
             lambda: krvoice.orchestrator.run_job(job_id),
         )
+        _track_background_job(future, job_id)
         return {"job_id": job_id, "status": "pending"}
 
     @app.post("/api/module/run")
@@ -524,7 +550,7 @@ def create_app() -> FastAPI:
     @app.post("/api/broll/upload")
     async def upload_broll(file: UploadFile = File(...)):
         """上传 B-roll 素材（视频/图片），返回可引用的路径"""
-        broll_dir = Path("./config/broll_assets")
+        broll_dir = Path(__file__).resolve().parent.parent.parent / "config" / "broll_assets"
         broll_dir.mkdir(parents=True, exist_ok=True)
         suffix = Path(file.filename or "asset").suffix or ".mp4"
         # 生成唯一文件名
@@ -545,7 +571,7 @@ def create_app() -> FastAPI:
     @app.get("/api/broll/assets")
     async def list_broll_assets():
         """列出所有已上传的 B-roll 素材"""
-        broll_dir = Path("./config/broll_assets")
+        broll_dir = Path(__file__).resolve().parent.parent.parent / "config" / "broll_assets"
         if not broll_dir.exists():
             return []
         assets = []
@@ -564,7 +590,7 @@ def create_app() -> FastAPI:
     @app.get("/api/broll/assets/{filename}")
     async def get_broll_asset(filename: str):
         """获取 B-roll 素材文件（用于预览）"""
-        broll_dir = Path("./config/broll_assets")
+        broll_dir = Path(__file__).resolve().parent.parent.parent / "config" / "broll_assets"
         # 防止路径穿越
         safe_name = Path(filename).name
         p = broll_dir / safe_name
@@ -634,18 +660,17 @@ def create_app() -> FastAPI:
                 return {"success": False, "error": f"读取上下文失败: {e}"}
 
             # 2. 提取 script / subtitle_segments / video_duration
-            input_data = ctx.get("input_data", {}) or {}
+            # （script_text 存于 context.json 顶层——orchestrator._save_context 的真实字段）
             metadata = ctx.get("metadata", {}) or {}
             script = (
-                input_data.get("script")
+                ctx.get("script_text")
                 or metadata.get("script_text")
-                or metadata.get("script")
                 or metadata.get("extracted_script")
                 or ""
             )
             subtitle_segments = (
                 metadata.get("subtitle_segments")
-                or input_data.get("subtitle_segments")
+                or ctx.get("subtitle_segments")
                 or []
             )
             video_duration = float(metadata.get("video_duration") or 0)
@@ -653,7 +678,7 @@ def create_app() -> FastAPI:
                 video_duration = float(subtitle_segments[-1].get("end", 0))
 
             # 3. 读素材库
-            broll_dir = Path("./config/broll_assets")
+            broll_dir = Path(__file__).resolve().parent.parent.parent / "config" / "broll_assets"
             assets = []
             if broll_dir.exists():
                 for f in sorted(broll_dir.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
@@ -856,8 +881,19 @@ def create_app() -> FastAPI:
         p = Path(path)
         if not p.exists() or not p.is_file():
             raise HTTPException(404, "文件不存在")
-        # 安全检查：只允许访问 workspace_data 目录
-        if "workspace_data" not in str(p.resolve()) and "tmp" not in str(p.resolve()):
+        # 安全检查：resolve 后必须落在允许的根目录内（子串判断可被
+        # "C:\Users\x\tmp\任意文件" 之类的路径绕过）
+        from ..core.config import PROJECT_ROOT
+
+        allowed_roots = [
+            (PROJECT_ROOT / "workspace_data").resolve(),
+            (PROJECT_ROOT / "input").resolve(),
+        ]
+        resolved = p.resolve()
+        if not any(
+            str(resolved).startswith(str(r) + os.sep) or resolved == r
+            for r in allowed_roots
+        ):
             raise HTTPException(403, "无权访问")
         return FileResponse(str(p))
 
@@ -982,23 +1018,6 @@ def create_app() -> FastAPI:
         """获取 BGM 素材库"""
         cfg = _get_app().config
         return cfg.get("bgm_library", {}) or {}
-
-    @app.get("/api/bgm/preview/{track}")
-    async def preview_bgm(track: str):
-        """预览 BGM 文件（用于 UI 试听按钮）
-
-        直接返回本地文件，浏览器通过 Range 请求流式播放，5秒内出声。
-        """
-        from pathlib import Path as _Path
-        bgm_dir = _Path(_get_app().config.get("composer.bgm_dir", "./config/bgm"))
-        for ext in (".mp3", ".m4a", ".wav"):
-            p = bgm_dir / f"{track}{ext}"
-            if p.exists():
-                return FileResponse(
-                    str(p), media_type="audio/mpeg",
-                    headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=3600"},
-                )
-        return JSONResponse({"error": "BGM not found"}, status_code=404)
 
     # ============ 音色试听 API ============
 
@@ -1596,13 +1615,18 @@ def create_app() -> FastAPI:
         job_id = f"pod_{uuid.uuid4().hex[:10]}"
         app_obj = _get_app()
 
-        # 初始化进度存储
+        # 初始化进度存储（并清理 24h 前的已完成任务，防内存只增不减）
+        now = time.time()
+        stale = [k for k, v in _podcast_jobs.items()
+                 if v.get("status") in ("success", "failed") and now - v.get("created_at", 0) > 86400]
+        for k in stale:
+            _podcast_jobs.pop(k, None)
         _podcast_jobs[job_id] = {
             "status": "pending",
             "progress": None,
             "result": None,
             "error": None,
-            "created_at": time.time(),
+            "created_at": now,
         }
 
         def _run():

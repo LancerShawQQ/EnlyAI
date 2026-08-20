@@ -965,8 +965,9 @@ class PodcastEngine(BaseModule):
             # 添加到内存合并列表
             all_audio_chunks.append(seg_audio)
 
-            # 计算时间戳
-            start = cursor + LEAD_IN_SILENCE
+            # 计算时间戳：每句音频前实际插入了 pause_before + lead_in 静音，
+            # 时间游标必须同步计入，否则字幕逐句累计漂移（每次角色切换约 0.4s）
+            start = cursor + pause_before + LEAD_IN_SILENCE
             end = start + duration
             cursor = end
 
