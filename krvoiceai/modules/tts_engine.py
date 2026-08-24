@@ -1790,10 +1790,30 @@ class TTSEngine(BaseModule):
 
         try:
             data, sr = sf.read(str(sample_audio), dtype="float32")
-        except Exception as e:
-            result["ok"] = False
-            result["warnings"].append(f"音频文件读取失败: {e}")
-            return result
+        except Exception:
+            # libsndfile 不支持 m4a/aac 等压缩容器（用户手机/微信录音常见），
+            # 用 ffmpeg 转成临时 wav 再分析（register_voice 保存时同样会转）
+            try:
+                import subprocess
+                import tempfile as _tempfile
+
+                import imageio_ffmpeg
+
+                with _tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+                    tmp_wav = Path(tf.name)
+                subprocess.run(
+                    [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-i", str(sample_audio),
+                     "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", str(tmp_wav)],
+                    check=True, capture_output=True, timeout=30,
+                )
+                data, sr = sf.read(str(tmp_wav), dtype="float32")
+                tmp_wav.unlink(missing_ok=True)
+            except Exception as e:
+                result["ok"] = False
+                result["warnings"].append(
+                    f"音频文件读取失败（不支持的格式 {sample_audio.suffix or '未知'}）: {e}"
+                )
+                return result
 
         # 立体声转单声道
         if data.ndim > 1:
