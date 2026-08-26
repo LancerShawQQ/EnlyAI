@@ -849,16 +849,18 @@ class AvatarEngine(BaseModule):
         if face_path.suffix.lower() in (".jpg", ".jpeg", ".png"):
             # 图片转视频：用 ffmpeg 生成静态帧视频
             static_video = ctx.work_dir / "musetalk_input_video.mp4"
-            if not static_video.exists():
-                import subprocess
-                duration = ctx.audio_duration or 10
-                cmd = [
-                    self.ffmpeg.ffmpeg, "-y", "-loop", "1", "-i", str(face_path),
-                    "-c:v", "libx264", "-t", str(duration),
-                    "-pix_fmt", "yuv420p", "-r", str(self.musetalk_fps),
-                    str(static_video),
-                ]
-                subprocess.run(cmd, capture_output=True, timeout=120, check=True)
+            # 同 latentsync 路径：每次重建，防旧文件时长错误/损坏残留
+            static_video.unlink(missing_ok=True)
+            import subprocess
+            duration = ctx.audio_duration or 10
+            cmd = [
+                self.ffmpeg.ffmpeg, "-y", "-loop", "1", "-i", str(face_path),
+                "-c:v", "libx264", "-t", str(duration),
+                "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",  # 偶数化（同 latentsync 路径）
+                "-pix_fmt", "yuv420p", "-r", str(self.musetalk_fps),
+                str(static_video),
+            ]
+            subprocess.run(cmd, capture_output=True, timeout=180, check=True)
             video_path = static_video
 
         client = MuseTalkAvatarClient(
@@ -1016,18 +1018,40 @@ class AvatarEngine(BaseModule):
         video_path = face_path
         if face_path.suffix.lower() in (".jpg", ".jpeg", ".png"):
             static_video = ctx.work_dir / "latentsync_input_video.mp4"
-            if not static_video.exists():
-                import subprocess
-                duration = ctx.audio_duration or 10
-                # 用 FFmpegRunner 解析的 ffmpeg（imageio-ffmpeg 完整版）；
-                # 硬编码 "ffmpeg" 依赖 PATH，无系统 ffmpeg 时报 WinError 2
+            # 每次重建（不复用旧文件）：1) 不同任务音频时长不同，
+            # 复用会拿到错误长度的视频；2) 上次 ffmpeg 崩溃可能留下
+            # 不完整 mp4（moov atom 缺失），重试时必须丢弃
+            import subprocess
+
+            def _photo_to_video(src: Path) -> bool:
+                static_video.unlink(missing_ok=True)
                 cmd = [
-                    self.ffmpeg.ffmpeg, "-y", "-loop", "1", "-i", str(face_path),
-                    "-c:v", "libx264", "-t", str(duration),
+                    self.ffmpeg.ffmpeg, "-y", "-loop", "1", "-i", str(src),
+                    "-c:v", "libx264", "-t", str(ctx.audio_duration or 10),
+                    # 偶数化尺寸：yuv420p/libx264 要求宽高为偶数——奇数高（如 715px）
+                    # 会令 imageio-ffmpeg 直接崩溃（exit 3752568763）而非报错
+                    "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
                     "-pix_fmt", "yuv420p", "-r", str(self.output_fps),
                     str(static_video),
                 ]
-                subprocess.run(cmd, capture_output=True, timeout=120, check=True)
+                r = subprocess.run(cmd, capture_output=True, timeout=180)
+                return r.returncode == 0 and static_video.exists() and \
+                    static_video.stat().st_size > 10000
+
+            if not _photo_to_video(face_path):
+                # 特殊格式 JPG（CMYK/渐进式/EXIF 异常）可能令 ffmpeg 解码崩溃：
+                # 先转成标准 PNG 再试一次（绝大多数解码问题在 PNG 重编码后消失）
+                png_tmp = ctx.work_dir / "latentsync_photo_tmp.png"
+                subprocess.run(
+                    [self.ffmpeg.ffmpeg, "-y", "-i", str(face_path), str(png_tmp)],
+                    capture_output=True, timeout=60,
+                )
+                if not (png_tmp.exists() and _photo_to_video(png_tmp)):
+                    static_video.unlink(missing_ok=True)
+                    raise RuntimeError(
+                        f"照片转视频失败（形象: {face_path.name}）。"
+                        f"请尝试用其他软件重新保存该图片后重新上传"
+                    )
             video_path = static_video
 
         # 构建 multipart 表单（audio + video + LatentSync 参数）
