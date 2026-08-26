@@ -168,7 +168,7 @@ templates:
 
   course_intro:
     label: "课程介绍"
-    icon: "🎓"
+    icon: "graduation-cap"
     category: "知识教育"
     description: "适合在线课程、培训招生、知识付费推广"
     script_template: |
@@ -214,7 +214,7 @@ templates:
   # ===== 资讯/新闻场景 =====
   news_broadcast:
     label: "新闻播报"
-    icon: "📰"
+    icon: "newspaper"
     category: "资讯新闻"
     description: "适合热点资讯、行业动态、政策解读，严肃专业"
     script_template: |
@@ -292,7 +292,7 @@ templates:
   # ===== 科技/测评场景 =====
   tech_review:
     label: "科技测评"
-    icon: "🔬"
+    icon: "flask-conical"
     category: "科技数码"
     description: "适合数码测评、科技解读、产品对比，硬核专业"
     script_template: |

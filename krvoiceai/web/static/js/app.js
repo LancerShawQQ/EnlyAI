@@ -5191,6 +5191,13 @@ async function podGenerate() {
       voice_map: podcastState.voiceMap,
       output_name: outputName,
       output_format: outputFormat,
+      // 停顿/语速滑块与输出选项勾选（此前未发送，拖动无效果）
+      role_switch_pause: parseFloat(document.getElementById('pod-switch-pause')?.value || '0.4'),
+      same_role_pause: parseFloat(document.getElementById('pod-same-pause')?.value || '0.12'),
+      speed: parseFloat(document.getElementById('pod-speed')?.value || '1.0'),
+      want_srt: !!document.getElementById('pod-gen-srt')?.checked,
+      want_timestamps: !!document.getElementById('pod-gen-json')?.checked,
+      want_script: !!document.getElementById('pod-gen-script')?.checked,
     };
     if (bgmTrack) {
       reqBody.bgm_track = bgmTrack;

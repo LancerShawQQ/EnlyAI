@@ -705,6 +705,12 @@ class PodcastEngine(BaseModule):
         bgm_track: str = "",
         bgm_volume: float = 0.22,
         output_format: str = "wav",
+        role_switch_pause: float = -1.0,
+        same_role_pause: float = -1.0,
+        speed: float = -1.0,
+        want_srt: bool = True,
+        want_timestamps: bool = True,
+        want_script: bool = True,
     ) -> dict[str, Any]:
         """生成播客音频（核心方法）
 
@@ -716,6 +722,9 @@ class PodcastEngine(BaseModule):
             bgm_track: BGM 曲目名（如 "soft_piano"），为空则不混入 BGM
             bgm_volume: BGM 音量（0-1），默认 0.22
             output_format: 输出音频格式 wav / mp3
+            role_switch_pause / same_role_pause: 停顿秒（<0 用模块常量默认）
+            speed: 语速（<0 用全局 audio.speed 配置）
+            want_srt / want_timestamps / want_script: 是否输出对应附带文件
 
         Returns:
             {
@@ -781,6 +790,9 @@ class PodcastEngine(BaseModule):
             pod_speed = float(pod_speed) if pod_speed is not None else None
         except (TypeError, ValueError):
             pod_speed = None
+        # 请求级语速覆盖（UI 播客页滑块）
+        if speed is not None and speed > 0:
+            pod_speed = float(speed)
 
         # CosyVoice 预热：GPU 分时复用后模型可能已卸载（重载约 50s），
         # 用一句极短请求触发懒加载，避免首句合成计入 50s 冷启动
@@ -851,13 +863,13 @@ class PodcastEngine(BaseModule):
             text = line["text"]
             voice_id = voice_map.get(role, "Zhiming")
 
-            # 计算停顿
+            # 计算停顿（请求级参数覆盖模块常量——UI 滑块实时生效）
             if prev_role is None:
                 pause_before = 0.0
             elif prev_role != role:
-                pause_before = ROLE_SWITCH_PAUSE
+                pause_before = role_switch_pause if role_switch_pause >= 0 else ROLE_SWITCH_PAUSE
             else:
-                pause_before = SAME_ROLE_PAUSE
+                pause_before = same_role_pause if same_role_pause >= 0 else SAME_ROLE_PAUSE
 
             # 添加停顿静音到内存
             if i > 0:
@@ -1041,17 +1053,26 @@ class PodcastEngine(BaseModule):
             # 删除临时 wav
             bgm_mixed_wav.unlink(missing_ok=True)
 
-        # 生成字幕
+        # 生成附带文件（按用户在 UI 勾选的输出选项）
         srt_path = output_dir / "podcast.srt"
-        generate_srt(segments, srt_path)
+        if want_srt:
+            generate_srt(segments, srt_path)
+        else:
+            srt_path.unlink(missing_ok=True)
 
         # 生成时间戳 JSON
         timestamps_path = output_dir / "timestamps.json"
-        generate_timestamps_json(segments, cursor, timestamps_path)
+        if want_timestamps:
+            generate_timestamps_json(segments, cursor, timestamps_path)
+        else:
+            timestamps_path.unlink(missing_ok=True)
 
         # 保存剧本
         script_path = output_dir / "script.txt"
-        script_path.write_text(script_text, encoding="utf-8")
+        if want_script:
+            script_path.write_text(script_text, encoding="utf-8")
+        else:
+            script_path.unlink(missing_ok=True)
 
         total_duration = cursor
 

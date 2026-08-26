@@ -65,6 +65,8 @@ class VideoComposer(BaseModule):
         self.subtitle_alignment = sub_cfg.get("alignment", "center")
         self.subtitle_margin_v = sub_cfg.get("margin_v", 80)
         self.subtitle_karaoke = sub_cfg.get("karaoke", False)
+        # 双行字幕开关：False 时不折行（单行长字幕），True 由 styler 自动折行
+        self.subtitle_dual_line = sub_cfg.get("dual_line", True)
         self.subtitle_bold = sub_cfg.get("bold", True)
         self.subtitle_italic = sub_cfg.get("italic", False)
         self.subtitle_outline_width = sub_cfg.get("outline_width", None)
@@ -523,7 +525,7 @@ class VideoComposer(BaseModule):
                     line_spacing=self.subtitle_line_spacing,
                     play_res_x=self.output_resolution[0],
                     play_res_y=self.output_resolution[1],
-                    max_chars_per_line=0,  # 0=自动按分辨率和字号计算，长句自动折行
+                    max_chars_per_line=(0 if self.subtitle_dual_line else 9999),  # dual_line=False 时 9999=不折行；True 0=自动按分辨率折行
                     primary_color=self.subtitle_primary_color,
                     outline_color=self.subtitle_outline_color,
                     shadow_color=self.subtitle_shadow_color,
@@ -555,7 +557,7 @@ class VideoComposer(BaseModule):
                 line_spacing=self.subtitle_line_spacing,
                 play_res_x=self.output_resolution[0],
                 play_res_y=self.output_resolution[1],
-                max_chars_per_line=0,  # 0=自动按分辨率和字号计算，长句自动折行
+                max_chars_per_line=(0 if self.subtitle_dual_line else 9999),  # dual_line=False 时 9999=不折行；True 0=自动按分辨率折行
             )
             self.logger.info(
                 f"字幕 SRT→ASS 转换 preset={self.subtitle_preset} "

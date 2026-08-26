@@ -924,6 +924,12 @@ class EnlyAI:
         bgm_track: str = "",
         bgm_volume: float = 0.15,
         output_format: str = "wav",
+        role_switch_pause: float = -1.0,
+        same_role_pause: float = -1.0,
+        speed: float = -1.0,
+        want_srt: bool = True,
+        want_timestamps: bool = True,
+        want_script: bool = True,
         progress_callback: Optional[Callable[[str, str, dict], None]] = None,
     ) -> dict:
         """生成播客音频（同步）
@@ -932,6 +938,9 @@ class EnlyAI:
             bgm_track: BGM 曲目名（为空则不混入 BGM）
             bgm_volume: BGM 音量（0-1）
             output_format: 输出音频格式 wav / mp3
+            role_switch_pause / same_role_pause: 停顿秒（<0 用引擎默认）
+            speed: 语速（<0 用全局 audio.speed 配置）
+            want_*: 是否输出对应附带文件
 
         Returns:
             含 audio_path/srt_path/timestamps_path/script_path/total_duration 等
@@ -961,6 +970,12 @@ class EnlyAI:
             bgm_track=bgm_track,
             bgm_volume=bgm_volume,
             output_format=output_format,
+            role_switch_pause=role_switch_pause,
+            same_role_pause=same_role_pause,
+            speed=speed,
+            want_srt=want_srt,
+            want_timestamps=want_timestamps,
+            want_script=want_script,
         )
         result["output_dir"] = str(output_dir)
         return result

@@ -169,6 +169,12 @@ class PodcastGenerateRequest(BaseModel):
     bgm_track: str = ""                # BGM 曲目名（为空则不混入 BGM）
     bgm_volume: float = 0.15           # BGM 音量（0-1）
     output_format: str = "wav"         # 输出音频格式：wav / mp3
+    role_switch_pause: float = -1.0    # 角色切换停顿秒（<0 用引擎默认 0.4）
+    same_role_pause: float = -1.0      # 同角色停顿秒（<0 用引擎默认 0.12）
+    speed: float = -1.0                # 语速（<0 用全局 audio.speed 配置）
+    want_srt: bool = True              # 输出字幕文件
+    want_timestamps: bool = True       # 输出时间戳 JSON
+    want_script: bool = True           # 输出剧本文件
 
 
 # ============ FastAPI 应用 ============
@@ -1642,6 +1648,12 @@ def create_app() -> FastAPI:
                     bgm_track=req.bgm_track,
                     bgm_volume=req.bgm_volume,
                     output_format=req.output_format,
+                    role_switch_pause=req.role_switch_pause,
+                    same_role_pause=req.same_role_pause,
+                    speed=req.speed,
+                    want_srt=req.want_srt,
+                    want_timestamps=req.want_timestamps,
+                    want_script=req.want_script,
                     progress_callback=_progress_cb,
                 )
                 _podcast_jobs[job_id]["status"] = "success"
