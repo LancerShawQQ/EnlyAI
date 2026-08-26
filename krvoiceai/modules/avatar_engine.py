@@ -853,12 +853,12 @@ class AvatarEngine(BaseModule):
                 import subprocess
                 duration = ctx.audio_duration or 10
                 cmd = [
-                    "ffmpeg", "-y", "-loop", "1", "-i", str(face_path),
+                    self.ffmpeg.ffmpeg, "-y", "-loop", "1", "-i", str(face_path),
                     "-c:v", "libx264", "-t", str(duration),
                     "-pix_fmt", "yuv420p", "-r", str(self.musetalk_fps),
                     str(static_video),
                 ]
-                subprocess.run(cmd, capture_output=True, timeout=60, check=True)
+                subprocess.run(cmd, capture_output=True, timeout=120, check=True)
             video_path = static_video
 
         client = MuseTalkAvatarClient(
@@ -1019,13 +1019,15 @@ class AvatarEngine(BaseModule):
             if not static_video.exists():
                 import subprocess
                 duration = ctx.audio_duration or 10
+                # 用 FFmpegRunner 解析的 ffmpeg（imageio-ffmpeg 完整版）；
+                # 硬编码 "ffmpeg" 依赖 PATH，无系统 ffmpeg 时报 WinError 2
                 cmd = [
-                    "ffmpeg", "-y", "-loop", "1", "-i", str(face_path),
+                    self.ffmpeg.ffmpeg, "-y", "-loop", "1", "-i", str(face_path),
                     "-c:v", "libx264", "-t", str(duration),
                     "-pix_fmt", "yuv420p", "-r", str(self.output_fps),
                     str(static_video),
                 ]
-                subprocess.run(cmd, capture_output=True, timeout=60, check=True)
+                subprocess.run(cmd, capture_output=True, timeout=120, check=True)
             video_path = static_video
 
         # 构建 multipart 表单（audio + video + LatentSync 参数）
