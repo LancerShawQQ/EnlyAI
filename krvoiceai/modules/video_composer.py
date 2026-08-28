@@ -320,11 +320,9 @@ class VideoComposer(BaseModule):
         # 商用成片节奏：封面 1s → 正片画面 1s 静默 → 开口 → 最后一句后 1s 余韵再结束
         TAIL_PAD_S = 0.5
         def _voice_chain(out_label: str) -> str:
+            # 不剥前置静音！avatar 按完整音频驱动口型（前置静音期间口型闭合），
+            # compose 必须用同一时间轴——剥掉静音会导致声音比口型早 N 秒
             chain = f"[{voice_input_idx}:a]volume=1.0"
-            # 剥离前置纯静音（start_threshold=-35dB 只裁真静音，不吃句首渐入字）。
-            # 口型由 avatar 从"声音起始处"驱动，compose 音轨如果不裁前置静音，
-            # 会出现声音比口型晚 N 秒的漂移（N = 前置静音时长）
-            chain += ",silenceremove=start_periods=1:start_threshold=-35dB:start_duration=0.05:start_silence=0.02"
             if speech_delay_ms > 0:
                 chain += f",adelay={speech_delay_ms}|{speech_delay_ms}"
                 # 人声淡入 80ms：防"咔"声但不吞字
