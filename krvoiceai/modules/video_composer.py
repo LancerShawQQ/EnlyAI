@@ -263,15 +263,17 @@ class VideoComposer(BaseModule):
             )
             lead_delay_ms += intro_lead_ms
 
-        # 音视频同步：正片实际起点 = lead_delay_ms（封面/片头时长，扣除 xfade 转场重叠）
-        # 字幕也必须同步偏移，否则字幕会比人声提前显示
-        cover_delay_ms = lead_delay_ms
+        # 音视频同步：正片实际起点 = lead_delay_ms + 开场留白 1s。
+        # 人声/口型/字幕三方必须用同一偏移量，任何一方单独偏移都会导致
+        # "嘴动没声"或"字幕先于声音"的错位
+        SPEECH_LEAD_S = 1.0   # 封面结束后正片画面静默 1s 再开口（商用节奏）
+        speech_delay_ms = lead_delay_ms + int(SPEECH_LEAD_S * 1000)
 
-        # 字幕时间戳偏移：和人声延迟保持一致
+        # 字幕时间戳偏移：和人声延迟保持一致（cover + 开场留白）
         shifted_segments = subtitle_segments
-        if cover_delay_ms > 0 and subtitle_segments:
+        if speech_delay_ms > 0 and subtitle_segments:
             import copy
-            delay_sec = cover_delay_ms / 1000.0
+            delay_sec = speech_delay_ms / 1000.0
             shifted_segments = []
             for seg in subtitle_segments:
                 s = copy.deepcopy(seg)
@@ -290,10 +292,14 @@ class VideoComposer(BaseModule):
         vf_filters = self._build_video_filters(
             subtitle, output.parent, subtitle_segments=shifted_segments,
         )
-        # 收尾定格：视频末帧延长，与人声开场留白(+1s)+收尾余韵(+1s)对齐。
-        # -shortest 取音视频较短者，视频必须比"封面+语音+余韵"更长才不会被截
-        if voice_audio and Path(voice_audio).exists() and cover_delay_ms > 0:
-            vf_filters = (vf_filters + "," if vf_filters else "") + \
+        # 视频时间轴同步：
+        # 1) 开场：正片首帧定格 1s（人物可见但静止），口型与声音同时从
+        #    speech_delay 处开始——不加这个，口型比声音早 1s（嘴动没声）
+        # 2) 收尾：末帧定格 2.5s > 开场留白+收尾余韵，防 -shortest 截断音频
+        if voice_audio and Path(voice_audio).exists() and speech_delay_ms > 0:
+            pad = (vf_filters + "," if vf_filters else "")
+            vf_filters = pad + \
+                f"tpad=start_duration={SPEECH_LEAD_S}:start_mode=clone," + \
                 "tpad=stop_mode=clone:stop_duration=2.5"
 
         # 构建输入与音频处理
@@ -315,12 +321,10 @@ class VideoComposer(BaseModule):
         TAIL_PAD_S = 1.0
         def _voice_chain(out_label: str) -> str:
             chain = f"[{voice_input_idx}:a]volume=1.0"
-            if cover_delay_ms > 0:
-                # 额外 +1s 开场留白：观众视线落定后声音再进来
-                speech_delay = cover_delay_ms + 1000
-                chain += f",adelay={speech_delay}|{speech_delay}"
+            if speech_delay_ms > 0:
+                chain += f",adelay={speech_delay_ms}|{speech_delay_ms}"
                 # 人声淡入 250ms：避免语音"炸"出来（前几个字听不清）
-                fade_start = speech_delay / 1000.0
+                fade_start = speech_delay_ms / 1000.0
                 chain += f",afade=t=in:st={fade_start:.3f}:d=0.25"
                 # 人声淡出 300ms + 结尾余韵：说完最后一句不戛然而止
                 chain += f",apad=pad_dur={TAIL_PAD_S}"
