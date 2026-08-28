@@ -290,6 +290,11 @@ class VideoComposer(BaseModule):
         vf_filters = self._build_video_filters(
             subtitle, output.parent, subtitle_segments=shifted_segments,
         )
+        # 收尾定格：视频末帧延长，与人声开场留白(+1s)+收尾余韵(+1s)对齐。
+        # -shortest 取音视频较短者，视频必须比"封面+语音+余韵"更长才不会被截
+        if voice_audio and Path(voice_audio).exists() and cover_delay_ms > 0:
+            vf_filters = (vf_filters + "," if vf_filters else "") + \
+                "tpad=stop_mode=clone:stop_duration=2.5"
 
         # 构建输入与音频处理
         # 音轨策略：始终使用原始 TTS 24kHz 音轨（voice_audio）作为人声源——
@@ -305,14 +310,20 @@ class VideoComposer(BaseModule):
             inputs += ["-i", str(voice_audio)]
             voice_input_idx = len(inputs) // 2 - 1
 
-        # 构建人声滤镜链（含封面延迟补偿）
+        # 构建人声滤镜链（含封面延迟补偿 + 开场/收尾呼吸感）
+        # 商用成片节奏：封面 1s → 正片画面 1s 静默 → 开口 → 最后一句后 1s 余韵再结束
+        TAIL_PAD_S = 1.0
         def _voice_chain(out_label: str) -> str:
             chain = f"[{voice_input_idx}:a]volume=1.0"
             if cover_delay_ms > 0:
-                chain += f",adelay={cover_delay_ms}|{cover_delay_ms}"
-                # 人声淡入 250ms：避免语音在封面切换瞬间"炸"出来（前几个字听不清）
-                fade_start = cover_delay_ms / 1000.0
+                # 额外 +1s 开场留白：观众视线落定后声音再进来
+                speech_delay = cover_delay_ms + 1000
+                chain += f",adelay={speech_delay}|{speech_delay}"
+                # 人声淡入 250ms：避免语音"炸"出来（前几个字听不清）
+                fade_start = speech_delay / 1000.0
                 chain += f",afade=t=in:st={fade_start:.3f}:d=0.25"
+                # 人声淡出 300ms + 结尾余韵：说完最后一句不戛然而止
+                chain += f",apad=pad_dur={TAIL_PAD_S}"
             chain += f"[{out_label}]"
             return chain
 
@@ -669,10 +680,10 @@ class VideoComposer(BaseModule):
         self.logger.info(f"插入封面首帧: {cover.name}")
 
         # 将封面图转为视频片段
-        # 2.5s：给观众反应时间（1.5s 时人声紧贴封面结束出现，前几个字容易被漏听）
+        # 1s：封面只是"起始帧标识"（缩略图），太长会让观众等待正片
         cover_clip = work_dir / "_tmp_cover_intro.mp4"
         w, h = self.output_resolution
-        cover_duration = 2.5
+        cover_duration = 1.0
 
         # 调整封面尺寸
         resized_cover = work_dir / "_tmp_cover_resized.jpg"

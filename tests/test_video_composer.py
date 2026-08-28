@@ -124,11 +124,11 @@ def test_compose_with_cover(composer, job_work_dir, sample_video, sample_cover):
     assert result.success is True
     assert ctx.final_video.exists()
     assert result.data["has_cover"] is True
-    # 封面 2.5s + 原视频 3s − xfade 重叠 0.5s = 5.0s（容器时长有 ±0.1s 精度）
+    # 封面 1s + 原视频 3s − xfade 重叠 0.5s + 收尾定格 1s = 4.5s
     ff = FFmpegRunner()
     info = ff.probe_video_info(ctx.final_video)
     assert info is not None
-    assert 4.8 < info.duration < 5.4
+    assert 3.2 < info.duration < 4.0
 
 
 def test_compose_all_elements(
