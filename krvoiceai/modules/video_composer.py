@@ -318,14 +318,14 @@ class VideoComposer(BaseModule):
 
         # 构建人声滤镜链（含封面延迟补偿 + 开场/收尾呼吸感）
         # 商用成片节奏：封面 1s → 正片画面 1s 静默 → 开口 → 最后一句后 1s 余韵再结束
-        TAIL_PAD_S = 1.0
+        TAIL_PAD_S = 0.5
         def _voice_chain(out_label: str) -> str:
             chain = f"[{voice_input_idx}:a]volume=1.0"
             if speech_delay_ms > 0:
                 chain += f",adelay={speech_delay_ms}|{speech_delay_ms}"
                 # 人声淡入 250ms：避免语音"炸"出来（前几个字听不清）
                 fade_start = speech_delay_ms / 1000.0
-                chain += f",afade=t=in:st={fade_start:.3f}:d=0.25"
+                chain += f",afade=t=in:st={fade_start:.3f}:d=0.08"
                 # 人声淡出 300ms + 结尾余韵：说完最后一句不戛然而止
                 chain += f",apad=pad_dur={TAIL_PAD_S}"
             chain += f"[{out_label}]"

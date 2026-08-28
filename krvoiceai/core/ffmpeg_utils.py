@@ -327,7 +327,7 @@ class FFmpegRunner:
             # 注意：不做 loudnorm——响度归一化统一由 video_composer 末级（amix 后）
             # 执行一次；两级 loudnorm + 重压缩叠加会产生"广播腔/机械感"。
             filters.append("highpass=f=80")          # 去除80Hz以下低频噪声
-            filters.append("acompressor=threshold=-20dB:ratio=2:attack=10:release=80")  # 极轻压缩保留动态
+            filters.append("acompressor=threshold=-24dB:ratio=1.5:attack=15:release=100")  # 更轻压缩（ratio 2 会压掉句首起音）
 
         # 句间停顿：通过在句子间插入静音实现
         # 注意：pause_duration 需要在 TTS 合成时处理（在句号后插入静音），
