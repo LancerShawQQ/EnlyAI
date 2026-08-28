@@ -321,12 +321,16 @@ class VideoComposer(BaseModule):
         TAIL_PAD_S = 0.5
         def _voice_chain(out_label: str) -> str:
             chain = f"[{voice_input_idx}:a]volume=1.0"
+            # 剥离前置纯静音（start_threshold=-35dB 只裁真静音，不吃句首渐入字）。
+            # 口型由 avatar 从"声音起始处"驱动，compose 音轨如果不裁前置静音，
+            # 会出现声音比口型晚 N 秒的漂移（N = 前置静音时长）
+            chain += ",silenceremove=start_periods=1:start_threshold=-35dB:start_duration=0.05:start_silence=0.02"
             if speech_delay_ms > 0:
                 chain += f",adelay={speech_delay_ms}|{speech_delay_ms}"
-                # 人声淡入 250ms：避免语音"炸"出来（前几个字听不清）
+                # 人声淡入 80ms：防"咔"声但不吞字
                 fade_start = speech_delay_ms / 1000.0
                 chain += f",afade=t=in:st={fade_start:.3f}:d=0.08"
-                # 人声淡出 300ms + 结尾余韵：说完最后一句不戛然而止
+                # 结尾余韵：说完最后一句不戛然而止
                 chain += f",apad=pad_dur={TAIL_PAD_S}"
             chain += f"[{out_label}]"
             return chain
