@@ -311,12 +311,12 @@ class FFmpegRunner:
         filters = []
 
         if remove_silence:
-            # silenceremove: 消除首尾静音 + 过长停顿
-            # start_duration: 0.5s 只切纯静音段——0.3s 会吃掉句首 100-300ms 的自然起音
-            # stop_duration: 中间超过1.5秒的静音才处理（避免误切正常停顿）
+            # silenceremove：只处理中间过长停顿（stop_periods），**不裁开头**。
+            # 此前 start_periods=1 会连同句首短词一起吃掉（CosyVoice 句首起音
+            # 渐入、紧贴静音边界，"商用级"3 个字整组被裁，ASR 确认丢失）。
+            # 开头静音由 adelay + 淡入兜底，无需在这里裁。
             filters.append(
-                "silenceremove=start_periods=1:start_duration=0.5:"
-                "start_threshold=-45dB:"
+                "silenceremove="
                 "stop_periods=-1:stop_duration=1.5:"
                 "stop_threshold=-40dB:"
                 "window=0.05"
