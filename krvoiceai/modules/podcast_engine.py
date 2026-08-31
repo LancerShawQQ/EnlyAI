@@ -968,9 +968,52 @@ class PodcastEngine(BaseModule):
 
                 except Exception as e:
                     self.logger.error(f"第 {i} 句合成失败: {e}")
-                    # 用静音填充
-                    duration = max(1.0, len(text) * 0.15)
-                    seg_audio = np.zeros(int(sample_rate * duration), dtype=np.float32)
+                    # 重试（CosyVoice 可能因 GPU 显存被占/临时 OOM 短暂不可用）
+                    retry_ok = False
+                    for retry in range(2):
+                        time.sleep(5 * (retry + 1))
+                        try:
+                            self.logger.info(f"第 {i} 句重试 {retry + 1}/2...")
+                            tts_engine = self._get_tts_for_voice(voice_id)
+                            tmp_path = Path(tempfile.mktemp(suffix=".wav", dir=str(self._cache_dir.parent / "tmp")))
+                            tmp_path.parent.mkdir(parents=True, exist_ok=True)
+                            audio_path, duration, _ = tts_engine.synthesize(
+                                text=text, voice_id=voice_id, output_path=tmp_path,
+                                speed=pod_speed, emotion=pod_emotion,
+                            )
+                            actual_audio = Path(audio_path) if audio_path else tmp_path
+                            if not actual_audio.exists():
+                                actual_audio = tmp_path
+                            seg_audio, sr = sf.read(str(actual_audio), dtype="float32")
+                            if seg_audio.ndim > 1:
+                                seg_audio = seg_audio.mean(axis=1)
+                            if sr != sample_rate:
+                                ratio = sample_rate / sr
+                                new_len = int(len(seg_audio) * ratio)
+                                indices = np.linspace(0, len(seg_audio) - 1, new_len)
+                                seg_audio = np.interp(indices, np.arange(len(seg_audio)), seg_audio).astype(np.float32)
+                            duration = len(seg_audio) / sample_rate
+                            actual_audio.unlink(missing_ok=True)
+                            retry_ok = True
+                            break
+                        except Exception as re_err:
+                            self.logger.warning(f"第 {i} 句重试失败: {re_err}")
+
+                    if not retry_ok:
+                        # 连续 2 句以上失败 = 服务级故障，中止（不产出大量静音残次品）
+                        failed_count = getattr(self, "_consecutive_failures", 0)
+                        self._consecutive_failures = failed_count + 1
+                        if self._consecutive_failures >= 2:
+                            raise RuntimeError(
+                                f"播客合成连续 {self._consecutive_failures} 句失败"
+                                f"（第 {i} 句，已重试 2 次）。"
+                                f"CosyVoice 服务可能不可用，"
+                                f"请检查 workspace_data/logs/cosyvoice_service.log"
+                            )
+                        duration = max(1.0, len(text) * 0.15)
+                        seg_audio = np.zeros(int(sample_rate * duration), dtype=np.float32)
+                    else:
+                        self._consecutive_failures = 0
 
             # 添加到内存合并列表
             all_audio_chunks.append(seg_audio)
