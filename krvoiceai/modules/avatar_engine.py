@@ -1033,18 +1033,18 @@ class AvatarEngine(BaseModule):
         )
 
         # 防呆：根据音频时长动态调整超时和推理步数
-        # 实测（RTX 5060 8GB / 256分辨率 / 15步 / CFG1.5）：
-        # 稳态约 1s/it，但长任务后半段会劣化到 5s/it（显存/桌面合成争用），
-        # 按保守 28s/每秒音频估算；管线懒加载冷启动 60-100s 另计入固定缓冲
+        # 实测 2026-08-31（RTX 5060 Laptop 8GB / 256分辨率 / 15步 / CFG2.0 / GFPGAN开）：
+        # 15s 音频实际耗时 2370s（含 GFPGAN 164s）≈ 158s/s；此前 28s/s 估算严重偏低，
+        # 导致客户端 980s 超时但服务端 2370s 才完成 → 降级为静态图
         audio_dur = ctx.audio_duration or 5.0
         # CFG 关闭（guidance_scale≤1.0）时 U-Net 计算减半，推理时间约 ×0.55
         cfg_factor = 1.0 if self.latentsync_guidance_scale > 1.0 else 0.55
         estimated_inference_time = (
-            audio_dur * 28 * (self.latentsync_inference_steps / 15.0) * cfg_factor
+            audio_dur * 160 * (self.latentsync_inference_steps / 15.0) * cfg_factor
         )
-        # 动态超时 = 预估 × 1.5 安全系数 + 350s 固定缓冲（冷加载 60-100s +
-        # GPU 分时复用切换 + Ollama 等其他 GPU 进程争用余量），最少 900s
-        dynamic_timeout = max(900, int(estimated_inference_time * 1.5) + 350)
+        # 动态超时 = 预估 × 1.3 安全系数 + 300s 固定缓冲（冷加载 60-100s +
+        # GFPGAN 后处理），最少 1200s（20 分钟）
+        dynamic_timeout = max(1200, int(estimated_inference_time * 1.3) + 300)
 
         # 长音频自动降级：超过 60s 的音频降到 10 步推理（质量微降但避免超时）
         actual_steps = self.latentsync_inference_steps
