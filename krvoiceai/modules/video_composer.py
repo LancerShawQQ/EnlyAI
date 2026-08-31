@@ -351,13 +351,16 @@ class VideoComposer(BaseModule):
             # 人声(TTS,含封面延迟) + BGM 混音（sidechain ducking：人声说话时自动压低 BGM）
             # amix 后加 loudnorm 做最终响度归一化 -16 LUFS（社媒标准 -14~-16）
             # dropout_transition=0 避免某一路静音时另一路音量突增
+            # 注意：FFmpeg filter_complex 中一个 label 只能被消费一次——
+            # [voice] 需 asplit 分成两路（sidechain 用一路、amix 用另一路），
+            # 直接重复引用会导致人声丢失（只出 BGM）
             audio_filter = (
                 _voice_chain("voice") + ";"
                 + bgm_chain + ";"
-                # sidechaincompress：人声为主输入，BGM 为侧链 → 人声出现时 BGM 被压低
-                f"[bgm][voice]sidechaincompress=threshold=0.03:ratio=8:"
+                f"[voice]asplit=2[voice_sc][voice_mix];"
+                f"[bgm][voice_sc]sidechaincompress=threshold=0.03:ratio=8:"
                 f"attack=200:release=1000[bgm_ducked];"
-                f"[voice][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0,"
+                f"[voice_mix][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0,"
                 f"loudnorm=I=-16:TP=-1.5:LRA=11[aout]"
             )
         elif have_voice:
