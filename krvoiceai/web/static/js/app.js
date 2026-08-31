@@ -2727,10 +2727,10 @@ async function _pollJobLoop(jobId) {
     // ===== 分级超时提醒（不等 2 小时才告知用户）=====
     const elapsedSec = (Date.now() - t0) / 1000;
 
-    // 进入 avatar（Wav2Lip）步骤时立即提示耗时
+    // 进入 avatar 步骤时立即提示耗时
     if (runningStep === 'avatar' && !_tierAlerts.avatar_enter) {
       _tierAlerts.avatar_enter = true;
-      toast('数字人合成（Wav2Lip）已开始，此步骤耗时较长：GPU 约 20-30 分钟，CPU 约 60-120 分钟，请耐心等待', 'info');
+      toast('数字人合成已开始，此步骤耗时较长（通常 5-40 分钟），可点击下方"取消生成"中止', 'info');
     }
 
     // 卡住检测：后端 updated_at 超过 5 分钟无更新（任务可能卡死）
@@ -2908,6 +2908,8 @@ function showProgressModal() {
   document.getElementById('progress-modal-title').textContent = '正在生成视频...';
   document.getElementById('progress-modal-close').style.display = 'none';
   document.getElementById('progress-modal-result').style.display = 'none';
+  const cancelBtn = document.getElementById('progress-cancel-btn');
+  if (cancelBtn) cancelBtn.style.display = 'block';
   document.getElementById('progress-bar-fill').style.width = '0%';
   document.getElementById('progress-percent').textContent = '0%';
   document.getElementById('progress-eta').textContent = '已用时 0分0秒 · 正在执行：初始化';
@@ -3045,6 +3047,22 @@ function finishProgressModalError(message) {
 function closeProgressModal() {
   const modal = document.getElementById('progress-modal');
   if (modal) modal.style.display = 'none';
+  const cancelBtn = document.getElementById('progress-cancel-btn');
+  if (cancelBtn) cancelBtn.style.display = 'none';
+}
+
+// 取消当前视频生成任务（后端 /api/jobs/{id}/cancel 已就绪）
+async function cancelCurrentVideoJob() {
+  if (!_currentJobId) { toast('无正在运行的任务', 'warning'); return; }
+  if (!confirm('确定要取消当前生成任务吗？')) return;
+  try {
+    const r = await api(`/api/jobs/${_currentJobId}/cancel`, { method: 'POST' });
+    toast(r.message || '取消请求已发送', 'info');
+    const cancelBtn = document.getElementById('progress-cancel-btn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+  } catch (e) {
+    toast(`取消失败: ${e.message}`, 'error');
+  }
 }
 
 // ========== 模板中心页面 ==========
@@ -3449,7 +3467,7 @@ const STEP_INFO = {
   publish: { name: '多平台发布', icon: '<i data-lucide="share-2"></i>' },
 };
 
-const STEP_ORDER = ['script_extract', 'script_write', 'tts', 'avatar', 'subtitle', 'compose', 'title', 'cover', 'publish'];
+const STEP_ORDER = ['script_extract', 'script_write', 'originality_check', 'tts', 'avatar', 'subtitle', 'broll', 'compose', 'title', 'cover', 'publish'];
 
 function renderPipeline(stepsState = {}) {
   const container = document.getElementById('pipeline');
@@ -4249,7 +4267,7 @@ async function loadHealth() {
       if (!s) return '<span class="badge badge-info">未启用</span>';
       if (s.healthy) return '<span class="badge badge-success">运行中</span>';
       if (s.state === 'starting') return '<span class="badge badge-warning">启动中</span>';
-      return '<span class="badge badge-error">未运行</span>';
+      return '<span class="badge badge-warning">未运行</span>';
     };
     const container = document.getElementById('health-content');
     const items = [
@@ -4413,13 +4431,14 @@ function bindPodcastEvents() {
       // 切换来源输入区显示：manual 时隐藏所有输入区（剧本编辑器始终可见），
       // 其他来源显示对应输入区
       document.querySelectorAll('[id^="pod-source-"]').forEach(p => {
-        if (p.id === 'pod-source-manual') return; // 无独立输入区
+        if (p.id === 'pod-source-manual') return;
         p.style.display = 'none';
-        p.classList.remove('active'); // 同步移除 .active，防 CSS 类覆盖
+        p.classList.remove('active');
       });
       const target = document.getElementById(`pod-source-${tab.dataset.podSource}`);
       if (target && tab.dataset.podSource !== 'manual') {
-        // .sub-page CSS 类强制 display:none，清空内联样式不够——须加 .active
+        // 必须同时清除内联 display:none（内联样式优先级高于 .active CSS 类）
+        target.style.display = 'block';
         target.classList.add('active');
       }
     });

@@ -568,13 +568,17 @@ class FFmpegRunner:
                     )
             if len(frames) == 2:
                 diff = float(np.abs(frames[0] - frames[1]).mean())
-                if diff < 0.5:
-                    self.logger.warning(
-                        f"PIP 输出校验失败：叠加帧像素差异仅 {diff:.2f}（阈值 0.5），"
-                        f"可能叠加未生效 t={mid_t:.1f}s clip={clip.get('path','')}"
+                if diff < 2.0:
+                    # 阻断：叠加帧与原帧几乎无差异 = PIP 无效，不可交付用户
+                    raise RuntimeError(
+                        f"B-roll 画中画叠加无效（像素差异 {diff:.2f}，阈值 2.0）。"
+                        f"可能原因：素材黑屏/分辨率异常。"
+                        f"请检查素材文件 t={mid_t:.1f}s clip={clip.get('path','')}"
                     )
                 else:
                     self.logger.info(f"PIP 输出校验通过：像素差异 {diff:.2f}")
+        except RuntimeError:
+            raise
         except Exception as e:
             self.logger.debug(f"PIP 校验跳过: {e}")
 

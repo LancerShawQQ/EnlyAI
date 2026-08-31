@@ -65,7 +65,7 @@ tts:
   voices_dir: ./config/voices
   # 默认音色（edge_tts: zh-CN-XiaoxiaoNeural 等10个；moss_nano: Zhiming/Trump/Ava/Bella/Adam/Nathan）
   # 注：Junhao 已从音色列表移除，默认替换为 Zhiming（同为中文男声）
-  default_voice: Zhiming
+  default_voice: anchor_male
   # MOSS-TTS-Nano 配置（provider=moss_nano 时使用，本地 CPU 声音克隆）
   moss_nano:
     # MOSS-TTS-Nano 仓库根目录（含 onnx_tts_runtime.py）
@@ -126,7 +126,7 @@ tts:
     # 音色库目录（预置音色样本音频存放于此，每音色一个子目录含 sample.wav + ref_text.txt）
     voices_dir: ./config/voices
     # 默认音色（COSYVOICE_PRESET_VOICES 中的 key）
-    default_voice: anchor_female
+    default_voice: anchor_male
 
 # 语音播客配置
 podcast:
@@ -381,7 +381,7 @@ audio:
   pitch: 0
   # 默认音色（向后兼容字段；TTS 引擎实际读取 tts.default_voice）
   # 注：Junhao 已移除，默认替换为 Zhiming
-  default_voice: Zhiming
+  default_voice: anchor_male
   # 情感：neutral / calm / excited / gentle / serious / cheerful
   emotion: neutral
   # 句间停顿（秒）

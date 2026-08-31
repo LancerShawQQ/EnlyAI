@@ -3170,6 +3170,11 @@
         </div>
       </div>
       <div id="progress-hint" style="margin-top:8px;padding:8px 12px;background:var(--bg-elevated);border-radius:8px;font-size:13px;color:var(--text-secondary);line-height:1.5;display:none"></div>
+      <button class="btn btn-secondary btn-sm" id="progress-cancel-btn" type="button"
+        style="display:none;margin-top:12px;width:100%"
+        onclick="cancelCurrentVideoJob()">
+        <i data-lucide="x-circle" style="width:14px;height:14px"></i> 取消生成
+      </button>
       <div class="progress-modal-result" id="progress-modal-result" style="display:none"></div>
     </div>
   </div>
@@ -3177,7 +3182,7 @@
   <!-- Toast 容器 -->
   <div class="toast-container" id="toast-container"></div>
 
-  <script src="/static/js/app.js?v=20260831lg10"></script>
+  <script src="/static/js/app.js?v=20260831lg11"></script>
   <script src="/static/js/settings.js?v=20260819lg7"></script>
 
   <!-- ========== Liquid Glass SVG 滤镜定义（边缘折射变形效果） ========== -->
