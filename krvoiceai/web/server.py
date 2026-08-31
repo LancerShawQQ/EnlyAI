@@ -472,6 +472,17 @@ def create_app() -> FastAPI:
         ok = _get_app().delete_job(job_id)
         return {"deleted": ok}
 
+    @app.post("/api/jobs/{job_id}/cancel")
+    async def cancel_job(job_id: str):
+        """取消正在运行的生成任务（LatentSync 30 分钟长任务必须有取消能力）"""
+        job = _get_app().get_job(job_id)
+        if not job:
+            raise HTTPException(404, "任务不存在")
+        if job.get("status") not in ("running", "pending"):
+            return {"success": False, "message": f"任务已结束（{job.get('status')}）"}
+        ok = _get_app().orchestrator.request_cancel(job_id)
+        return {"success": ok, "message": "取消请求已发送，任务将在当前步骤完成后停止"}
+
     @app.post("/api/jobs/{job_id}/rerun")
     async def rerun_job(job_id: str):
         loop = asyncio.get_event_loop()

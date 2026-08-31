@@ -248,21 +248,19 @@ def parse_script(script_text: str) -> tuple[list[dict], dict[str, str]]:
 
 
 def _extract_gender_from_comment(comment: str, role_genders: dict[str, str]) -> None:
-    """从注释行提取角色性别"""
-    # 匹配 "角色名（男）" / "角色名: 男" / "角色名（女）"
-    patterns = [
-        (r"([^\s（()【\[\:：]+)\s*[（(【\[]\s*(男|male)", "male"),
-        (r"([^\s（()【\[\:：]+)\s*[：:]\s*(男|male)", "male"),
-        (r"([^\s（()【\[\:：]+)\s*[（(【\[]\s*(女|female)", "female"),
-        (r"([^\s（()【\[\:：]+)\s*[：:]\s*(女|female)", "female"),
-    ]
-    for pattern, gender in patterns:
-        m = re.search(pattern, comment)
-        if m:
-            role_name = m.group(1).strip()
-            if role_name and role_name not in role_genders:
-                role_genders[role_name] = gender
-            return
+    """从注释行提取角色性别（支持一行多角色如 "# 阿杰（男）、小雅（女）"）"""
+    # 全局匹配所有 "角色名（男/女）" 模式（findall 而非 search，覆盖一行多角色）
+    for m in re.finditer(r"([^\s（()【\[\:：、，,]+)\s*[（(【\[]\s*(男|male|女|female)", comment):
+        role_name = m.group(1).strip()
+        gender = "male" if m.group(2) in ("男", "male") else "female"
+        if role_name and role_name not in role_genders:
+            role_genders[role_name] = gender
+    # 兼容 "角色名: 男" 格式
+    for m in re.finditer(r"([^\s（()【\[\:：、，,]+)\s*[：:]\s*(男|male|女|female)", comment):
+        role_name = m.group(1).strip()
+        gender = "male" if m.group(2) in ("男", "male") else "female"
+        if role_name and role_name not in role_genders:
+            role_genders[role_name] = gender
 
 
 def auto_match_voices(

@@ -425,6 +425,7 @@ class VideoComposer(BaseModule):
             "-pix_fmt", "yuv420p",
             "-r", str(self.output_fps),
             "-c:a", "aac",
+            "-ar", "48000",  # 统一 48kHz（此前 24k→16k→96k 链路混乱）
             "-b:a", self.audio_bitrate,
             "-movflags", "+faststart",
             "-shortest",
@@ -433,6 +434,15 @@ class VideoComposer(BaseModule):
 
         self.ffmpeg.run(args)
         self.logger.info(f"视频合成完成: {output}")
+
+        # 清理中间产物（_tmp_* 文件对用户无价值，占磁盘且暴露内部实现）
+        for tmp in output.parent.glob("_tmp_*"):
+            try:
+                tmp.unlink()
+                self.logger.debug(f"已清理中间文件: {tmp.name}")
+            except OSError:
+                pass
+
         return output
 
     def _build_video_filters(

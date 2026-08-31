@@ -3438,9 +3438,11 @@ async function usePresetVoice(voiceId) {
 const STEP_INFO = {
   script_extract: { name: '文案提取', icon: '<i data-lucide="pen-line"></i>' },
   script_write: { name: '文案仿写', icon: '<i data-lucide="pen-line"></i>' },
+  originality_check: { name: '原创检测', icon: '<i data-lucide="shield-check"></i>' },
   tts: { name: '语音合成', icon: '<i data-lucide="mic"></i>' },
   avatar: { name: '数字人生成', icon: '<i data-lucide="user-round"></i>' },
   subtitle: { name: '字幕生成', icon: '<i data-lucide="message-square"></i>' },
+  broll: { name: '画中画插入', icon: '<i data-lucide="layers"></i>' },
   compose: { name: '视频合成', icon: '<i data-lucide="film"></i>' },
   title: { name: '标题生成', icon: '<i data-lucide="pin"></i>' },
   cover: { name: '封面生成', icon: '<i data-lucide="image"></i>' },
@@ -3738,6 +3740,8 @@ async function showJobDetail(jobId) {
       ${job.error ? `<div style="margin-top:12px;color:var(--color-error)">错误: ${job.error}</div>` : ''}
     `;
     if (window.lucide) lucide.createIcons();
+    // 详情容器在任务列表下方（视口外），必须滚动到可见
+    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (e) {
     toast(`加载详情失败: ${e.message}`, 'error');
   }
@@ -4411,10 +4415,12 @@ function bindPodcastEvents() {
       document.querySelectorAll('[id^="pod-source-"]').forEach(p => {
         if (p.id === 'pod-source-manual') return; // 无独立输入区
         p.style.display = 'none';
+        p.classList.remove('active'); // 同步移除 .active，防 CSS 类覆盖
       });
       const target = document.getElementById(`pod-source-${tab.dataset.podSource}`);
       if (target && tab.dataset.podSource !== 'manual') {
-        target.style.display = '';
+        // .sub-page CSS 类强制 display:none，清空内联样式不够——须加 .active
+        target.classList.add('active');
       }
     });
   });
@@ -4802,6 +4808,11 @@ function updatePodcastScriptStats() {
   // 同步 header hint 字数
   const hint = document.getElementById('pod-script-count-hint');
   if (hint) hint.textContent = `${script.length} 字`;
+  // 剧本变更时清理已不存在的角色（防止旧角色残留传给后端）
+  const validRoles = new Set(roles);
+  Object.keys(podcastState.voiceMap).forEach(role => {
+    if (!validRoles.has(role)) delete podcastState.voiceMap[role];
+  });
 }
 
 // 解析剧本中的角色列表（按首次出现顺序）

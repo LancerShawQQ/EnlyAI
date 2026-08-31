@@ -145,11 +145,27 @@ class PipelineOrchestrator:
             self.logger.info(f"共清理 {cleaned} 个卡住的任务")
         return cleaned
 
+    _cancel_flags: dict[str, bool] = {}  # class-level，跨实例共享
+
+    def request_cancel(self, job_id: str) -> bool:
+        """请求取消正在运行的任务（步骤间检查点退出）"""
+        if self.store.get_job(job_id) is None:
+            return False
+        PipelineOrchestrator._cancel_flags[job_id] = True
+        self.logger.info(f"收到取消请求 job={job_id}")
+        return True
+
+    def _is_cancelled(self, job_id: str) -> bool:
+        return PipelineOrchestrator._cancel_flags.get(job_id, False)
+
+    def _clear_cancel(self, job_id: str) -> None:
+        PipelineOrchestrator._cancel_flags.pop(job_id, None)
+
     def run_job(
         self, job_id: str,
         progress_callback: Optional[Callable[[str, str, dict], None]] = None,
     ) -> bool:
-        """运行任务（支持断点续跑）
+        """运行任务（支持断点续跑 + 取消检查点）
 
         Args:
             job_id: 任务 ID
@@ -162,6 +178,7 @@ class PipelineOrchestrator:
         if not job:
             self.logger.error(f"任务不存在: {job_id}")
             return False
+        self._clear_cancel(job_id)
 
         self.store.update_job_status(job_id, JobStatus.RUNNING)
         ctx = self._build_context(job_id, job["input"])
@@ -185,6 +202,15 @@ class PipelineOrchestrator:
             # 跳过已通过并行方式执行的步骤
             if step_name in executed_steps:
                 continue
+
+            # 取消检查点：用户请求取消时标记失败并退出
+            if self._is_cancelled(job_id):
+                self.logger.info(f"任务被用户取消 job={job_id} 于步骤 {step_name}")
+                self.store.update_job_status(
+                    job_id, JobStatus.FAILED, error="用户取消"
+                )
+                self._clear_cancel(job_id)
+                return False
 
             step_def = self._steps.get(step_name)
             if step_def is None:
