@@ -13,6 +13,8 @@ from typing import Optional
 from .config import get_config
 from .logger import get_logger
 
+import numpy as np
+
 
 @dataclass
 class VideoInfo:
@@ -534,7 +536,47 @@ class FFmpegRunner:
         ]
         self.logger.info(f"画中画叠加: {len(broll_clips)} 个片段 -> {output.name}")
         self.run(args)
+
+        # 输出校验：PIP 叠加帧与主视频同帧必须有像素差异，否则合成无效
+        # （曾发生：后端报成功但 6 个叠加时点抽帧均无 PIP 视觉效果）
+        self._verify_pip_output(main_video, output, broll_clips)
         return output
+
+    def _verify_pip_output(
+        self, main_video: Path, output: Path, broll_clips: list[dict]
+    ) -> None:
+        """校验 PIP 输出确实包含叠加内容（像素差异检测）"""
+        import subprocess as _sp
+
+        try:
+            # 在第一个 PIP 片段的中点时刻抽帧对比
+            clip = broll_clips[0]
+            mid_t = (clip.get("start", 0) + clip.get("end", 3)) / 2
+            frames = []
+            for video_path in [main_video, output]:
+                r = _sp.run(
+                    [self.ffmpeg, "-y", "-loglevel", "error",
+                     "-ss", str(mid_t), "-i", str(video_path),
+                     "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                    capture_output=True, timeout=15,
+                )
+                if r.stdout and len(r.stdout) > 1000:
+                    frames.append(
+                        np.frombuffer(r.stdout[:640 * 360], dtype=np.uint8)
+                        .reshape(360, 640)
+                        .astype(np.float32)
+                    )
+            if len(frames) == 2:
+                diff = float(np.abs(frames[0] - frames[1]).mean())
+                if diff < 0.5:
+                    self.logger.warning(
+                        f"PIP 输出校验失败：叠加帧像素差异仅 {diff:.2f}（阈值 0.5），"
+                        f"可能叠加未生效 t={mid_t:.1f}s clip={clip.get('path','')}"
+                    )
+                else:
+                    self.logger.info(f"PIP 输出校验通过：像素差异 {diff:.2f}")
+        except Exception as e:
+            self.logger.debug(f"PIP 校验跳过: {e}")
 
     def _calc_pip_position(
         self, pos: str, clip_w: int, clip_h: int, w: int, h: int, margin: int = 20

@@ -348,13 +348,16 @@ class VideoComposer(BaseModule):
                     fade_out_st = bgm_dur - self.bgm_fade_out
                     bgm_chain += f",afade=t=out:st={fade_out_st:.2f}:d={self.bgm_fade_out}"
             bgm_chain += "[bgm]"
-            # 人声(TTS,含封面延迟) + BGM 混音
-            # amix 后加 loudnorm 做最终响度归一化（全链路唯一一次 loudnorm）
+            # 人声(TTS,含封面延迟) + BGM 混音（sidechain ducking：人声说话时自动压低 BGM）
+            # amix 后加 loudnorm 做最终响度归一化 -16 LUFS（社媒标准 -14~-16）
             # dropout_transition=0 避免某一路静音时另一路音量突增
             audio_filter = (
                 _voice_chain("voice") + ";"
                 + bgm_chain + ";"
-                f"[voice][bgm]amix=inputs=2:duration=first:dropout_transition=0,"
+                # sidechaincompress：人声为主输入，BGM 为侧链 → 人声出现时 BGM 被压低
+                f"[bgm][voice]sidechaincompress=threshold=0.03:ratio=8:"
+                f"attack=200:release=1000[bgm_ducked];"
+                f"[voice][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0,"
                 f"loudnorm=I=-16:TP=-1.5:LRA=11[aout]"
             )
         elif have_voice:
@@ -424,6 +427,12 @@ class VideoComposer(BaseModule):
             "-bufsize", self.video_bitrate,
             "-pix_fmt", "yuv420p",
             "-r", str(self.output_fps),
+            # 色彩空间标准化：源素材可能带 yuvj420p/bt470bg 全范围标记
+            # （JPEG 遗留），部分平台转码异常；统一为 bt709 limited range
+            "-colorspace", "bt709",
+            "-color_primaries", "bt709",
+            "-color_trc", "bt709",
+            "-color_range", "tv",
             "-c:a", "aac",
             "-ar", "48000",  # 统一 48kHz（此前 24k→16k→96k 链路混乱）
             "-b:a", self.audio_bitrate,

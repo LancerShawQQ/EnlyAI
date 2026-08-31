@@ -371,7 +371,67 @@ class AvatarEngine(BaseModule):
                 },
             )
         except Exception as e:
-            return ModuleResult(success=False, error=str(e))
+            # 降级策略：主引擎失败时生成"静态形象+音频"版本（商用必须有兜底，
+            # 报告实测历史 12 次 avatar 失败全部导致任务报废）
+            self.logger.warning(
+                f"数字人主引擎({self.provider})失败: {e}，尝试降级为静态形象+音频"
+            )
+            try:
+                fallback_path = self._generate_static_fallback(ctx, avatar_id, output_path)
+                ctx.raw_video_path = fallback_path
+                ctx.metadata["avatar_provider"] = f"{self.provider}→static_fallback"
+                self.logger.info(f"降级成功: 静态形象+音频 → {fallback_path.name}")
+                return ModuleResult(
+                    success=True,
+                    data={
+                        "video_path": str(fallback_path),
+                        "duration": ctx.audio_duration or 0,
+                        "avatar_id": avatar_id,
+                        "provider": "static_fallback",
+                        "degraded": True,
+                        "original_error": str(e)[:200],
+                    },
+                )
+            except Exception as fe:
+                return ModuleResult(
+                    success=False,
+                    error=f"{e}（降级也失败: {fe}）",
+                )
+
+    def _generate_static_fallback(
+        self, ctx: JobContext, avatar_id: str, output_path: Path
+    ) -> Path:
+        """降级方案：参考形象首帧 + 音轨合成视频（人物不动但音频完整）"""
+        import subprocess
+
+        face_path = self._get_avatar_reference(avatar_id)
+        if not face_path:
+            raise RuntimeError(f"无参考形象可用于降级: {avatar_id}")
+
+        duration = ctx.audio_duration or 10
+        # 从参考视频抽首帧（或直接用图片）
+        if face_path.suffix.lower() in (".mp4", ".mov", ".avi", ".webm"):
+            frame_path = output_path.parent / "avatar_fallback_frame.jpg"
+            subprocess.run(
+                [self.ffmpeg.ffmpeg, "-y", "-loglevel", "error",
+                 "-i", str(face_path), "-frames:v", "1", "-q:v", "2", str(frame_path)],
+                capture_output=True, timeout=30, check=True,
+            )
+        else:
+            frame_path = face_path
+
+        subprocess.run(
+            [self.ffmpeg.ffmpeg, "-y", "-loglevel", "error",
+             "-loop", "1", "-i", str(frame_path),
+             "-i", str(ctx.audio_path),
+             "-c:v", "libx264", "-t", str(duration + 1),
+             "-pix_fmt", "yuv420p", "-r", str(self.output_fps),
+             "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+             "-c:a", "aac", "-b:a", "192k",
+             "-shortest", str(output_path)],
+            capture_output=True, timeout=300, check=True,
+        )
+        return output_path
 
     def _generate_wav2lip(
         self, ctx: JobContext, avatar_id: str, output_path: Path

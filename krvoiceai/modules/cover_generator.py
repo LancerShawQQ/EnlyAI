@@ -397,8 +397,13 @@ class CoverGenerator(BaseModule):
             font_size = 110
         font = self._load_font(font_size)
 
-        # 标题过长则换行
-        title = title[:self.title_max_chars]
+        # 标题过长：先尝试缩字号适配，仍超长才截断加省略号（不直接丢字）
+        if len(title) > self.title_max_chars:
+            # 缩字号 20% 重试一次（140→112 / 110→88）
+            font_size = int(font_size * 0.8)
+            font = self._load_font(font_size)
+        if len(title) > self.title_max_chars + 4:
+            title = title[:self.title_max_chars] + "…"
         lines = self._wrap_text(title, font, w - 100)
 
         # 计算文字总高度
@@ -511,20 +516,37 @@ class CoverGenerator(BaseModule):
                 cx += len(part) * (font.size // 2)
 
     def _wrap_text(self, text: str, font, max_width: int) -> list[str]:
-        """文字换行"""
+        """文字换行（智能断词：英文单词不跨行拆断）"""
         draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
         lines = []
         current = ""
-        for ch in text:
-            test = current + ch
+
+        def _width(s: str) -> float:
             try:
-                bbox = draw.textbbox((0, 0), test, font=font)
-                tw = bbox[2] - bbox[0]
+                bbox = draw.textbbox((0, 0), s, font=font)
+                return bbox[2] - bbox[0]
             except Exception:
-                tw = len(test) * 50
-            if tw > max_width and current:
+                return len(s) * 50
+
+        # 先按英文单词/中文逐字混合切分为 token（英文词不拆，中文单字独立）
+        tokens: list[str] = []
+        buf = ""
+        for ch in text:
+            if ch.isascii() and (ch.isalnum() or ch in "'-"):
+                buf += ch  # 英文/数字连续段积累
+            else:
+                if buf:
+                    tokens.append(buf)
+                    buf = ""
+                tokens.append(ch)
+        if buf:
+            tokens.append(buf)
+
+        for token in tokens:
+            test = current + token
+            if _width(test) > max_width and current:
                 lines.append(current)
-                current = ch
+                current = token
             else:
                 current = test
         if current:

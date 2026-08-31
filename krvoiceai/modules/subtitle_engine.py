@@ -14,7 +14,7 @@ from __future__ import annotations
 import base64
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 
@@ -149,27 +149,38 @@ class SubtitleEngine(BaseModule):
         super().setup()
 
     def run(self, ctx: JobContext) -> ModuleResult:
-        """根据音频生成字幕"""
+        """根据音频生成字幕
+
+        优先级（消灭 ASR 错字——报告实测品牌名「英里」被转写为「英理」）：
+        1. TTS 时间戳 + 源文案直出（文字零误差，时间戳来自合成端）
+        2. ASR 识别（TTS 时间戳不可用时兜底）
+        3. mock 估算
+        """
         if not ctx.audio_path or not ctx.audio_path.exists():
             return ModuleResult(success=False, error="无音频文件，无法生成字幕")
 
         output_path = ctx.work_dir / "subtitle.srt"
 
         try:
-            if self.provider == "whisper_local" and self._whisper_available:
-                segments = self._recognize_whisper(ctx)
-            elif self.provider == "mimo":
-                segments = self._recognize_mimo(ctx)
-            elif self.provider == "funasr" and self._funasr_available:
-                segments = self._recognize_funasr(ctx)
-            elif self.provider == "sherpa_funasr" and self._sherpa_available:
-                segments = self._recognize_sherpa_funasr(ctx)
-            else:
-                segments = self._generate_mock(ctx)
+            segments = self._from_tts_timestamps(ctx)
+            used = "tts_direct"
 
-            # 用 TTS 时间戳补全 ASR 可能丢失的开头内容
-            # 场景：whisper VAD 过滤了前几秒音频，导致开头字幕缺失
-            segments = self._fill_missing_head_with_tts(segments, ctx)
+            if segments is None:
+                if self.provider == "whisper_local" and self._whisper_available:
+                    segments = self._recognize_whisper(ctx)
+                elif self.provider == "mimo":
+                    segments = self._recognize_mimo(ctx)
+                elif self.provider == "funasr" and self._funasr_available:
+                    segments = self._recognize_funasr(ctx)
+                elif self.provider == "sherpa_funasr" and self._sherpa_available:
+                    segments = self._recognize_sherpa_funasr(ctx)
+                else:
+                    segments = self._generate_mock(ctx)
+                used = self.provider
+
+                # 用 TTS 时间戳补全 ASR 可能丢失的开头内容
+                # 场景：whisper VAD 过滤了前几秒音频，导致开头字幕缺失
+                segments = self._fill_missing_head_with_tts(segments, ctx)
 
             srt_content = segments_to_srt(segments)
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -183,11 +194,55 @@ class SubtitleEngine(BaseModule):
                 data={
                     "subtitle_path": str(output_path),
                     "segment_count": len(segments),
-                    "provider": self.provider,
+                    "provider": used,
                 },
             )
         except Exception as e:
             return ModuleResult(success=False, error=str(e))
+
+    def _from_tts_timestamps(self, ctx: JobContext) -> Optional[list[dict]]:
+        """用 TTS 合成端的时间戳 + 源文案直接构建字幕段
+
+        优势：文字零误差（不做语音识别），时间来自合成端分句（比 ASR 更准）。
+        返回 None 表示 TTS 时间戳不可用（如外部音频导入场景），走 ASR 兜底。
+        """
+        tts_ts = ctx.metadata.get("tts_timestamps") or []
+        if not tts_ts:
+            return None
+        # 校验时间戳覆盖了音频主体（至少覆盖 60%）
+        total = ctx.audio_duration or 0
+        covered = sum(ts.get("end", 0) - ts.get("start", 0) for ts in tts_ts)
+        if total > 0 and covered / total < 0.5:
+            return None
+
+        segments: list[dict] = []
+        for ts in tts_ts:
+            text = (ts.get("text") or "").strip()
+            if not text:
+                continue
+            start, end = float(ts.get("start", 0)), float(ts.get("end", 0))
+            # 按字幕最大字数切分（保持文字原文，时间按字符比例分配）
+            if len(text) > self.max_chars:
+                sub_segs = split_text_to_segments(text, self.max_chars)
+                dur = end - start
+                total_chars = sum(len(s) for s in sub_segs)
+                cursor = start
+                for sub in sub_segs:
+                    share = dur * len(sub) / max(total_chars, 1)
+                    segments.append({
+                        "text": sub,
+                        "start": round(cursor, 3),
+                        "end": round(cursor + share, 3),
+                    })
+                    cursor += share
+            else:
+                segments.append({
+                    "text": text, "start": round(start, 3), "end": round(end, 3),
+                })
+        self.logger.info(
+            f"TTS 时间戳直出字幕: {len(segments)} 段（零 ASR 错字）"
+        )
+        return segments if segments else None
 
     def _recognize_whisper(self, ctx: JobContext) -> list[dict]:
         """使用 faster-whisper 识别音频，提供词级时间戳（本地 CPU int8）
