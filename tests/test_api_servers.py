@@ -77,13 +77,14 @@ def _make_wav_bytes(duration: float = 1.0, sr: int = 22050) -> bytes:
 
 
 def _make_mp4_bytes() -> bytes:
-    """生成最小测试 mp4 字节（用 ffmpeg）"""
+    """生成最小测试 mp4 字节（用项目内置 ffmpeg，系统 PATH 可能没有）"""
     import subprocess
+    from krvoiceai.core.ffmpeg_utils import FFmpegRunner
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
         path = f.name
     subprocess.run(
         [
-            "ffmpeg", "-y", "-f", "lavfi",
+            FFmpegRunner().ffmpeg, "-y", "-f", "lavfi",
             "-i", "color=c=red:s=320x240:d=1",
             "-c:v", "libx264",
             path,

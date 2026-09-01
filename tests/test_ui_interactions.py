@@ -46,7 +46,7 @@ class TestProgressDisplay:
     def test_all_step_names_present(self):
         """所有 9 个步骤中文名都应展示"""
         result = _format_progress({})
-        expected_names = ["文案提取", "文案仿写", "语音合成", "数字人生成",
+        expected_names = ["文案提取", "文案优化", "语音合成", "数字人生成",
                           "字幕生成", "视频合成", "标题生成", "封面生成", "多平台发布"]
         for name in expected_names:
             assert name in result, f"缺少步骤名: {name}"
@@ -240,8 +240,8 @@ class TestJobManagement:
         assert detail is not None
         assert detail["job_id"] == job_id
         assert detail["status"] == "success"
-        # 应包含步骤详情
-        assert len(detail["steps"]) == 9
+        # 应包含步骤详情（v0.3 起含原创检测/画中画等 11 步，用下限断言防漂移）
+        assert len(detail["steps"]) >= 9
         # 每步应有 result 字段
         for step in detail["steps"]:
             assert "result" in step

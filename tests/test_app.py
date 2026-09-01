@@ -32,7 +32,7 @@ def test_app_init(app):
     assert "avatars_count" in health
 
 
-def test_full_pipeline_9_modules(app):
+def test_full_pipeline_9_modules(app, isolated_config):
     """全流程 9 模块端到端测试（核心验收用例）"""
     script = (
         "大家好，今天聊聊如何用AI提升工作效率。"
@@ -72,8 +72,12 @@ def test_full_pipeline_9_modules(app):
     info = ff.probe_video_info(Path(output["final_video"]))
     assert info is not None
     assert info.duration > 5
-    assert info.width == 1080
-    assert info.height == 1920
+    # 分辨率跟随 composer.output_resolution 配置（当前 720×1280，
+    # 匹配 standard 形象原始分辨率，避免无意义放大）
+    exp_w = isolated_config.get("composer.output_resolution", [1080, 1920])[0]
+    assert info.width == exp_w
+    exp_h = isolated_config.get("composer.output_resolution", [1080, 1920])[1]
+    assert info.height == exp_h
 
 
 def test_full_pipeline_with_reference_url(app):

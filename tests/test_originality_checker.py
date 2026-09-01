@@ -94,12 +94,28 @@ def test_hamming_distance():
 def test_banned_words_loaded(checker):
     """违禁词库正确加载"""
     assert len(checker._banned_words) > 0
-    assert "第一" in checker._banned_words
+    assert "全国第一" in checker._banned_words
     assert "国家级" in checker._banned_words
 
 
 def test_banned_words_scan_hit(checker, job_work_dir):
-    """命中违禁词 → 失败"""
+    """命中违禁词 → 自动修正（默认开启，避免流程卡死在人工重写）"""
+    ctx = JobContext(
+        work_dir=job_work_dir,
+        script_text="我们的产品是全国第一品牌，绝对包赚不赔！",
+    )
+    ctx.ensure_work_dir()
+    result = checker.execute(ctx)
+
+    assert result.success is True
+    fixed = result.data["banned_auto_fixed"]
+    assert "全国第一" in fixed
+    assert "包赚" in fixed
+
+
+def test_banned_words_scan_no_autofix(checker, job_work_dir):
+    """关闭自动修正时命中违禁词 → 失败"""
+    checker.auto_fix_banned = False
     ctx = JobContext(
         work_dir=job_work_dir,
         script_text="我们的产品是全国第一品牌，绝对包赚不赔！",
@@ -110,7 +126,7 @@ def test_banned_words_scan_hit(checker, job_work_dir):
     assert result.success is False
     assert "违禁词" in result.error
     hits = result.data["banned_words"]
-    assert "第一" in hits
+    assert "全国第一" in hits
     assert "包赚" in hits
 
 

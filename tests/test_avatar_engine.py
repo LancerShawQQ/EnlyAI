@@ -79,18 +79,32 @@ def test_mock_no_audio(avatar_mock, job_work_dir):
     assert "无音频" in result.error
 
 
-def test_musetalk_unavailable_falls_back(isolated_config, mock_gpu):
-    """MuseTalk 不可用时降级"""
+def test_musetalk_unconfigured_no_silent_fallback(
+    isolated_config, mock_gpu, job_work_dir, audio_file
+):
+    """MuseTalk 未配置 server_url：不再静默降级 mock，明确报错"""
     isolated_config.set("avatar.provider", "musetalk")
     mock_gpu.health_check_avatar.return_value = False
     av = AvatarEngine(gpu_runner=mock_gpu)
     av.setup()
-    assert av.provider == "mock"
+    assert av.provider == "musetalk"  # 保持原值，不静默降级为 mock
+
+    ctx = JobContext(
+        work_dir=job_work_dir,
+        audio_path=audio_file,
+        audio_duration=2.0,
+        avatar_id="alice",
+    )
+    ctx.ensure_work_dir()
+    result = av.execute(ctx)
+    # 主引擎报 server_url 未配置；隔离目录无参考形象 → 静态降级也失败 → 明确报错
+    assert result.success is False
+    assert "server_url" in result.error or "降级" in result.error
 
 
 def test_cloud_generate_success(isolated_config, job_work_dir, audio_file):
-    """云端生成成功（mock GPU 响应）"""
-    isolated_config.set("avatar.provider", "musetalk")
+    """云端生成成功（echomimic 云端引擎，mock GPU 响应）"""
+    isolated_config.set("avatar.provider", "echomimic")
 
     # 生成一段假视频数据（用 ffmpeg 生成 1 秒视频）
     ff = FFmpegRunner()
@@ -107,7 +121,7 @@ def test_cloud_generate_success(isolated_config, job_work_dir, audio_file):
 
     av = AvatarEngine(gpu_runner=gpu)
     av.setup()
-    assert av.provider == "musetalk"
+    assert av.provider == "echomimic"
 
     ctx = JobContext(
         work_dir=job_work_dir,
@@ -124,7 +138,7 @@ def test_cloud_generate_success(isolated_config, job_work_dir, audio_file):
 
 def test_cloud_no_video_data(isolated_config, job_work_dir, audio_file):
     """云端返回无视频数据"""
-    isolated_config.set("avatar.provider", "musetalk")
+    isolated_config.set("avatar.provider", "echomimic")
     gpu = MagicMock(spec=GPURunner)
     gpu.health_check_avatar.return_value = True
     gpu.call_avatar.return_value = {"error": "avatar not found"}

@@ -14,10 +14,10 @@ def test_config_load_default():
     """配置可加载默认文件"""
     cfg = Config.load()
     assert cfg.get("project.name") == "EnlyAI"
-    assert cfg.get("llm.provider") == "deepseek"
-    # 默认 avatar provider 为 wav2lip（本地 CPU 友好），
-    # 切云端高质量模式时改为 latentsync/musetalk
-    assert cfg.get("avatar.provider") == "wav2lip"
+    # 全本地链路：LLM 默认走本地 Ollama（Qwen3-8B Q4）
+    assert cfg.get("llm.provider") == "ollama"
+    # 默认 avatar provider 为 latentsync（本地 GPU 高精度唇形同步）
+    assert cfg.get("avatar.provider") == "latentsync"
 
 
 def test_config_env_override(monkeypatch):

@@ -35,6 +35,12 @@ def isolated_config(test_root: Path, monkeypatch) -> Config:
     cfg.set("publisher.cookies_dir", str(work_root / "cookies"))
     cfg.set("pipeline.db_path", str(work_root / "jobs.db"))
     cfg.set("pipeline.gpu_enabled", False)
+    # 单测必须走 mock 链路：否则 e2e 用例会按真实 provider 拉起
+    # Ollama/CosyVoice/LatentSync（services.auto_start），测试挂死数分钟
+    cfg.set("services.auto_start", False)
+    cfg.set("llm.provider", "mock")
+    cfg.set("tts.provider", "mock")
+    cfg.set("avatar.provider", "mock")
     cfg.ensure_dirs()
 
     # 替换全局单例

@@ -278,12 +278,26 @@ def generate(req: GenerateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _ffmpeg_bin() -> str:
+    """解析 ffmpeg 可执行文件
+
+    优先 imageio_ffmpeg 内置二进制（venv/独立环境 PATH 常无 ffmpeg，
+    且内置二进制文件名带版本号，无法通过 PATH 解析）；
+    imageio_ffmpeg 不可用时（LatentSync conda 环境未装）退回 PATH 上的 ffmpeg。
+    """
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
+
 def _placeholder_generate(ref_video: Path, audio_path: str, output_path: str):
     """占位实现：用 ffmpeg 把参考视频 + 音频合成视频（无唇同步，仅供流程跑通）"""
     import subprocess
     subprocess.run(
         [
-            "ffmpeg", "-y",
+            _ffmpeg_bin(), "-y",
             "-i", str(ref_video),
             "-i", audio_path,
             "-c:v", "libx264",
@@ -314,7 +328,7 @@ def register(req: RegisterRequest):
             preview = avatar_dir / "reference.jpg"
             subprocess.run(
                 [
-                    "ffmpeg", "-y",
+                    _ffmpeg_bin(), "-y",
                     "-i", str(ref_path),
                     "-frames:v", "1",
                     "-q:v", "2",

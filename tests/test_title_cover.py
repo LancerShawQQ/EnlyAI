@@ -171,10 +171,12 @@ def test_cover_is_valid_jpeg(cover_gen, job_work_dir):
     assert img.size[0] > 0 and img.size[1] > 0
 
 
-def test_cover_resolution_matches(cover_gen, job_work_dir):
+def test_cover_resolution_matches(cover_gen, job_work_dir, isolated_config):
     """分辨率符合配置"""
     ctx = JobContext(work_dir=job_work_dir, title="测试分辨率")
     ctx.ensure_work_dir()
     cover_gen.execute(ctx)
     img = Image.open(str(ctx.cover_path))
-    assert img.size == (1080, 1920)
+    # 封面分辨率跟随 composer.output_resolution（当前 720×1280）
+    exp = tuple(isolated_config.get("composer.output_resolution", [1080, 1920]))
+    assert img.size == exp

@@ -137,8 +137,24 @@ class TestFullPipelineAcceptance:
         # 提取的文案应非空
         assert result["output"]["script_text"]
 
-    def test_pipeline_auto_publish(self, isolated_config):
-        """验收测试：自动发布（manifest 模式）"""
+    def test_pipeline_auto_publish(self, isolated_config, monkeypatch):
+        """验收测试：自动发布（auto 模式实际发布，mock 平台调用）
+
+        v0.3 起 auto_publish=True 强制 auto 模式真实发布（不再仅生成清单），
+        单测无平台 Cookie/浏览器，mock 掉平台调用只验证管线接线。
+        """
+        from krvoiceai.modules.publisher import Publisher as _Publisher
+
+        def fake_publish_all(targets):
+            for t in targets:
+                t.status = "success"
+                t.url = f"https://mock.example/{t.platform}/v1"
+            return targets
+
+        monkeypatch.setattr(
+            _Publisher, "_publish_all",
+            lambda self, targets: fake_publish_all(targets),
+        )
         app = EnlyAI()
 
         result = app.submit_and_run(

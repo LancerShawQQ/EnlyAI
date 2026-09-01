@@ -86,22 +86,29 @@ class FFmpegRunner:
         return result
 
     def probe_duration(self, path: Path) -> float:
-        """获取媒体时长（秒）"""
-        if not shutil.which(self.ffprobe):
-            return 0.0
-        try:
-            r = subprocess.run(
-                [
-                    self.ffprobe, "-v", "error",
-                    "-show_entries", "format=duration",
-                    "-of", "default=noprint_wrappers=1:nokey=1",
-                    str(path),
-                ],
-                capture_output=True, text=True,
-            )
-            return float(r.stdout.strip()) if r.stdout.strip() else 0.0
-        except Exception:
-            return 0.0
+        """获取媒体时长（秒）
+
+        ffprobe 缺失时（imageio-ffmpeg 只带 ffmpeg 不带 ffprobe）回退
+        probe_video_info 解析 `ffmpeg -i` 的 stderr。此前无回退时 B-roll 切片、
+        片尾淡出等调用方在本机拿到 0，只能走 9999 兜底，行为退化。
+        """
+        if shutil.which(self.ffprobe):
+            try:
+                r = subprocess.run(
+                    [
+                        self.ffprobe, "-v", "error",
+                        "-show_entries", "format=duration",
+                        "-of", "default=noprint_wrappers=1:nokey=1",
+                        str(path),
+                    ],
+                    capture_output=True, text=True,
+                )
+                if r.stdout.strip():
+                    return float(r.stdout.strip())
+            except Exception:
+                pass
+        info = self.probe_video_info(path)
+        return info.duration if info else 0.0
 
     def probe_video_info(self, path: Path) -> Optional[VideoInfo]:
         """获取视频信息（时长/分辨率/帧率）。

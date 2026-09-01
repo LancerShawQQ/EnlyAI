@@ -50,7 +50,7 @@ def orchestrator(isolated_config, job_work_dir):
     return orch
 
 
-def test_end_to_end_basic(orchestrator):
+def test_end_to_end_basic(orchestrator, isolated_config):
     """端到端基础流程：文案 → 最终视频"""
     script = (
         "大家好，今天聊聊AI数字人技术。"
@@ -85,8 +85,10 @@ def test_end_to_end_basic(orchestrator):
     info = ff.probe_video_info(final_video)
     assert info is not None
     assert info.duration > 5  # 至少几秒
-    assert info.width == 1080
-    assert info.height == 1920
+    # 分辨率跟随 composer.output_resolution 配置（当前 720×1280）
+    exp_w, exp_h = isolated_config.get("composer.output_resolution", [1080, 1920])
+    assert info.width == exp_w
+    assert info.height == exp_h
 
     # 验证中间产物
     assert output["script_text"]  # 文案已生成
@@ -132,20 +134,14 @@ def test_end_to_end_video_has_audio(orchestrator):
     job = orchestrator.get_status(job_id)
     final_video = Path(job["output"]["final_video"])
 
-    # 用 ffprobe 检查音频流
-    import subprocess, json
+    # 用项目内置 ffmpeg 探测音频流（系统 PATH 无 ffprobe，直接解析 -i 的 stderr）
+    from krvoiceai.core.ffmpeg_utils import FFmpegRunner
+    import subprocess
     r = subprocess.run(
-        [
-            "ffprobe", "-v", "error",
-            "-select_streams", "a",
-            "-show_entries", "stream=codec_type",
-            "-of", "json",
-            str(final_video),
-        ],
+        [FFmpegRunner().ffmpeg, "-i", str(final_video)],
         capture_output=True, text=True,
     )
-    data = json.loads(r.stdout)
-    assert len(data.get("streams", [])) > 0, "最终视频无音频流"
+    assert "Audio:" in r.stderr, "最终视频无音频流"
 
 
 def test_resume_from_failure(orchestrator, monkeypatch):
