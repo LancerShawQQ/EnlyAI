@@ -1007,7 +1007,8 @@ class PodcastEngine(BaseModule):
                             raise RuntimeError(
                                 f"播客合成连续 {self._consecutive_failures} 句失败"
                                 f"（第 {i} 句，已重试 2 次）。"
-                                f"CosyVoice 服务可能不可用，"
+                                f"TTS 服务连续失败（可能是 Qwen3-TTS huggingface.co 不可达"
+                                f"或 CosyVoice OOM），"
                                 f"请检查 workspace_data/logs/cosyvoice_service.log"
                             )
                         duration = max(1.0, len(text) * 0.15)

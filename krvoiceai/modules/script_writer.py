@@ -111,8 +111,27 @@ class ScriptWriter(BaseModule):
                 error="输入文案为空，无法处理",
             )
 
+        # 占位符校验：模板 {xxx} 未替换时阻断（TTS 会将占位符当文本朗读出乱码）
+        import re as _re
+        placeholders = _re.findall(r"\{[a-zA-Z_][a-zA-Z0-9_]*\}", raw)
+        if placeholders:
+            return ModuleResult(
+                success=False,
+                error=(
+                    f"文案包含 {len(placeholders)} 个未替换的模板占位符"
+                    f"（如 {placeholders[0]}），请先点击「AI 生成」或手动填写后再提交"
+                ),
+            )
+
         try:
             result_text = self.write(raw, mode=mode)
+            # 改写后仍含占位符则也阻断（LLM 可能未正确替换）
+            remaining = _re.findall(r"\{[a-zA-Z_][a-zA-Z0-9_]*\}", result_text)
+            if remaining:
+                return ModuleResult(
+                    success=False,
+                    error=f"AI 改写后仍含 {len(remaining)} 个占位符（如 {remaining[0]}），请手动修改后重试",
+                )
             ctx.script_text = result_text
             return ModuleResult(
                 success=True,

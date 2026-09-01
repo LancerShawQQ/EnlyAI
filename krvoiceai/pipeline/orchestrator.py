@@ -203,11 +203,11 @@ class PipelineOrchestrator:
             if step_name in executed_steps:
                 continue
 
-            # 取消检查点：用户请求取消时标记失败并退出
+            # 取消检查点：用户请求取消时标记已取消并退出（非失败）
             if self._is_cancelled(job_id):
                 self.logger.info(f"任务被用户取消 job={job_id} 于步骤 {step_name}")
                 self.store.update_job_status(
-                    job_id, JobStatus.FAILED, error="用户取消"
+                    job_id, JobStatus.CANCELLED, error="用户取消"
                 )
                 self._clear_cancel(job_id)
                 return False

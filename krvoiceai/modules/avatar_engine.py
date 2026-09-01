@@ -1156,9 +1156,18 @@ class AvatarEngine(BaseModule):
 
                     chunks = []
                     total = 0
+                    _cancel_check = 0
                     for chunk in resp.iter_bytes(chunk_size=65536):
                         chunks.append(chunk)
                         total += len(chunk)
+                        # 每 16 chunks（约 1MB）检查一次取消标志（LatentSync 推理
+                        # 13-40 分钟，必须在流式读取中响应取消）
+                        _cancel_check += 1
+                        if _cancel_check % 16 == 0:
+                            from ..pipeline.orchestrator import PipelineOrchestrator
+                            _jid = getattr(ctx, "job_id", "") or ""
+                            if _jid and PipelineOrchestrator._cancel_flags.get(_jid, False):
+                                raise RuntimeError("用户取消")
 
                     video_bytes = b"".join(chunks)
 

@@ -460,6 +460,11 @@ class TTSEngine(BaseModule):
         # CPU 用 float32，GPU 用 bfloat16
         dtype = torch.float32 if device == "cpu" else torch.bfloat16
 
+        # huggingface.co 离线模式：模型已缓存时跳过远程检查（否则网络不通时
+        # from_pretrained 挂 9 分钟才超时，导致播客任务卡死 30 分钟）
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
         self._qwen3_tts_model = Qwen3TTSModel.from_pretrained(
             model_id,
             device_map=device,

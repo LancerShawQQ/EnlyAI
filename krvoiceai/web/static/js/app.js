@@ -2806,6 +2806,13 @@ async function wizardGenerate() {
     wizardGoToStep(3);
     return;
   }
+  // 占位符校验：模板 {xxx} 未替换时阻断（TTS 会朗读乱码）
+  const placeholders = script.match(/\{[a-zA-Z_][a-zA-Z0-9_]*\}/g);
+  if (placeholders && placeholders.length > 0) {
+    toast(`文案包含 ${placeholders.length} 个未替换的模板占位符（如 ${placeholders[0]}），请先点击「AI 生成」或手动填写`, 'error');
+    wizardGoToStep(3);
+    return;
+  }
   const avatar = document.getElementById('wiz-avatar').value;
   const voice = document.getElementById('wiz-voice').value;
   // 收集多选发布平台
@@ -3901,7 +3908,7 @@ async function handleRegisterAvatar() {
     toast(`注册失败: ${e.message}`, 'error');
   } finally {
     btn.disabled = false;
-    setBtnIcon(btn, 'download', '注册形象（Wav2Lip 唇形同步）');
+    setBtnIcon(btn, 'download', '注册形象（唇形同步）');
   }
 }
 
@@ -5508,7 +5515,7 @@ async function loadMatrixOptions() {
     const avatarList = avatars.avatars || avatars || [];
     avatarsEl.innerHTML = avatarList.map(a => `
       <label class="matrix-checkbox-item">
-        <input type="checkbox" value="${a.id || a.avatar_id || 'default'}" onchange="updateMatrixPreview()" ${a.id === 'default' ? 'checked' : ''}>
+        <input type="checkbox" value="${a.avatar_id || a.id || 'default'}" onchange="updateMatrixPreview()" ${a.avatar_id === 'default' || a.id === 'default' ? 'checked' : ''}>
         <span>${a.name || a.id || 'default'}</span>
       </label>
     `).join('') || '<div class="hint">无可用数字人</div>';
@@ -5517,8 +5524,8 @@ async function loadMatrixOptions() {
     const voiceList = voices.voices || voices || [];
     voicesEl.innerHTML = voiceList.map(v => `
       <label class="matrix-checkbox-item">
-        <input type="checkbox" value="${v.id || v.voice_id || 'default'}" onchange="updateMatrixPreview()" ${v.id === 'default' ? 'checked' : ''}>
-        <span>${v.name || v.id || 'default'}</span>
+        <input type="checkbox" value="${v.voice_id || v.id || 'default'}" onchange="updateMatrixPreview()" ${v.voice_id === 'default' || v.id === 'default' ? 'checked' : ''}>
+        <span>${v.label || v.voice_id || v.id || 'default'}</span>
       </label>
     `).join('') || '<div class="hint">无可用音色</div>';
   } catch (e) {

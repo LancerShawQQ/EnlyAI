@@ -1170,11 +1170,13 @@ body::after {
 
 .sub-page {
   display: none;
+  min-height: 200px;   /* 防止父容器约束导致 0×0 渲染 */
+  width: 100%;
   animation: fadeIn 0.3s ease;
 }
 
 .sub-page.active {
-  display: block;
+  display: block !important;  /* !important 确保覆盖任何内联 display:none */
 }
 
 /* ---------- 资源/设置 Tab（统一苹果风格，替代内联样式） ---------- */
