@@ -649,6 +649,18 @@ body::after {
   border-color: rgba(255, 69, 58, 0.45);
 }
 
+/* 取消任务（橙色，与红色删除区分） */
+.btn-warning {
+  background: rgba(255, 159, 10, 0.14);
+  color: #c93400;
+  border: 1px solid rgba(255, 159, 10, 0.35);
+}
+
+.btn-warning:hover {
+  background: rgba(255, 159, 10, 0.22);
+  border-color: rgba(255, 159, 10, 0.5);
+}
+
 .btn-sm {
   padding: 5px 12px;
   min-height: 28px;

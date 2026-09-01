@@ -161,6 +161,29 @@ class PipelineOrchestrator:
     def _clear_cancel(self, job_id: str) -> None:
         PipelineOrchestrator._cancel_flags.pop(job_id, None)
 
+    @staticmethod
+    def is_cancelled(job_id: str) -> bool:
+        """供模块内部（TTS/数字人长循环）查询取消标志——延迟 import 避免循环依赖"""
+        return bool(job_id) and PipelineOrchestrator._cancel_flags.get(job_id, False)
+
+    def _mark_failed_or_cancelled(self, job_id: str, step_name: str) -> None:
+        """步骤失败时的终态判定：用户已请求取消 → CANCELLED（非失败）
+
+        步骤内检查点抛出"用户取消"后走到这里，若直接标 FAILED，
+        用户取消的任务会显示为失败且触发无意义重试（r7 P1-2）。
+        """
+        if self._is_cancelled(job_id):
+            self.store.update_job_status(
+                job_id, JobStatus.CANCELLED, error="用户取消"
+            )
+            self._clear_cancel(job_id)
+            self.logger.info(f"任务被用户取消 job={job_id} 于步骤 {step_name}")
+        else:
+            self.store.update_job_status(
+                job_id, JobStatus.FAILED, error=f"步骤 {step_name} 失败"
+            )
+            self.logger.error(f"任务失败 job={job_id} 于步骤 {step_name}")
+
     def run_job(
         self, job_id: str,
         progress_callback: Optional[Callable[[str, str, dict], None]] = None,
@@ -255,21 +278,13 @@ class PipelineOrchestrator:
                     executed_steps.add("avatar")
                     executed_steps.add("subtitle")
 
-                    # avatar 非可选，失败则任务失败
+                    # avatar 非可选，失败则任务失败（取消则标 CANCELLED）
                     if not avatar_ok:
-                        self.store.update_job_status(
-                            job_id, JobStatus.FAILED,
-                            error="步骤 avatar 失败",
-                        )
-                        self.logger.error(f"任务失败 job={job_id} 于步骤 avatar")
+                        self._mark_failed_or_cancelled(job_id, "avatar")
                         return False
                     # subtitle 失败处理（与原顺序逻辑一致）
                     if not subtitle_ok and not subtitle_def.optional:
-                        self.store.update_job_status(
-                            job_id, JobStatus.FAILED,
-                            error="步骤 subtitle 失败",
-                        )
-                        self.logger.error(f"任务失败 job={job_id} 于步骤 subtitle")
+                        self._mark_failed_or_cancelled(job_id, "subtitle")
                         return False
                     continue
 
@@ -287,11 +302,7 @@ class PipelineOrchestrator:
                         f"可选步骤 {step_name} 失败，继续执行后续步骤"
                     )
                     continue
-                self.store.update_job_status(
-                    job_id, JobStatus.FAILED,
-                    error=f"步骤 {step_name} 失败",
-                )
-                self.logger.error(f"任务失败 job={job_id} 于步骤 {step_name}")
+                self._mark_failed_or_cancelled(job_id, step_name)
                 return False
 
         # 全部完成
@@ -375,6 +386,10 @@ class PipelineOrchestrator:
             self.logger.warning(
                 f"步骤 {step_def.name} 第 {attempt} 次失败: {result.error}"
             )
+            # 用户取消：不重试，直接退出由上层标记 CANCELLED
+            if self._is_cancelled(job_id) or "用户取消" in (result.error or ""):
+                self.logger.info(f"步骤 {step_def.name} 因用户取消中止，不重试")
+                break
             # 防呆：超时和 Face not detected 类错误不重试（重试只会让用户多等几倍时间）
             error_lower = (result.error or "").lower()
             no_retry_keywords = ["timed out", "timeout", "face not detected",

@@ -971,7 +971,7 @@ function renderWizardAvatarGrid(avatars, genderMap) {
   grid.innerHTML = list.map(a => {
     const id = a.avatar_id;
     const mode = a.meta?.mode || 'mock';
-    const hasLipSync = a.meta?.has_lip_sync || mode === 'wav2lip';
+    const hasLipSync = a.meta?.has_lip_sync || ['wav2lip', 'latentsync', 'musetalk'].includes(mode);
     const lipBadge = hasLipSync
       ? '<span style="position:absolute;top:4px;right:4px;background:#10b981;color:#fff;font-size:9px;padding:1px 4px;border-radius:3px;display:inline-flex;align-items:center;gap:2px"><i data-lucide="smile" style="width:11px;height:11px"></i> 唇形</span>'
       : '';
@@ -2354,7 +2354,7 @@ async function analyzeViralScript() {
     lucide.createIcons();
   } finally {
     btn.disabled = false;
-    setBtnIcon(btn, 'search-analytics', '爆款分析');
+    setBtnIcon(btn, 'trending-up', '爆款分析');
   }
 }
 
@@ -2685,7 +2685,7 @@ async function _pollJobLoop(jobId) {
     wizPipeline.dataset.built = '1';
   }
   const wizStepStates = {};
-  // 最长等待 180 分钟（Wav2Lip GPU 模式约 20-30 分钟，CPU 模式长文案可达 90-120 分钟，留充足余量）
+  // 最长等待 180 分钟（LatentSync 高质量模式约 5-15 分钟，长文案更久，留充足余量）
   const maxWait = 10800000;
   const pollInterval = 1500;
   const t0 = Date.now();
@@ -2938,7 +2938,7 @@ function showProgressModal() {
 
 // 步骤特别提示（进入 running 时显示，帮助用户理解耗时原因）
 const STEP_HINTS = {
-  avatar: '⏳ 数字人合成（Wav2Lip）耗时较长：GPU 约 15-30 分钟，CPU 约 60-120 分钟。此步骤期间任务无新进度属正常现象，请耐心等待',
+  avatar: '⏳ 数字人合成（LatentSync）耗时较长：通常 5-15 分钟（视文案长度与 GPU 负载）。此步骤期间任务无新进度属正常现象，可随时取消',
   script_extract: '正在提取文案（下载视频 + ASR 转写），约 1-3 分钟',
   tts: '正在合成语音，约 10-30 秒',
   compose: '正在合成最终视频（字幕+BGM+水印），约 30-60 秒',
@@ -3067,6 +3067,26 @@ async function cancelCurrentVideoJob() {
     toast(r.message || '取消请求已发送', 'info');
     const cancelBtn = document.getElementById('progress-cancel-btn');
     if (cancelBtn) cancelBtn.style.display = 'none';
+  } catch (e) {
+    toast(`取消失败: ${e.message}`, 'error');
+  }
+}
+
+// 任务列表/详情页取消：与进度弹窗共用同一后端 API
+async function cancelJobById(jobId) {
+  if (!jobId) return;
+  if (!confirm(`确定要取消任务 ${jobId} 吗？`)) return;
+  try {
+    const r = await api(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+    if (r.success) {
+      toast(r.message || '取消请求已发送，任务将在数秒内停止', 'info');
+    } else {
+      toast(r.message || '取消失败', 'warning');
+    }
+    // 刷新任务列表与详情（若打开）
+    loadJobs();
+    const modal = document.getElementById('job-detail-modal');
+    if (modal && modal.style.display !== 'none') showJobDetail(jobId);
   } catch (e) {
     toast(`取消失败: ${e.message}`, 'error');
   }
@@ -3701,6 +3721,7 @@ async function loadJobs() {
       const output = j.output || {};
       const videoPath = output.final_video || output.video_path;
       const hasVideo = j.status === 'success' && videoPath;
+      const cancellable = j.status === 'running' || j.status === 'pending';
       return `
       <tr>
         <td style="font-family:var(--font-mono);font-size:12px">${j.job_id}</td>
@@ -3710,6 +3731,7 @@ async function loadJobs() {
         <td>
           <button class="btn btn-sm btn-secondary" onclick="showJobDetail('${j.job_id}')">详情</button>
           ${hasVideo ? `<a class="btn btn-sm btn-primary" href="/api/files?path=${encodeURIComponent(videoPath)}" download="${j.job_id}.mp4">下载</a>` : ''}
+          ${cancellable ? `<button class="btn btn-sm btn-warning" onclick="cancelJobById('${j.job_id}')">取消</button>` : ''}
           <button class="btn btn-sm btn-secondary" onclick="rerunJob('${j.job_id}')">续跑</button>
           <button class="btn btn-sm btn-danger" onclick="deleteJob('${j.job_id}')">删除</button>
         </td>
@@ -3738,11 +3760,18 @@ async function showJobDetail(jobId) {
     const videoPath = output.final_video || output.video_path;
     const videoAbsPath = output.final_video_absolute || output.video_path_absolute || videoPath;
     const hasVideo = job.status === 'success' && videoPath;
+    const cancellable = job.status === 'running' || job.status === 'pending';
     detail.innerHTML = `
       <div style="margin-bottom:16px">
         <strong>任务 ID:</strong> ${job.job_id}<br>
         <strong>状态:</strong> ${statusBadge(job.status)}<br>
         <strong>创建时间:</strong> ${formatTime(job.created_at)}
+        ${cancellable ? `
+          <div style="margin-top:10px">
+            <button class="btn btn-sm btn-warning" onclick="cancelJobById('${job.job_id}')">
+              <i data-lucide="circle-x"></i> 取消任务
+            </button>
+          </div>` : ''}
       </div>
       ${hasVideo ? `
         <div style="margin-bottom:16px">
@@ -3838,7 +3867,7 @@ async function loadAvatars() {
     }
     grid.innerHTML = avatars.map(a => {
       const mode = a.meta?.mode || 'mock';
-      const hasLipSync = a.meta?.has_lip_sync || mode === 'wav2lip';
+      const hasLipSync = a.meta?.has_lip_sync || ['wav2lip', 'latentsync', 'musetalk'].includes(mode);
       const refType = a.meta?.reference_type || (a.reference_image ? 'photo' : 'unknown');
       const lipBadge = hasLipSync
         ? '<span style="color:#10b981;font-size:11px;display:inline-flex;align-items:center;gap:2px"><i data-lucide="smile" style="width:12px;height:12px"></i> 唇形同步</span>'
@@ -3892,7 +3921,7 @@ async function handleRegisterAvatar() {
     const resp = await fetch('/api/avatars/register', { method: 'POST', body: formData });
     const result = await resp.json();
     if (result.success) {
-      toast(`形象注册成功！${isImage ? '照片' : '视频'}已保存，将用于 Wav2Lip 唇形同步`, 'success');
+      toast(`形象注册成功！${isImage ? '照片' : '视频'}已保存，将用于唇形同步数字人生成`, 'success');
       document.getElementById('avatar-id').value = '';
       fileInput.value = '';
       document.getElementById('avatar-upload-text').textContent = '点击或拖拽上传照片/视频';
@@ -5513,12 +5542,15 @@ async function loadMatrixOptions() {
   try {
     const avatars = await api('/api/avatars');
     const avatarList = avatars.avatars || avatars || [];
-    avatarsEl.innerHTML = avatarList.map(a => `
+    avatarsEl.innerHTML = avatarList.map(a => {
+      const aid = a.avatar_id || a.id || 'default';
+      const label = a.name || a.meta?.display_name || a.meta?.name || aid;
+      return `
       <label class="matrix-checkbox-item">
-        <input type="checkbox" value="${a.avatar_id || a.id || 'default'}" onchange="updateMatrixPreview()" ${a.avatar_id === 'default' || a.id === 'default' ? 'checked' : ''}>
-        <span>${a.name || a.id || 'default'}</span>
+        <input type="checkbox" value="${aid}" onchange="updateMatrixPreview()" ${aid === 'default' ? 'checked' : ''}>
+        <span>${label}</span>
       </label>
-    `).join('') || '<div class="hint">无可用数字人</div>';
+    `;}).join('') || '<div class="hint">无可用数字人</div>';
 
     const voices = await api('/api/voices');
     const voiceList = voices.voices || voices || [];

@@ -975,6 +975,63 @@ class SettingsManager:
                 continue
         return {"success": False, "message": f"无法连接到 GPT-SoVITS 服务: {api_base}"}
 
+    def test_asr(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """测试 ASR 语音识别可用性（依赖检查 + 模型缓存/服务探活）
+
+        payload: {provider}
+        """
+        provider = payload.get("provider", "mock")
+        cfg = get_config()
+
+        if provider == "mock":
+            return {"success": True, "message": "Mock 模式无需测试，始终可用"}
+        if provider == "sherpa_funasr":
+            try:
+                import sherpa_onnx  # noqa: F401
+            except ImportError:
+                return {
+                    "success": False,
+                    "message": "sherpa-onnx 未安装，请执行 pip install sherpa-onnx",
+                }
+            cache = Path(cfg.get("asr.model_cache", "./workspace_data/models/asr"))
+            if cache.exists() and any(cache.rglob("*.onnx")):
+                return {"success": True, "message": f"sherpa-onnx 可用，模型缓存就绪（{cache}）"}
+            return {
+                "success": True,
+                "message": f"sherpa-onnx 已安装；模型缓存为空（{cache}），首次识别时自动下载",
+            }
+        if provider == "whisper_local":
+            try:
+                from faster_whisper import WhisperModel  # noqa: F401
+                model = payload.get("model") or cfg.get("asr.model", "small")
+                return {
+                    "success": True,
+                    "message": f"faster-whisper 可用（模型 {model} 首次使用时自动下载）",
+                }
+            except ImportError:
+                return {
+                    "success": False,
+                    "message": "faster-whisper 未安装，请执行 pip install faster-whisper",
+                }
+        if provider == "funasr":
+            try:
+                import funasr  # noqa: F401
+                return {"success": True, "message": "FunASR 可用"}
+            except ImportError:
+                return {"success": False, "message": "funasr 未安装，请执行 pip install funasr"}
+        if provider == "mimo":
+            api_base = (payload.get("api_base") or cfg.get("asr.api_base", "")).rstrip("/")
+            if not api_base:
+                return {"success": False, "message": "MiMo ASR 服务地址未配置"}
+            try:
+                r = httpx.get(f"{api_base}/models", timeout=8)
+                if r.status_code < 500:
+                    return {"success": True, "message": f"MiMo ASR 服务可达（HTTP {r.status_code}）"}
+                return {"success": False, "message": f"MiMo ASR 服务响应异常 HTTP {r.status_code}"}
+            except Exception as e:
+                return {"success": False, "message": f"MiMo ASR 服务不可达: {e}"}
+        return {"success": False, "message": f"未知 ASR provider: {provider}"}
+
     def test_avatar(self, payload: dict[str, Any]) -> dict[str, Any]:
         """测试数字人服务连接"""
         provider = payload.get("provider", "mock")

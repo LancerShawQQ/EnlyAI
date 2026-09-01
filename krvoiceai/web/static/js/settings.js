@@ -507,6 +507,27 @@ async function testTTSConnection() {
 
 // ========== ASR 配置 ==========
 
+async function testASRConnection() {
+  const payload = {
+    provider: document.getElementById('asr-provider').value,
+    model: document.getElementById('asr-model').value,
+  };
+  const btn = document.getElementById('asr-test-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 测试中...';
+  try {
+    const result = await api('/api/settings/test/asr', { method: 'POST', body: payload });
+    showTestResult('asr-test-result', result);
+    toast(result.success ? 'ASR 可用' : 'ASR 不可用', result.success ? 'success' : 'error');
+  } catch (e) {
+    showTestResult('asr-test-result', { success: false, message: e.message });
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="plug"></i> 测试连接';
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
 function loadASRSettings() {
   if (!_currentSettings) return;
   const asr = _currentSettings.asr || {};
@@ -2094,6 +2115,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('tts-test-btn')?.addEventListener('click', testTTSConnection);
   // ASR
   document.getElementById('asr-save-btn')?.addEventListener('click', saveASRSettings);
+  document.getElementById('asr-test-btn')?.addEventListener('click', testASRConnection);
   document.getElementById('asr-reset-btn')?.addEventListener('click', resetASRSettings);
   // Avatar
   document.getElementById('avatar-save-btn')?.addEventListener('click', saveAvatarSettings);

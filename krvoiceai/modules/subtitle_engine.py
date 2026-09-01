@@ -215,15 +215,33 @@ class SubtitleEngine(BaseModule):
         if total > 0 and covered / total < 0.5:
             return None
 
+        # 源文案原文（保留换行/标点结构）。TTS 合成前常把多行文案拼成整段，
+        # 行间无标点时（"今天分享三个\\n小妙招"→"今天分享三个小妙招"），
+        # 按字数硬切会把"三个|小妙招"这类词组切断——r7 P0-1 实测 8 段全部
+        # 切在词中间。切分基准必须回到原文的换行/标点边界。
+        import re as _re
+        script = (ctx.script_text or "").strip()
+        script_norm = _re.sub(r"\s+", "", script)
+
         segments: list[dict] = []
         for ts in tts_ts:
             text = (ts.get("text") or "").strip()
             if not text:
                 continue
             start, end = float(ts.get("start", 0)), float(ts.get("end", 0))
-            # 按字幕最大字数切分（保持文字原文，时间按字符比例分配）
-            if len(text) > self.max_chars:
-                sub_segs = split_text_to_segments(text, self.max_chars)
+
+            # 切分基准：优先恢复源文案对应片段（保留 \n/标点），
+            # 恢复失败（TTS 改写过文本等）才退回 TTS 返回的拼接文本
+            split_base = text
+            text_norm = _re.sub(r"\s+", "", text)
+            if text_norm and text_norm in script_norm:
+                recovered = self._recover_script_slice(script, text_norm)
+                if recovered:
+                    split_base = recovered
+
+            # 按字幕最大字数切分（在标点/换行边界断句，时间按字符比例分配）
+            if len(split_base) > self.max_chars:
+                sub_segs = split_text_to_segments(split_base, self.max_chars)
                 dur = end - start
                 total_chars = sum(len(s) for s in sub_segs)
                 cursor = start
@@ -237,12 +255,37 @@ class SubtitleEngine(BaseModule):
                     cursor += share
             else:
                 segments.append({
-                    "text": text, "start": round(start, 3), "end": round(end, 3),
+                    "text": split_base, "start": round(start, 3), "end": round(end, 3),
                 })
         self.logger.info(
-            f"TTS 时间戳直出字幕: {len(segments)} 段（零 ASR 错字）"
+            f"TTS 时间戳直出字幕: {len(segments)} 段（零 ASR 错字，按原文标点/换行切分）"
         )
         return segments if segments else None
+
+    @staticmethod
+    def _recover_script_slice(script: str, text_norm: str) -> Optional[str]:
+        """从源文案中恢复与 TTS 文本对应的原文片段（保留换行与标点）
+
+        双指针：跳过空白逐字符匹配。TTS 文本是原文去空白拼接的产物，
+        因此非空白字符序列应完全一致；匹配失败返回 None（调用方退回 TTS 文本）。
+        """
+        start = None
+        end = None
+        ti = 0
+        for i, ch in enumerate(script):
+            if ch.isspace():
+                continue
+            if ti < len(text_norm) and ch == text_norm[ti]:
+                if start is None:
+                    start = i
+                end = i
+                ti += 1
+            else:
+                # 非连续匹配（TTS 改写/增删字符）——放弃恢复
+                return None
+        if start is not None and ti == len(text_norm):
+            return script[start:end + 1]
+        return None
 
     def _recognize_whisper(self, ctx: JobContext) -> list[dict]:
         """使用 faster-whisper 识别音频，提供词级时间戳（本地 CPU int8）

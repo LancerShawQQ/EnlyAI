@@ -222,10 +222,12 @@ class TTSEngine(BaseModule):
 
         try:
             start = time.time()
+            _job_id = getattr(ctx, "job_id", "") or ""
             if self.provider == "cosyvoice":
                 audio_path, duration, timestamps = self._synth_cosyvoice(
                     text, voice_id, output_path, speed, volume, pitch, emotion,
                     pause_duration=float(audio_cfg.get("pause_duration", 0.5) or 0),
+                    job_id=_job_id,
                 )
             elif self.provider == "moss_nano":
                 audio_path, duration, timestamps = self._synth_moss_nano(
@@ -721,11 +723,23 @@ class TTSEngine(BaseModule):
         )
         return output_path, duration, timestamps
 
+    @staticmethod
+    def _job_cancelled(job_id: str) -> bool:
+        """查询任务取消标志（延迟 import 避免与 orchestrator 循环依赖）"""
+        if not job_id:
+            return False
+        try:
+            from ..pipeline.orchestrator import PipelineOrchestrator
+            return PipelineOrchestrator.is_cancelled(job_id)
+        except Exception:
+            return False
+
     def _synth_cosyvoice(
         self, text: str, voice_id: str, output_path: Path,
         speed: float | None = None, volume: int | None = None,
         pitch: int | None = None, emotion: str | None = None,
         pause_duration: float | None = None,
+        job_id: str = "",
     ) -> tuple[Path, float, list[dict]]:
         """使用本地 CosyVoice3 服务合成（HTTP 调用 cosyvoice_server.py）
 
@@ -751,6 +765,8 @@ class TTSEngine(BaseModule):
         # 预热：服务懒加载模型（冷启动 10-60s）不该占用合成超时——
         # 曾出现"懒加载+GPU 显存紧张下推理变慢"吃满 180s 超时，
         # 客户端降级 mock 产出无声视频
+        if self._job_cancelled(job_id):
+            raise RuntimeError("用户取消")
         try:
             import httpx as _hx
 
@@ -760,6 +776,8 @@ class TTSEngine(BaseModule):
                 _hx.post(f"{server_url}/api/load", timeout=180)
         except Exception as e:
             self.logger.warning(f"CosyVoice 预热跳过（服务不可用则按超时失败）: {e}")
+        if self._job_cancelled(job_id):
+            raise RuntimeError("用户取消")
 
         # 确定参考音频和文本
         prompt_audio_path, prompt_text = self._resolve_cosyvoice_voice(voice_id, cfg)
@@ -789,6 +807,9 @@ class TTSEngine(BaseModule):
         for seg in segments:
             if not seg.strip():
                 continue
+            # 取消检查点：长文案多段合成时逐段响应取消（单段内部由流式读取检查）
+            if self._job_cancelled(job_id):
+                raise RuntimeError("用户取消")
             self.logger.info(f"CosyVoice calling API with seg={repr(seg)} prompt_text={repr(prompt_text)}")
             # 超时自适应：配置值 vs 按字数估算（每字约 1.2s，含冷启余量）取大者。
             # 固定 180s 曾在 GPU 显存紧张（推理变慢 4-10 倍）时被吃满
@@ -798,6 +819,7 @@ class TTSEngine(BaseModule):
                 instruct=use_instruct and instruct,
                 speed=speed or 1.0,
                 timeout=seg_timeout,
+                job_id=job_id,
             )
             self.logger.info(f"CosyVoice seg wav_bytes={len(wav_bytes) if wav_bytes else 'None'}")
             if wav_bytes:
@@ -974,10 +996,14 @@ class TTSEngine(BaseModule):
     def _call_cosyvoice_api(
         self, server_url: str, text: str, prompt_audio_path: Path,
         prompt_text: str, instruct: str = "", speed: float = 1.0, timeout: int = 180,
+        job_id: str = "",
     ) -> bytes | None:
         """调用 CosyVoice 服务端 API 合成单段文本
 
         有 instruct 时走 /api/tts/instruct，否则走 /api/tts/synth（零样本克隆）
+
+        流式读取响应体：单段合成可达 3 分钟以上，必须在读取中响应取消
+        （r7 P1-2：取消 API 只能等当前步骤自然结束，形同虚设）。
 
         Returns:
             WAV 音频 bytes，失败返回 None
@@ -1003,17 +1029,27 @@ class TTSEngine(BaseModule):
                     f"file_size={prompt_audio_path.stat().st_size}"
                 )
                 # 共享 Client（keep-alive 连接复用）：多段文本合成时省去每段 TCP 握手
-                r = self._cosyvoice_http_client().post(
-                    url, files=files, data=data, timeout=timeout
-                )
-
-            if r.status_code == 200:
-                return r.content
-            else:
-                self.logger.warning(
-                    f"CosyVoice API 返回 HTTP {r.status_code}: {r.text[:200]}"
-                )
-                return None
+                client = self._cosyvoice_http_client()
+                chunks: list[bytes] = []
+                _cancel_check = 0
+                with client.stream(
+                    "POST", url, files=files, data=data, timeout=timeout
+                ) as resp:
+                    if resp.status_code != 200:
+                        body = resp.read().decode(errors="replace")
+                        self.logger.warning(
+                            f"CosyVoice API 返回 HTTP {resp.status_code}: {body[:200]}"
+                        )
+                        return None
+                    for chunk in resp.iter_bytes(chunk_size=65536):
+                        chunks.append(chunk)
+                        # 每 16 chunks（约 1MB）检查一次取消标志
+                        _cancel_check += 1
+                        if _cancel_check % 16 == 0 and self._job_cancelled(job_id):
+                            raise RuntimeError("用户取消")
+                return b"".join(chunks)
+        except RuntimeError:
+            raise
         except httpx.ConnectError:
             self.logger.error(
                 f"无法连接 CosyVoice 服务 {server_url}，请确认 cosyvoice_server.py 已启动"

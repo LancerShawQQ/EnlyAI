@@ -592,6 +592,15 @@ class EnlyAI:
                     info["meta"] = json.loads(meta_file.read_text(encoding="utf-8"))
                 except Exception:
                     pass
+            # 顶层 id/name 与 /api/voices 字段对齐——前端多处直接读 a.name/a.id，
+            # 缺失时矩阵模式等界面全部显示 "default"（r7 P1-3）
+            info["id"] = d.name
+            meta = info.get("meta") or {}
+            info["name"] = (
+                meta.get("display_name")
+                or meta.get("name")
+                or d.name
+            )
             # 检查参考图
             for name in ("reference.jpg", "reference.png", "placeholder.jpg"):
                 if (d / name).exists():

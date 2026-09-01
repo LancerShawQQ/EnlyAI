@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
   <title>EnlyAI · 虚拟人口播智能体</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260819lg7">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260901lg8">
   <link rel="stylesheet" href="/static/css/liquid_glass.css?v=20260815lg4">
   <script src="https://unpkg.com/lucide@0.460.0"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
@@ -371,7 +371,7 @@
                   <button class="btn btn-sm btn-secondary" id="wiz-shorten-btn" type="button">AI缩写</button>
                   <button class="btn btn-sm btn-secondary" id="wiz-smooth-btn" type="button">去冗余</button>
                   <button class="btn btn-sm btn-secondary" id="wiz-hook-btn" type="button">优化钩子</button>
-                  <button class="btn btn-sm btn-secondary" id="wiz-analyze-btn" type="button"><i data-lucide="search-analytics" style="width:14px;height:14px"></i> 爆款分析</button>
+                  <button class="btn btn-sm btn-secondary" id="wiz-analyze-btn" type="button"><i data-lucide="trending-up" style="width:14px;height:14px"></i> 爆款分析</button>
                   <button class="btn btn-sm btn-secondary" id="wiz-preview-tts-btn" type="button"><i data-lucide="headphones" style="width:14px;height:14px"></i> 试听</button>
                   <button class="btn btn-sm btn-secondary" id="wiz-clear-btn" type="button">清空</button>
                 </div>
@@ -400,7 +400,7 @@
               <!-- 爆款分析报告区域 -->
               <div class="viral-analysis" id="wiz-viral-analysis" style="display:none">
                 <div class="viral-analysis-header">
-                  <span class="viral-analysis-title"><i data-lucide="search-analytics"></i> 爆款结构分析报告</span>
+                  <span class="viral-analysis-title"><i data-lucide="trending-up"></i> 爆款结构分析报告</span>
                   <button class="btn btn-sm btn-ghost" id="wiz-viral-close" type="button"><i data-lucide="x"></i></button>
                 </div>
                 <div class="viral-analysis-body" id="wiz-viral-body"></div>
@@ -1824,7 +1824,7 @@
           <p class="page-subtitle">上传真人照片或视频（嘴巴不动），生成唇形同步数字人</p>
         </div>
 
-        <!-- Wav2Lip 工作原理说明 -->
+        <!-- LatentSync 数字人工作原理说明 -->
         <div class="card" style="margin-bottom:20px;background:linear-gradient(135deg,#f0f7ff,#e8f4ff);border:1px solid #c8e0ff">
           <div style="display:flex;gap:16px;align-items:flex-start">
             <div style="font-size:36px"><i data-lucide="smile"></i></div>
@@ -1833,7 +1833,7 @@
               <div style="color:#4a6a8f;font-size:13px;line-height:1.6">
                 <strong>1. 上传参考素材</strong>：上传一张真人正面照片，或一段嘴巴不动的真人视频（3-10秒）<br>
                 <strong>2. 生成音频</strong>：系统将文案转为语音（TTS）<br>
-                <strong>3. 唇形同步</strong>：Wav2Lip 模型根据音频驱动参考素材中的嘴唇动作<br>
+                <strong>3. 唇形同步</strong>：LatentSync 模型根据音频驱动参考素材中的嘴唇动作<br>
                 <strong>4. 输出视频</strong>：生成嘴唇会动的数字人口播视频
               </div>
             </div>
@@ -2266,8 +2266,10 @@
             </div>
             <div class="form-row" style="margin-top:16px">
               <button class="btn btn-primary" id="asr-save-btn"><i data-lucide="save"></i> 保存配置</button>
+              <button class="btn btn-secondary" id="asr-test-btn"><i data-lucide="plug"></i> 测试连接</button>
               <button class="btn btn-secondary" id="asr-reset-btn"><i data-lucide="corner-up-left"></i> 重置默认</button>
             </div>
+            <div id="asr-test-result"></div>
           </div>
         </div>
 
@@ -2282,10 +2284,10 @@
               <div class="form-group">
                 <label class="form-label">服务提供商</label>
                 <select class="form-select" id="avatar-provider" onchange="onAvatarProviderChange()">
-                  <option value="wav2lip">Wav2Lip（本地唇形同步，CPU可跑）</option>
+                  <option value="latentsync">LatentSync（高精度口型，本地GPU，默认推荐）</option>
                   <option value="musetalk">MuseTalk 1.5（本地高质量，解决头部移动问题，需GPU）</option>
                   <option value="longcat">LongCat 1.5（商用级唇形同步，需云端GPU）</option>
-                  <option value="latentsync">LatentSync（高精度口型，需GPU）</option>
+                  <option value="wav2lip">Wav2Lip（旧版引擎，需独立环境，不推荐）</option>
                   <option value="echomimic">EchoMimic（表情驱动，需GPU）</option>
                   <option value="mock">Mock 模式（占位图视频，调试用）</option>
                 </select>
@@ -3182,8 +3184,8 @@
   <!-- Toast 容器 -->
   <div class="toast-container" id="toast-container"></div>
 
-  <script src="/static/js/app.js?v=20260901lg12"></script>
-  <script src="/static/js/settings.js?v=20260819lg7"></script>
+  <script src="/static/js/app.js?v=20260901lg13"></script>
+  <script src="/static/js/settings.js?v=20260901lg8"></script>
 
   <!-- ========== Liquid Glass SVG 滤镜定义（边缘折射变形效果） ========== -->
   <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false">

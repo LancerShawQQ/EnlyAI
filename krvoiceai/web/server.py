@@ -110,6 +110,12 @@ class TestAvatarRequest(BaseModel):
     api_base: str = ""
 
 
+class TestASRRequest(BaseModel):
+    provider: str = "mock"
+    model: str = ""
+    api_base: str = ""
+
+
 class ScriptProcessRequest(BaseModel):
     """文案 AI 处理请求"""
     script: str = ""
@@ -261,8 +267,43 @@ def create_app() -> FastAPI:
 
     # ============ API 路由 ============
 
+    _health_cache: dict = {"data": None, "ts": 0.0}
+    _GIT_INFO_CACHE: dict = {"data": None, "ts": 0.0}
+
+    def _git_info() -> dict:
+        """当前运行代码的 git 信息（30s 缓存）——QA 需要直接确认服务跑在哪个 commit"""
+        import subprocess
+        now = time.time()
+        if _GIT_INFO_CACHE["data"] is not None and now - _GIT_INFO_CACHE["ts"] < 30:
+            return _GIT_INFO_CACHE["data"]
+        info: dict = {}
+        try:
+            root = Path(__file__).resolve().parents[2]
+            def _git(*args: str) -> str:
+                return subprocess.run(
+                    ["git", *args], cwd=root, capture_output=True, text=True,
+                    timeout=5, encoding="utf-8", errors="replace",
+                ).stdout.strip()
+            info["commit"] = _git("rev-parse", "--short", "HEAD") or "unknown"
+            info["branch"] = _git("rev-parse", "--abbrev-ref", "HEAD") or "unknown"
+            info["dirty"] = bool(_git("status", "--porcelain"))
+            info["last_commit"] = _git("log", "-1", "--format=%h %s (%ci)")
+        except Exception as e:
+            info["error"] = str(e)
+        _GIT_INFO_CACHE["data"] = info
+        _GIT_INFO_CACHE["ts"] = now
+        return info
+
     @app.get("/api/health")
     async def health():
+        # 冷调用含 GPU 探测/模型探活可达 6-7s（r7 P2-2），缓存 30s：
+        # 前端健康页轮询与 QA 探测都不该每次付出全量探测代价
+        now = time.time()
+        if _health_cache["data"] is not None and now - _health_cache["ts"] < 30:
+            data = dict(_health_cache["data"])
+            data["cached"] = True
+            return data
+
         data = _get_app().health_check()
         # 附加 GPU 硬件加速能力（CUDA / NVENC / 编码器）
         try:
@@ -277,6 +318,10 @@ def create_app() -> FastAPI:
             }
         except Exception as e:
             data["gpu"] = {"error": str(e)}
+        # 附加 git 部署信息（commit/branch/dirty）——修复与部署对齐的依据
+        data["git"] = _git_info()
+        _health_cache["data"] = data
+        _health_cache["ts"] = now
         return data
 
     @app.get("/api/services")
@@ -481,7 +526,10 @@ def create_app() -> FastAPI:
         if job.get("status") not in ("running", "pending"):
             return {"success": False, "message": f"任务已结束（{job.get('status')}）"}
         ok = _get_app().orchestrator.request_cancel(job_id)
-        return {"success": ok, "message": "取消请求已发送，任务将在当前步骤完成后停止"}
+        return {
+            "success": ok,
+            "message": "取消请求已发送，任务将在数秒内停止（TTS/数字人等长步骤内亦有检查点）",
+        }
 
     @app.post("/api/jobs/{job_id}/rerun")
     async def rerun_job(job_id: str):
@@ -1276,6 +1324,14 @@ def create_app() -> FastAPI:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, lambda: get_settings_manager().test_avatar(req.model_dump())
+        )
+
+    @app.post("/api/settings/test/asr")
+    async def test_asr(req: TestASRRequest):
+        """测试 ASR 语音识别可用性（与 LLM/TTS/数字人测试按钮对齐）"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, lambda: get_settings_manager().test_asr(req.model_dump())
         )
 
     # ============ 文案试听 API ============

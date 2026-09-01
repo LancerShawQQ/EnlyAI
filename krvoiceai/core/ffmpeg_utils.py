@@ -360,7 +360,64 @@ class FFmpegRunner:
             "-y", str(output_audio),
         ]
         self.run(args)
+
+        # 响度还原：highpass + acompressor 会无补偿地压低电平
+        # （r7 实测 rms -16.3 → -20.9dBFS，成品外放过小声）。
+        # 链路末尾把 RMS 拉回处理前水平，峰值不超过 -1dBFS 防削波。
+        # 不用 loudnorm——末级视频合成 amix 后已统一做一次，两级叠加会过压缩。
+        if voice_enhance:
+            try:
+                self._restore_loudness(output_audio, target_rms_db=-16.5)
+            except Exception as e:
+                self.logger.warning(f"响度还原跳过: {e}")
         return output_audio
+
+    def _restore_loudness(
+        self, audio: Path, target_rms_db: float = -16.5,
+    ) -> None:
+        """把 audio 的 RMS 拉到目标电平
+
+        增益 = min(目标RMS/当前RMS, 峰值余量)，用 numpy 就地重写 16bit wav。
+        """
+        import wave
+
+        with wave.open(str(audio), "rb") as w:
+            sr = w.getframerate()
+            nch = w.getnchannels()
+            sw = w.getsampwidth()
+            raw = w.readframes(w.getnframes())
+        if sw != 2 or not raw:
+            return  # 只处理 16bit wav
+        arr = np.frombuffer(raw, dtype=np.int16)
+        if arr.size == 0:
+            return
+
+        rms = float(np.sqrt(np.mean((arr.astype(np.float64) / 32768.0) ** 2)))
+        if rms <= 0:
+            return
+        cur_db = 20.0 * np.log10(rms)
+        gain_db = target_rms_db - cur_db
+        if gain_db <= 0.5:
+            return  # 已达标或本来就更大声，不动
+
+        peak = float(np.max(np.abs(arr))) / 32768.0
+        peak_db = 20.0 * np.log10(peak) if peak > 0 else -99.0
+        # 峰值留 -1dB 余量，防止削波
+        gain_db = min(gain_db, -1.0 - peak_db)
+        if gain_db <= 0.5:
+            return
+
+        gain = 10.0 ** (gain_db / 20.0)
+        boosted = np.clip(arr.astype(np.float64) * gain, -32768, 32767).astype(np.int16)
+        with wave.open(str(audio), "wb") as w:
+            w.setnchannels(nch)
+            w.setsampwidth(2)
+            w.setframerate(sr)
+            w.writeframes(boosted.tobytes())
+        self.logger.info(
+            f"响度还原: {cur_db:.1f} → {cur_db + gain_db:.1f} dBFS rms "
+            f"(+{gain_db:.1f}dB, peak {peak_db:.1f} → {peak_db + gain_db:.1f}dB)"
+        )
 
 
     def overlay_video_pip(
