@@ -205,6 +205,45 @@ def test_scenario_g_single_segment_no_line_punct():
         assert word in all_text
 
 
+# ========== 场景 H：无标点长行不硬切词（真实 CosyVoice 实测发现） ==========
+
+def test_scenario_h_long_punct_free_line():
+    # 22 字无标点行 > max_chars 18：轻微超长整段保留，不切"英|语"
+    src = (
+        "哈喽朋友们，我是英里AI外教\n"
+        "今天我跟你们分享三个让孩子敢开口说英语的小妙招\n"
+        "让孩子敢开口说英语啊"
+    )
+    joined = "".join(src.split("\n"))
+    ts = [{"text": joined, "start": 0.0, "end": 12.0}]
+    segs = _run_engine(src, ts)
+    _assert_boundary_safe(segs, src)
+
+    # 30 字超长无标点行（超过 1.35×18≈24 的容忍上限）：切点必须落在
+    # 虚词边界（段尾是助词/下段首是虚词），不允许随机硬切
+    long_line = "我们今天要聊的话题是如何在信息爆炸的时代里保持专注力并持续深度学习"
+    src2 = f"开场白。\n{long_line}\n结束语。"
+    joined2 = "开场白" + long_line + "结束语"
+    ts2 = [{"text": joined2, "start": 0.0, "end": 15.0}]
+    segs2 = _run_engine(src2, ts2)
+    # 用归一化偏移量定位每个切点：落在 token 边界（行/标点）= 合法；
+    # 落在 token 内部 = 必须贴虚词（段尾助词或下段虚词起头）
+    FUNC = set("的了和与是在让给把对从被跟或而且然后因为所以但是如果也要就都还再并并且此外另外同时")
+    norm_src2 = _norm(src2)
+    token_bounds = set()
+    off = 0
+    for t in _tokens(src2):
+        off += len(t)
+        token_bounds.add(off)
+    cut_off = 0
+    for a, b in zip(segs2, segs2[1:]):
+        cut_off += len(_norm(a["text"]))
+        a_norm, b_norm = _norm(a["text"]), _norm(b["text"])
+        if a_norm and b_norm and cut_off not in token_bounds:
+            assert a_norm[-1] in FUNC or b_norm[0] in FUNC, \
+                f"切点落在 token 内部且不贴虚词: ...{a_norm[-4:]} | {b_norm[:4]}..."
+
+
 # ========== _recover_script_slice 静态方法单测 ==========
 
 def test_recover_static_method():

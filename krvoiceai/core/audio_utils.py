@@ -70,12 +70,39 @@ def estimate_speech_duration(text: str, chars_per_second: float = 4.5) -> float:
     return max(1.0, effective / chars_per_second)
 
 
-def split_text_to_segments(text: str, max_chars: int = 40) -> list[str]:
+# 虚词/连接词首字：硬切时优先让切点落在这些字之前（词首边界概率高，
+# 避免"英|语"这类词中切断——中文无分词器下的轻量启发式）
+_FUNC_WORD_STARTS = set("的了和与是在让给把对从被跟或而且然后因为所以但是如果也要就都还再并并且此外另外同时")
+
+# 缓存:避免每行重复编译
+_SPLIT_TAIL_RE = None
+
+
+def _best_cjk_cut(text: str, target: int) -> int:
+    """在 target 附近（±4 字）找一个"下一字是虚词首字"的切点，找不到退回 target"""
+    for delta in range(0, 5):
+        for pos in (target - delta, target + delta):
+            if 6 <= pos < len(text) and text[pos] in _FUNC_WORD_STARTS:
+                return pos
+    return target
+
+
+def split_text_to_segments(
+    text: str, max_chars: int = 40, allow_overshoot: float = 0.0,
+) -> list[str]:
     """将文案按句切分为段落，用于分句合成与时间戳对齐
 
     先按标点切分，再对超过 max_chars 的段按字数硬切分。
+
+    Args:
+        allow_overshoot: 无标点长串允许的超长比例（如 0.35 表示 max_chars=18
+            时最多可整段保留 24 字）。字幕场景下"轻微超长"远好于把词切断；
+            TTS 合成分段传 0（默认）保持精确上限。
     """
     import re
+    global _SPLIT_TAIL_RE
+    if _SPLIT_TAIL_RE is None:
+        _SPLIT_TAIL_RE = re.compile(r'(?<=[，,、；;])')
     # 按标点切分
     sentences = re.split(r'(?<=[。！？!?\n])', text)
     segments: list[str] = []
@@ -93,14 +120,17 @@ def split_text_to_segments(text: str, max_chars: int = 40) -> list[str]:
     if buf:
         segments.append(buf)
 
-    # 对超过 max_chars 的段按字数硬切分（尽量在逗号/空格处断开）
+    # 无标点长串的可保留上限（轻微超长好于词中切断）
+    hard_cap = int(max_chars * (1.0 + max(allow_overshoot, 0.0)))
+
+    # 对超过 max_chars 的段按字数硬切分（尽量在逗号/顿号/分号处断开）
     final_segments: list[str] = []
     for seg in segments:
         if len(seg) <= max_chars:
             final_segments.append(seg)
         else:
             # 优先在逗号/顿号/分号处切分
-            parts = re.split(r'(?<=[，,、；;])', seg)
+            parts = _SPLIT_TAIL_RE.split(seg)
             cur = ""
             for p in parts:
                 if not p:
@@ -110,10 +140,20 @@ def split_text_to_segments(text: str, max_chars: int = 40) -> list[str]:
                 else:
                     if cur:
                         final_segments.append(cur)
-                    # 如果单个 p 仍超长，硬切
+                    # 无标点且在可容忍超长内：整段保留（"英语"不再被切断）
+                    if max_chars < len(p) <= hard_cap:
+                        final_segments.append(p)
+                        cur = ""
+                        continue
+                    # 超过硬上限：在虚词边界附近切
                     while len(p) > max_chars:
-                        final_segments.append(p[:max_chars])
-                        p = p[max_chars:]
+                        if len(p) <= hard_cap:
+                            final_segments.append(p)
+                            p = ""
+                            break
+                        cut = _best_cjk_cut(p, max_chars)
+                        final_segments.append(p[:cut])
+                        p = p[cut:]
                     cur = p
             if cur:
                 final_segments.append(cur)

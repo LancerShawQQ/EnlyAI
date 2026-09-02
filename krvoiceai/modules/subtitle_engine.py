@@ -257,7 +257,9 @@ class SubtitleEngine(BaseModule):
                 return n if n > 0 else 1
 
             sub_segs = (
-                split_text_to_segments(span_text, self.max_chars)
+                split_text_to_segments(
+                    span_text, self.max_chars, allow_overshoot=0.35,
+                )
                 if len(span_text) > self.max_chars else [span_text]
             )
             total_chars = sum(_ncount(s) for s in sub_segs)
@@ -303,7 +305,9 @@ class SubtitleEngine(BaseModule):
             else:
                 _flush_run()
                 sub_segs = (
-                    split_text_to_segments(text, self.max_chars)
+                    split_text_to_segments(
+                        text, self.max_chars, allow_overshoot=0.35,
+                    )
                     if len(text) > self.max_chars else [text]
                 )
                 dur = max(end - start, 0.001)
