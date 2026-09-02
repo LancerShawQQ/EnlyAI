@@ -1544,6 +1544,12 @@
               <div id="pod-extract-preview" style="margin-top:8px"></div>
             </div>
 
+            <!-- manual 模式引导（默认来源无输入面板，指引用户去下方编辑器） -->
+            <div class="hint" id="pod-manual-hint" style="margin:8px 0 0;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <i data-lucide="info" style="width:13px;height:13px;flex-shrink:0"></i>
+              当前为「文章输入」模式：直接在下方剧本编辑器输入内容；需要提取链接、上传文档或 AI 生成时，请点击上方对应来源
+            </div>
+
             <!-- 本地文档上传区（读取后填入剧本编辑器） -->
             <div class="sub-page" id="pod-source-file" style="display:none">
               <div class="upload-area" id="pod-file-upload" style="padding:16px">
@@ -3184,7 +3190,7 @@
   <!-- Toast 容器 -->
   <div class="toast-container" id="toast-container"></div>
 
-  <script src="/static/js/app.js?v=20260901lg13"></script>
+  <script src="/static/js/app.js?v=20260902lg15"></script>
   <script src="/static/js/settings.js?v=20260901lg8"></script>
 
   <!-- ========== Liquid Glass SVG 滤镜定义（边缘折射变形效果） ========== -->

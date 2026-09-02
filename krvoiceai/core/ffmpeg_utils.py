@@ -375,9 +375,13 @@ class FFmpegRunner:
     def _restore_loudness(
         self, audio: Path, target_rms_db: float = -16.5,
     ) -> None:
-        """把 audio 的 RMS 拉到目标电平
+        """把 audio 的 RMS 拉到目标电平（先增益、后软限幅压峰）
 
-        增益 = min(目标RMS/当前RMS, 峰值余量)，用 numpy 就地重写 16bit wav。
+        高响度 TTS 素材峰值接近满刻度（-0.1dBFS、峰均比 ~18dB），若增益受
+        峰值天花板约束（先压峰后增益的余量永远不够），RMS 永远达不到目标
+        （r8 实测卡在 -18.5dBFS）。正确顺序：先按 RMS 目标直接增益，
+        再对超过天花板的样本做迭代式软限幅（ratio 压缩而非硬削波）——
+        只影响少量峰值样本，语音主体不受损，RMS 精确命中目标。
         """
         import wave
 
@@ -392,7 +396,8 @@ class FFmpegRunner:
         if arr.size == 0:
             return
 
-        rms = float(np.sqrt(np.mean((arr.astype(np.float64) / 32768.0) ** 2)))
+        x = arr.astype(np.float64) / 32768.0
+        rms = float(np.sqrt(np.mean(x ** 2)))
         if rms <= 0:
             return
         cur_db = 20.0 * np.log10(rms)
@@ -400,23 +405,30 @@ class FFmpegRunner:
         if gain_db <= 0.5:
             return  # 已达标或本来就更大声，不动
 
-        peak = float(np.max(np.abs(arr))) / 32768.0
-        peak_db = 20.0 * np.log10(peak) if peak > 0 else -99.0
-        # 峰值留 -1dB 余量，防止削波
-        gain_db = min(gain_db, -1.0 - peak_db)
-        if gain_db <= 0.5:
-            return
+        y = x * (10.0 ** (gain_db / 20.0))
 
-        gain = 10.0 ** (gain_db / 20.0)
-        boosted = np.clip(arr.astype(np.float64) * gain, -32768, 32767).astype(np.int16)
+        # 软限幅：超过 -1dBFS 的样本按 ratio 8:1 逐轮压回天花板
+        ceiling = 10.0 ** (-1.0 / 20.0)
+        ratio = 8.0
+        for _ in range(10):
+            over = np.abs(y) > ceiling
+            if not over.any():
+                break
+            mag = np.abs(y[over])
+            y[over] = np.sign(y[over]) * (ceiling + (mag - ceiling) / ratio)
+        y = np.clip(y, -10.0 ** (-0.5 / 20.0), 10.0 ** (-0.5 / 20.0))
+
+        boosted = np.round(y * 32767.0).astype(np.int16)
         with wave.open(str(audio), "wb") as w:
             w.setnchannels(nch)
             w.setsampwidth(2)
             w.setframerate(sr)
             w.writeframes(boosted.tobytes())
+        new_rms = float(np.sqrt(np.mean((boosted.astype(np.float64) / 32768.0) ** 2)))
+        peak_db = 20.0 * np.log10(float(np.max(np.abs(boosted))) / 32768.0)
         self.logger.info(
-            f"响度还原: {cur_db:.1f} → {cur_db + gain_db:.1f} dBFS rms "
-            f"(+{gain_db:.1f}dB, peak {peak_db:.1f} → {peak_db + gain_db:.1f}dB)"
+            f"响度还原: {cur_db:.1f} → {20*np.log10(new_rms):.1f} dBFS rms "
+            f"(+{gain_db:.1f}dB 后软限幅, peak {peak_db:.1f}dB)"
         )
 
 

@@ -3747,15 +3747,36 @@ async function showJobDetail(jobId) {
   try {
     const job = await api(`/api/jobs/${jobId}`);
     const detail = document.getElementById('job-detail');
-    const stepsHtml = (job.steps || []).map(s => `
+    const stepsHtml = (job.steps || []).map(s => {
+      // 原创性检测摘要：违禁词自动修正/LLM 风险/相似度结论（后端早已产出，
+      // 此前前端无任何展示，用户对文案被改写毫无感知——r8 P2）
+      let extra = '';
+      if (s.step === 'originality_check' && s.status === 'success' && s.result) {
+        const r = s.result;
+        const bits = [];
+        if (Array.isArray(r.banned_auto_fixed) && r.banned_auto_fixed.length) {
+          bits.push(`违禁词自动修正 ${r.banned_auto_fixed.length} 处（${r.banned_auto_fixed.slice(0, 3).join('、')}${r.banned_auto_fixed.length > 3 ? '…' : ''}）`);
+        }
+        if (r.llm_risk && r.llm_risk.level) {
+          const lvl = String(r.llm_risk.level);
+          const lvlLabel = lvl === 'high' ? '高' : lvl === 'medium' ? '中' : '低';
+          bits.push(`LLM 风险: ${lvlLabel}`);
+        }
+        if (r.status) bits.push(r.status === 'passed' ? '查重通过' : `查重: ${r.status}`);
+        if (bits.length) {
+          extra = `<div style="font-size:11px;color:var(--color-text-secondary);margin-top:2px;line-height:1.5">${bits.join(' · ')}</div>`;
+        }
+      }
+      return `
       <div class="pipeline-step ${s.status}">
         <div class="step-icon">${STEP_INFO[s.step]?.icon || '○'}</div>
         <div class="step-info">
           <div class="step-name">${STEP_INFO[s.step]?.name || s.step}</div>
           <div class="step-status">${s.status} ${s.duration ? `· ${s.duration.toFixed(2)}s` : ''}</div>
+          ${extra}
         </div>
       </div>
-    `).join('');
+    `;}).join('');
     const output = job.output || {};
     const videoPath = output.final_video || output.video_path;
     const videoAbsPath = output.final_video_absolute || output.video_path_absolute || videoPath;
@@ -4477,6 +4498,9 @@ function bindPodcastEvents() {
         target.style.display = 'block';
         target.classList.add('active');
       }
+      // manual 模式显示引导提示（首次进入不再是一片空白区）
+      const manualHint = document.getElementById('pod-manual-hint');
+      if (manualHint) manualHint.style.display = tab.dataset.podSource === 'manual' ? 'flex' : 'none';
     });
   });
 
