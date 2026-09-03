@@ -1510,6 +1510,12 @@ function bindScriptToolbar() {
   });
   const analyzeBtn = document.getElementById('wiz-analyze-btn');
   if (analyzeBtn) analyzeBtn.addEventListener('click', analyzeViralScript);
+  const legalBtn = document.getElementById('wiz-legal-btn');
+  if (legalBtn) legalBtn.addEventListener('click', runLegalCheck);
+  const legalCloseBtn = document.getElementById('wiz-legal-close');
+  if (legalCloseBtn) legalCloseBtn.addEventListener('click', () => {
+    document.getElementById('wiz-legal-report').style.display = 'none';
+  });
   const previewTtsBtn = document.getElementById('wiz-preview-tts-btn');
   if (previewTtsBtn) previewTtsBtn.addEventListener('click', previewScriptTts);
   const viralCloseBtn = document.getElementById('wiz-viral-close');
@@ -2325,6 +2331,121 @@ async function previewScriptTts() {
     btn.disabled = false;
     if (!_scriptPreviewAudio) setBtnIcon(btn, 'headphones', '试听');
   }
+}
+
+// AI 法务：文案合规检测（违禁词 + 平台敏感词 + LLM 语义风险）
+async function runLegalCheck() {
+  const script = document.getElementById('wiz-script').value.trim();
+  if (!script) { toast('请先输入文案', 'error'); return; }
+  const btn = document.getElementById('wiz-legal-btn');
+  const panel = document.getElementById('wiz-legal-report');
+  const body = document.getElementById('wiz-legal-body');
+  btn.disabled = true;
+  setBtnIcon(btn, 'loader', '检测中...');
+  body.innerHTML = '<div class="viral-loading"><span class="spinner"></span> 正在检测违禁词与平台敏感词（含 LLM 语义风险，约需 10-30 秒）...</div>';
+  panel.style.display = 'block';
+  try {
+    const result = await api('/api/script/legal-check', {
+      method: 'POST',
+      body: { script },
+    });
+    renderLegalReport(result, script);
+  } catch (e) {
+    body.innerHTML = `<div class="viral-error"><i data-lucide="alert-circle"></i> ${escapeHtml(e.message)}</div>`;
+    lucide.createIcons();
+  } finally {
+    btn.disabled = false;
+    setBtnIcon(btn, 'scale', 'AI法务');
+  }
+}
+
+function renderLegalReport(result, script) {
+  const body = document.getElementById('wiz-legal-body');
+  if (!result.success) {
+    body.innerHTML = `<div class="viral-error"><i data-lucide="alert-circle"></i> ${escapeHtml(result.error || '检测失败')}</div>`;
+    lucide.createIcons();
+    return;
+  }
+  const VERDICT = {
+    pass:  { label: '合规通过', color: '#10b981', icon: 'shield-check', desc: '未检出违禁词，LLM 语义风险低，可放心发布' },
+    low:   { label: '低风险',   color: '#10b981', icon: 'shield-check', desc: '存在轻微风险提示，通常不影响发布' },
+    medium:{ label: '中风险',   color: '#f59e0b', icon: 'shield-alert', desc: '存在违禁/敏感词或语义风险，建议修正后再发布' },
+    high:  { label: '高风险',   color: '#ef4444', icon: 'shield-x',  desc: '命中广告法极限词或高风险表述，发布有限流/处罚风险，必须修正' },
+  };
+  const v = VERDICT[result.verdict] || VERDICT.pass;
+
+  let html = `<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+    <span style="display:inline-flex;width:38px;height:38px;border-radius:50%;background:${v.color}1a;color:${v.color};align-items:center;justify-content:center">
+      <i data-lucide="${v.icon}"></i>
+    </span>
+    <div>
+      <div style="font-weight:600;color:${v.color};font-size:15px">${v.label}</div>
+      <div style="font-size:12px;color:var(--color-text-secondary)">${v.desc}（${result.char_count} 字 · ${result.elapsed}s）</div>
+    </div>
+  </div>`;
+
+  // 违禁词命中
+  if (result.banned_count > 0) {
+    html += `<div style="font-weight:600;margin:10px 0 6px">命中违禁词 ${result.banned_count} 个</div><div style="display:flex;flex-wrap:wrap;gap:6px">`;
+    for (const h of result.banned_hits) {
+      html += `<span style="background:#ef44441a;color:#ef4444;border:1px solid #ef44444d;border-radius:4px;padding:2px 8px;font-size:12px" title="${escapeHtml(h.category)}">${escapeHtml(h.word)}<span style="opacity:.6;font-size:10px;margin-left:4px">${escapeHtml(h.category)}</span></span>`;
+    }
+    html += `</div><div style="margin-top:10px"><button class="btn btn-sm btn-primary" id="wiz-legal-fix-btn" type="button"><i data-lucide="sparkles" style="width:13px;height:13px"></i> AI 一键修正文案</button></div>`;
+  } else {
+    html += `<div style="font-weight:600;margin:10px 0 6px">违禁词扫描</div><div style="font-size:13px;color:#10b981">✓ 未命中广告法极限词与平台敏感词</div>`;
+  }
+
+  // LLM 语义风险
+  html += `<div style="font-weight:600;margin:14px 0 6px">LLM 语义风险${result.llm_available ? '' : '（未启用）'}</div>`;
+  if (result.llm_risk) {
+    const lvl = result.llm_risk.level || 'low';
+    const lvlColor = lvl === 'high' ? '#ef4444' : lvl === 'medium' ? '#f59e0b' : '#10b981';
+    html += `<div style="font-size:13px">风险等级：<span style="color:${lvlColor};font-weight:600">${lvl}</span></div>`;
+    if (result.llm_risk.reason) html += `<div style="font-size:12px;color:var(--color-text-secondary);margin-top:4px">${escapeHtml(result.llm_risk.reason)}</div>`;
+    const risks = result.llm_risk.risks || [];
+    if (risks.length) {
+      html += `<ul style="margin:6px 0 0 18px;font-size:12px;color:var(--color-text-secondary)">`;
+      for (const r of risks.slice(0, 6)) html += `<li style="margin:2px 0">${escapeHtml(typeof r === 'string' ? r : (r.risk || r.description || JSON.stringify(r)))}</li>`;
+      html += `</ul>`;
+    }
+  } else if (!result.llm_available) {
+    html += `<div style="font-size:12px;color:var(--color-text-secondary)">LLM 未配置或为 Mock 模式，仅提供本地违禁词扫描</div>`;
+  } else {
+    html += `<div style="font-size:13px;color:#10b981">✓ 未检出语义风险</div>`;
+  }
+
+  body.innerHTML = html;
+  lucide.createIcons();
+
+  // 一键修正：调 auto_fix 拿修正稿，预览确认后替换编辑器内容
+  const fixBtn = document.getElementById('wiz-legal-fix-btn');
+  if (fixBtn) fixBtn.addEventListener('click', async () => {
+    fixBtn.disabled = true;
+    fixBtn.innerHTML = '<span class="spinner"></span> AI 修正中...';
+    try {
+      const r2 = await api('/api/script/legal-check', {
+        method: 'POST',
+        body: { script, auto_fix: true },
+      });
+      if (r2.success && r2.fixed_script) {
+        const ta = document.getElementById('wiz-script');
+        ta.value = r2.fixed_script;
+        ta.dispatchEvent(new Event('input'));
+        toast('已自动修正并替换文案（原稿可 Ctrl+Z 撤销），请再次检测确认', 'success');
+        runLegalCheck();
+      } else {
+        toast(r2.error || 'AI 修正失败，请手动调整违禁词', 'error');
+        fixBtn.disabled = false;
+        fixBtn.innerHTML = '<i data-lucide="sparkles" style="width:13px;height:13px"></i> AI 一键修正文案';
+        lucide.createIcons();
+      }
+    } catch (e) {
+      toast(`修正失败: ${e.message}`, 'error');
+      fixBtn.disabled = false;
+      fixBtn.innerHTML = '<i data-lucide="sparkles" style="width:13px;height:13px"></i> AI 一键修正文案';
+      lucide.createIcons();
+    }
+  });
 }
 
 // 爆款结构分析
@@ -4336,13 +4457,21 @@ async function loadHealth() {
       { key: 'avatars_count', label: '已注册形象', icon: '<i data-lucide="users"></i>' },
       { key: 'voices_count', label: '已注册音色', icon: '<i data-lucide="music"></i>' },
       { key: 'gpu.cuda_available', label: 'GPU CUDA 加速', icon: '<i data-lucide="cpu"></i>' },
-      { key: 'gpu.nvenc_available', label: 'NVENC 硬件编码', icon: '<i data-lucide="video"></i>' },
+      { key: '_encoder', label: '视频编码器', icon: '<i data-lucide="video"></i>' },
     ];
     container.innerHTML = items.map(item => {
       let display;
       if (item.key === '_ollama') display = svcBadge('ollama');
       else if (item.key === '_cosyvoice') display = svcBadge('cosyvoice');
       else if (item.key === '_latentsync') display = svcBadge('latentsync');
+      else if (item.key === '_encoder') {
+        // 显示实际使用的编码器（而非单独的 NVENC 可否）：硬件编码不可用时
+        // 自动回退 CPU libx264（高质量、稍慢），功能完全不受影响——
+        // 单列 NVENC 红色"不可用"会让用户误以为系统故障
+        const enc = (health.gpu && health.gpu.encoder) || 'libx264';
+        const isHw = /nvenc|qsv|amf/.test(enc);
+        display = `<span class="badge badge-success">${enc}${isHw ? '（硬件加速）' : '（CPU 高质量）'}</span>`;
+      }
       else {
         const val = item.key.includes('.') ? item.key.split('.').reduce((obj, k) => (obj == null ? undefined : obj[k]), health) : health[item.key];
         if (item.key === 'llm_mock') {

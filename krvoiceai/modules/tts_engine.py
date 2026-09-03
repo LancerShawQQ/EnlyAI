@@ -811,9 +811,17 @@ class TTSEngine(BaseModule):
             if self._job_cancelled(job_id):
                 raise RuntimeError("用户取消")
             self.logger.info(f"CosyVoice calling API with seg={repr(seg)} prompt_text={repr(prompt_text)}")
-            # 超时自适应：配置值 vs 按字数估算（每字约 1.2s，含冷启余量）取大者。
-            # 固定 180s 曾在 GPU 显存紧张（推理变慢 4-10 倍）时被吃满
-            seg_timeout = max(timeout, 60 + int(len(seg) * 1.2))
+            # 超时自适应：配置值 vs 按字数估算取大者。
+            # 实测 s/字 随 GPU 争抢在 1.6（空闲）~4.2（争抢）间波动（r9 事故：
+            # 244 字实际需 1025s，旧公式 60+len×1.2=352s 必超时）。按 5s/字
+            # 上限 + 300s 冷启余量设预算：长任务慢但单次可成功，且配合
+            # orchestrator 的"超时不重试"不再雪崩。
+            seg_timeout = max(
+                timeout,
+                60 + int(len(seg) * 1.2),
+                int(len(seg) * 5.0) + 300,
+            )
+            _seg_t0 = time.time()
             wav_bytes = self._call_cosyvoice_api(
                 server_url, seg, prompt_audio_path, prompt_text,
                 instruct=use_instruct and instruct,
@@ -821,7 +829,20 @@ class TTSEngine(BaseModule):
                 timeout=seg_timeout,
                 job_id=job_id,
             )
-            self.logger.info(f"CosyVoice seg wav_bytes={len(wav_bytes) if wav_bytes else 'None'}")
+            _seg_elapsed = time.time() - _seg_t0
+            # RTF 埋点：实际合成速率（s/字）。健康基线 ~1.6；>3 说明 GPU 争抢
+            # 或服务异常（r9 事故实测 4.2），日志可提前暴露性能退化
+            _spd = _seg_elapsed / max(len(seg), 1)
+            self.logger.info(
+                f"CosyVoice seg done chars={len(seg)} elapsed={_seg_elapsed:.1f}s "
+                f"speed={_spd:.2f}s/char{' ⚠️' if _spd > 3.0 else ''} "
+                f"wav_bytes={len(wav_bytes) if wav_bytes else 'None'}"
+            )
+            if _spd > 3.0:
+                self.logger.warning(
+                    f"CosyVoice 合成速率异常（{_spd:.2f}s/char > 3.0）："
+                    f"可能存在 GPU 争抢或另一实例正在推理"
+                )
             if wav_bytes:
                 all_wavs.append(wav_bytes)
 

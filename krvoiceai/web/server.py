@@ -120,6 +120,12 @@ class ScriptProcessRequest(BaseModel):
     """文案 AI 处理请求"""
     script: str = ""
     action: str = "polish"  # polish/rewrite/expand/shorten/style/extract/generate
+
+
+class LegalCheckRequest(BaseModel):
+    """AI 法务：文案合规检测请求"""
+    script: str = ""
+    auto_fix: bool = False
     style: Optional[str] = None  # 幽默/严肃/活泼/专业/口语化
     topic: Optional[str] = None  # generate 模式下的主题
     reference_url: Optional[str] = None  # extract 模式下的参考视频链接
@@ -1403,6 +1409,22 @@ def create_app() -> FastAPI:
             )
         )
         return result
+
+    @app.post("/api/script/legal-check")
+    async def legal_check_script(req: LegalCheckRequest):
+        """AI 法务：检测文案违禁词（广告法极限词/平台敏感词/医疗金融）与 LLM 语义风险
+
+        auto_fix=True 时返回修正后的文案（不直接替换，由前端确认后回填）。
+        """
+        from ..modules.originality_checker import OriginalityChecker
+
+        def _check():
+            checker = OriginalityChecker()
+            checker.setup()
+            return checker.check_script(req.script, auto_fix=req.auto_fix)
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _check)
 
     @app.post("/api/script/parse")
     async def parse_share_text(req: ParseShareTextRequest):

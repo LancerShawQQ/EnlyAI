@@ -70,20 +70,32 @@ def estimate_speech_duration(text: str, chars_per_second: float = 4.5) -> float:
     return max(1.0, effective / chars_per_second)
 
 
-# 虚词/连接词首字：硬切时优先让切点落在这些字之前（词首边界概率高，
-# 避免"英|语"这类词中切断——中文无分词器下的轻量启发式）
-_FUNC_WORD_STARTS = set("的了和与是在让给把对从被跟或而且然后因为所以但是如果也要就都还再并并且此外另外同时")
+# 可起头的虚词/连接词：切点放在这些字之前（下一段以其开头，语义完整）
+_FUNC_LEADING = set("在让给对从被跟或而且然后因为所以但是如果也要就都还再并且此外另外同时")
+# 收尾助词：切点放在这些字之后（"…真的 | 能够"，而不是 r9 实测误切的
+# "…是否真 | 的能够"——"的/了"跟前面的词是一体的，不能出现在段首）
+_FUNC_TRAILING = set("的了是地得吧吗呢啊嘛呀")
+# 助词后切的保护词：这些词里"的"是词首（的确/标的），不能在其后切
+_TRAILING_BLOCK = {"的确", "的当", "标的", "目的已"}
 
 # 缓存:避免每行重复编译
 _SPLIT_TAIL_RE = None
 
 
 def _best_cjk_cut(text: str, target: int) -> int:
-    """在 target 附近（±4 字）找一个"下一字是虚词首字"的切点，找不到退回 target"""
+    """在 target 附近（±4 字）找语义边界切点，找不到退回 target
+
+    优先级：① 下一段以可起头虚词开头；② 切在收尾助词之后（带保护词表）。
+    """
     for delta in range(0, 5):
         for pos in (target - delta, target + delta):
-            if 6 <= pos < len(text) and text[pos] in _FUNC_WORD_STARTS:
+            if 6 <= pos < len(text) and text[pos] in _FUNC_LEADING:
                 return pos
+    for delta in range(0, 5):
+        for pos in (target + delta, target - delta):
+            if 7 <= pos < len(text) and text[pos - 1] in _FUNC_TRAILING:
+                if text[pos - 2:pos] not in _TRAILING_BLOCK:
+                    return pos
     return target
 
 

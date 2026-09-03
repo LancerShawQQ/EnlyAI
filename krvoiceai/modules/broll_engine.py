@@ -45,6 +45,59 @@ class BRollEngine(BaseModule):
         self.logger.info("B-roll 画中画模块初始化完成")
         super().setup()
 
+    def _normalize_clip_durations(self, clips: list[dict], main_duration: float) -> None:
+        """素材时长与台词窗口的适配（对标主流口播产品的做法）
+
+        用户插入的素材时长与台词时间窗不一致是常态，主流处理（HeyGen/Synthesia
+        场景媒体 fit 场景时长、剪映覆叠层不推主轨）归纳为两条规则：
+
+        - 素材比窗口短 → 窗口截短到素材时长。否则整段切换模式下 concat 会
+          留下时长缺口，后续片段整体前移，与字幕/音频错位（必须修的缺陷）。
+        - 素材比窗口长 → 默认截取素材开头补满窗口（cut 模式由 ffmpeg -t
+          天然完成，画中画由 enable 窗口截断）。画中画模式可选
+          clip["overflow"]="extend"：窗口延长到素材结束（剪映覆叠语义：
+          不推主轨、语音继续，画面盖过后续台词直到素材播完，且不超过
+          主视频结尾）。
+        """
+        image_exts = {".jpg", ".jpeg", ".png", ".webp"}
+        for clip in clips:
+            p = Path(clip.get("path", ""))
+            if p.suffix.lower() in image_exts:
+                continue  # 图片 -loop 1 无限时长，不受此约束
+            dur = self.ffmpeg.probe_duration(p)
+            if dur <= 0:
+                continue
+            start_t = float(clip.get("start", 0))
+            end_t = float(clip.get("end", start_t + 3))
+            window = max(end_t - start_t, 0.1)
+
+            if dur < window - 0.05:
+                new_end = round(start_t + dur, 3)
+                self.logger.info(
+                    f"B-roll 素材 {p.name} 时长 {dur:.1f}s 短于台词窗口 "
+                    f"{window:.1f}s：窗口截短至素材时长（保持后续时间轴不错位）"
+                )
+                clip["end"] = new_end
+            elif dur > window + 0.05:
+                if (clip.get("mode", "cut") == "pip"
+                        and clip.get("overflow") == "extend"):
+                    new_end = start_t + dur
+                    if main_duration > 0:
+                        new_end = min(new_end, main_duration - 0.2)
+                    if new_end > end_t + 0.1:
+                        self.logger.info(
+                            f"画中画素材 {p.name} 时长 {dur:.1f}s 长于窗口 "
+                            f"{window:.1f}s：overflow=extend，覆盖至 {new_end:.1f}s"
+                            f"（主视频语音不受影响）"
+                        )
+                        clip["end"] = round(new_end, 3)
+                else:
+                    self.logger.info(
+                        f"B-roll 素材 {p.name} 时长 {dur:.1f}s 长于窗口 "
+                        f"{window:.1f}s：截取素材开头补满窗口（默认策略，"
+                        f"画中画可在片段上设置 overflow=extend 覆盖后续台词）"
+                    )
+
     def _relocate_clips_by_anchor(self, ctx: JobContext) -> None:
         """把带 anchor_text 的片段重新定位到真实字幕时间戳
 
@@ -136,6 +189,10 @@ class BRollEngine(BaseModule):
                 success=True,
                 data={"skipped": True, "reason": "no valid clips"},
             )
+
+        # 素材时长与台词窗口归一化（用户素材时长 ≠ 台词时长是常态）
+        main_duration = self.ffmpeg.probe_duration(ctx.raw_video_path)
+        self._normalize_clip_durations(valid_clips, main_duration)
 
         output_path = ctx.work_dir / "broll_video.mp4"
 
@@ -242,6 +299,10 @@ class BRollEngine(BaseModule):
             import shutil
             shutil.copy2(video_path, output_path)
             return output_path
+
+        # 与流水线路径相同的时长归一化（素材与窗口不匹配适配）
+        main_duration = self.ffmpeg.probe_duration(video_path)
+        self._normalize_clip_durations(valid_clips, main_duration)
 
         pip_clips = [c for c in valid_clips if c.get("mode", "cut") == "pip"]
         cut_clips = [c for c in valid_clips if c.get("mode", "cut") == "cut"]

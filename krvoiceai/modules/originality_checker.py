@@ -302,6 +302,93 @@ class OriginalityChecker(BaseModule):
                 seen.add(word)
         return hits
 
+    def _scan_banned_with_categories(self, text: str) -> list[dict]:
+        """带分类的违禁词扫描（AI 法务用）
+
+        词库以 [分类名] 标记分段（如 [广告法极限词] / [平台敏感词] / [医疗/金融]），
+        _load_banned_words 丢弃了分类信息，这里重新解析保留归属。
+        """
+        if not self.banned_words_file.exists():
+            return []
+        hits: list[dict] = []
+        seen: set[str] = set()
+        category = "未分类"
+        try:
+            for line in self.banned_words_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith("#"):
+                    # 分类标记藏在注释里（# ===== [广告法极限词] =====）
+                    m = re.search(r"\[([^]]+)\]", line)
+                    if m:
+                        category = m.group(1)
+                    continue
+                if line.startswith("[") and line.endswith("]"):
+                    category = line[1:-1]
+                    continue
+                if line in text and line not in seen:
+                    hits.append({"word": line, "category": category})
+                    seen.add(line)
+        except Exception as e:
+            self.logger.warning(f"违禁词库解析失败: {e}")
+        return hits
+
+    def check_script(self, script: str, auto_fix: bool = False) -> dict:
+        """面向 API 的文案合规检测（AI 法务按钮）：不入历史库、不阻断流程
+
+        Returns:
+            verdict: pass / low / medium / high
+            banned_hits: [{word, category}]
+            llm_risk: {level, reason, risks} 或 None（未配置 LLM 时）
+            fixed_script: auto_fix=True 且命中时的修正文案
+        """
+        import time as _time
+        t0 = _time.time()
+        if not script or not script.strip():
+            return {"success": False, "error": "文案为空"}
+
+        if self._banned_words is None:
+            self._banned_words = self._load_banned_words()
+
+        banned_hits = self._scan_banned_with_categories(script)
+        llm_risk = None
+        if self.llm_risk_check and not self.llm.is_mock:
+            try:
+                llm_risk = self._llm_risk_check(script)
+            except Exception as e:
+                self.logger.warning(f"LLM 风控检测失败: {e}")
+
+        # 综合判定：广告法类命中或 LLM high → high；其他命中或 LLM medium → medium
+        has_law_hits = any("广告法" in h["category"] or "医疗" in h["category"]
+                           or "金融" in h["category"] for h in banned_hits)
+        llm_level = (llm_risk or {}).get("level", "")
+        if llm_level == "high" or has_law_hits:
+            verdict = "high"
+        elif banned_hits or llm_level == "medium":
+            verdict = "medium"
+        elif llm_level == "low":
+            verdict = "low"
+        else:
+            verdict = "pass"
+
+        fixed_script = None
+        if auto_fix and banned_hits:
+            words = [h["word"] for h in banned_hits]
+            fixed_script = self._auto_fix_banned_words(script, words)
+
+        return {
+            "success": True,
+            "verdict": verdict,
+            "char_count": len(script),
+            "banned_hits": banned_hits,
+            "banned_count": len(banned_hits),
+            "llm_risk": llm_risk,
+            "llm_available": not self.llm.is_mock,
+            "fixed_script": fixed_script,
+            "elapsed": round(_time.time() - t0, 1),
+        }
+
     def _auto_fix_banned_words(self, text: str, banned: list[str]) -> Optional[str]:
         """调 LLM 自动修正文案，去除违禁词（保持语义和口播风格）
 

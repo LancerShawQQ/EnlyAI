@@ -372,6 +372,7 @@
                   <button class="btn btn-sm btn-secondary" id="wiz-smooth-btn" type="button">去冗余</button>
                   <button class="btn btn-sm btn-secondary" id="wiz-hook-btn" type="button">优化钩子</button>
                   <button class="btn btn-sm btn-secondary" id="wiz-analyze-btn" type="button"><i data-lucide="trending-up" style="width:14px;height:14px"></i> 爆款分析</button>
+                  <button class="btn btn-sm btn-secondary" id="wiz-legal-btn" type="button"><i data-lucide="scale" style="width:14px;height:14px"></i> AI法务</button>
                   <button class="btn btn-sm btn-secondary" id="wiz-preview-tts-btn" type="button"><i data-lucide="headphones" style="width:14px;height:14px"></i> 试听</button>
                   <button class="btn btn-sm btn-secondary" id="wiz-clear-btn" type="button">清空</button>
                 </div>
@@ -404,6 +405,14 @@
                   <button class="btn btn-sm btn-ghost" id="wiz-viral-close" type="button"><i data-lucide="x"></i></button>
                 </div>
                 <div class="viral-analysis-body" id="wiz-viral-body"></div>
+              </div>
+              <!-- AI 法务合规报告区域 -->
+              <div class="viral-analysis" id="wiz-legal-report" style="display:none">
+                <div class="viral-analysis-header">
+                  <span class="viral-analysis-title"><i data-lucide="scale"></i> AI 法务合规报告</span>
+                  <button class="btn btn-sm btn-ghost" id="wiz-legal-close" type="button"><i data-lucide="x"></i></button>
+                </div>
+                <div class="viral-analysis-body" id="wiz-legal-body"></div>
               </div>
             </div>
             <div class="sub-page" id="wiz-script-ai">
@@ -2005,6 +2014,10 @@
 
       <!-- ===== 页面 7: 任务管理 ===== -->
       <div class="page" id="page-jobs">
+        <div class="settings-tabs">
+          <button class="settings-tab" data-target="jobs" type="button">任务列表</button>
+          <button class="settings-tab" data-target="health" type="button">系统状态</button>
+        </div>
         <div class="page-header">
           <h1 class="page-title">任务管理</h1>
           <p class="page-subtitle">查看历史任务、断点续跑、删除任务</p>
@@ -3190,7 +3203,7 @@
   <!-- Toast 容器 -->
   <div class="toast-container" id="toast-container"></div>
 
-  <script src="/static/js/app.js?v=20260902lg15"></script>
+  <script src="/static/js/app.js?v=20260903lg16"></script>
   <script src="/static/js/settings.js?v=20260901lg8"></script>
 
   <!-- ========== Liquid Glass SVG 滤镜定义（边缘折射变形效果） ========== -->

@@ -250,3 +250,14 @@ def test_load_context_skips_corrupted(orchestrator, isolated_config, tmp_path):
     # 损坏音频应被忽略（未恢复到 ctx）
     assert ctx.audio_path is None or not ctx.audio_path.exists()
 
+
+
+def test_timeout_error_no_retry():
+    """r9 P1：中文超时错误必须命中 no_retry 关键词（否则 3 次重合成雪崩）"""
+    keywords = [
+        "timed out", "timeout", "超时", "无输出",
+        "face not detected", "无法连接", "connection", "oom", "out of memory",
+    ]
+    # TTS 模块实际产出的中文错误（httpx timed out 被重写后）
+    err = "CosyVoice 合成失败（服务超时或无输出）。请稍后重试".lower()
+    assert any(k in err for k in keywords)

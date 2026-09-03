@@ -313,3 +313,23 @@ def test_llm_risk_parse_fallback(isolated_config, job_work_dir, clean_history):
     result = c.execute(ctx)
     assert result.success is True
     assert result.data["llm_risk"]["level"] == "low"
+
+
+# ============ AI 法务（check_script，r9 后新增） ============
+
+def test_check_script_banned_with_categories(checker):
+    """AI 法务：命中违禁词且带词库分类"""
+    r = checker.check_script("我们的产品是全国第一品牌，绝对包赚不赔！")
+    assert r["success"] is True
+    assert r["banned_count"] >= 2
+    cats = {h["category"] for h in r["banned_hits"]}
+    assert any("广告法" in c for c in cats), f"分类缺失: {cats}"
+    assert r["verdict"] == "high"  # 广告法类命中 → high
+
+
+def test_check_script_clean(checker):
+    """AI 法务：干净文案通过"""
+    r = checker.check_script("今天分享一个学习方法，坚持练习就会进步。")
+    assert r["success"] is True
+    assert r["banned_count"] == 0
+    assert r["verdict"] in ("pass", "low")

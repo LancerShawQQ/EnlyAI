@@ -390,10 +390,15 @@ class PipelineOrchestrator:
             if self._is_cancelled(job_id) or "用户取消" in (result.error or ""):
                 self.logger.info(f"步骤 {step_def.name} 因用户取消中止，不重试")
                 break
-            # 防呆：超时和 Face not detected 类错误不重试（重试只会让用户多等几倍时间）
+            # 防呆：超时和 Face not detected 类错误不重试（重试只会让用户多等几倍时间）。
+            # 注意必须含中文关键词：TTS 模块把 httpx "timed out" 重写为中文
+            # "服务超时或无输出"，英文词命中不了 → r9 事故中 3 次全量重合成排队雪崩
             error_lower = (result.error or "").lower()
-            no_retry_keywords = ["timed out", "timeout", "face not detected",
-                                 "无法连接", "connection", "oom", "out of memory"]
+            no_retry_keywords = [
+                "timed out", "timeout", "超时", "无输出",
+                "face not detected", "无法连接", "connection",
+                "oom", "out of memory",
+            ]
             if any(kw in error_lower for kw in no_retry_keywords):
                 self.logger.warning(
                     f"步骤 {step_def.name} 错误类型为不可重试（{result.error[:50]}），跳过重试"
