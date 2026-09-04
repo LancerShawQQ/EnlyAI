@@ -2772,7 +2772,7 @@ function _displayWizardResult(result) {
   if (videoPath) {
     const downloadName = (title || 'video').replace(/[^\w\u4e00-\u9fa5]/g, '_').slice(0, 30) + '.mp4';
     videoEl.innerHTML = `
-      <video src="/api/files?path=${encodeURIComponent(videoPath)}" controls autoplay></video>
+      <video src="/api/files?path=${encodeURIComponent(videoPath)}" ${output.cover ? `poster="/api/files?path=${encodeURIComponent(output.cover)}"` : ''} controls autoplay></video>
       <div style="margin-top:8px;display:flex;gap:8px">
         <a class="btn btn-sm btn-primary" href="/api/files?path=${encodeURIComponent(videoPath)}" download="${downloadName}">
           <i data-lucide="download"></i> 下载视频
@@ -3165,7 +3165,7 @@ function finishProgressModal(result, hasFailed) {
   if (videoPath) {
     resultEl.innerHTML = `
       <div class="progress-modal-result-title">${escapeHtml(title)}</div>
-      <video src="/api/files?path=${encodeURIComponent(videoPath)}" controls autoplay></video>
+      <video src="/api/files?path=${encodeURIComponent(videoPath)}" ${output.cover ? `poster="/api/files?path=${encodeURIComponent(output.cover)}"` : ''} controls autoplay></video>
       <div class="progress-modal-result-actions">
         <div class="video-path-display" style="flex:1;text-align:left;padding:8px 12px;background:var(--bg-elevated);border-radius:8px;font-size:12px;color:var(--text-secondary);font-family:var(--font-mono);word-break:break-all"><i data-lucide="folder" style="width:14px;height:14px;vertical-align:middle;margin-right:4px"></i>${escapeHtml(videoAbsPath)}</div>
         <button class="btn btn-secondary" type="button" onclick="copyToClipboard('${videoAbsPath.replace(/'/g, "\\'")}')"><i data-lucide="copy"></i> 复制路径</button>
@@ -3752,7 +3752,7 @@ async function handleGenerate() {
     // 视频
     const videoEl = document.getElementById('result-video');
     if (videoPath) {
-      videoEl.innerHTML = `<video src="/api/files?path=${encodeURIComponent(videoPath)}" controls autoplay></video>`;
+      videoEl.innerHTML = `<video src="/api/files?path=${encodeURIComponent(videoPath)}" ${coverPath ? `poster="/api/files?path=${encodeURIComponent(coverPath)}"` : ''} controls autoplay></video>`;
     } else {
       videoEl.innerHTML = '<div class="result-video-placeholder">视频未生成</div>';
     }
@@ -3955,7 +3955,7 @@ async function showJobDetail(jobId) {
       ${hasVideo ? `
         <div style="margin-bottom:16px">
           <div style="font-weight:600;margin-bottom:8px">生成结果</div>
-          <video src="/api/files?path=${encodeURIComponent(videoPath)}" controls style="max-width:100%;border-radius:8px;margin-bottom:8px"></video>
+          <video src="/api/files?path=${encodeURIComponent(videoPath)}" ${output.cover ? `poster="/api/files?path=${encodeURIComponent(output.cover)}"` : ''} controls style="max-width:100%;border-radius:8px;margin-bottom:8px"></video>
           <div style="display:flex;gap:8px">
             <a class="btn btn-sm btn-primary" href="/api/files?path=${encodeURIComponent(videoPath)}" download="${job.job_id}.mp4">
               <i data-lucide="download"></i> 下载视频

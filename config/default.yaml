@@ -508,6 +508,14 @@ composer:
   # BGM 库
   bgm_dir: ./config/bgm
   bgm_volume: 0.22  # BGM 音量（0-1）
+  # 封面在成片开头的停留时长（秒）：
+  #   0 = 抖音式立即进主体——封面不进成片，仅作应用内预览图(poster)与
+  #       发布时的平台封面；播放从正片 0s 开始
+  #   >0 = 传统封面停留：封面显示 N 秒后转场进正片
+  cover_hold_seconds: 0.0
+  # 开口前起手静默（秒）：hold=0 时正片开头定格时长，0.2-0.4 最自然；
+  # 人声 adelay/视频 tpad/字幕偏移共用同一数值，改动不影响同步
+  speech_lead_seconds: 0.25
 
 # 封面生成配置
 cover:

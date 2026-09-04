@@ -877,6 +877,8 @@ async function loadVideoSettings() {
 
   // 封面
   document.getElementById('cover-mode').value = cover.mode || 'frame_overlay';
+  document.getElementById('cover-hold-seconds').value = composer.cover_hold_seconds ?? 0;
+  document.getElementById('speech-lead-seconds').value = composer.speech_lead_seconds ?? 0.25;
   document.getElementById('cover-max-chars').value = cover.title_max_chars || 20;
   document.getElementById('cover-font-path').value = cover.font_path || './config/fonts/SourceHanSansCN-Bold.otf';
   // 封面样式选择与预览
@@ -937,6 +939,8 @@ async function saveVideoSettings() {
     audio_bitrate: document.getElementById('audio-bitrate').value,
     bgm_dir: document.getElementById('bgm-dir').value,
     bgm_volume: parseFloat(document.getElementById('bgm-volume').value),
+    cover_hold_seconds: parseFloat(document.getElementById('cover-hold-seconds').value) || 0,
+    speech_lead_seconds: parseFloat(document.getElementById('speech-lead-seconds').value) || 0,
   };
   // Cover 段
   const coverData = {

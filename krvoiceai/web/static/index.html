@@ -2654,6 +2654,18 @@
                 <option value="template">模板拼接</option>
               </select>
             </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">封面停留时长（秒）</label>
+                <input type="number" class="form-input" id="cover-hold-seconds" value="0" min="0" max="3" step="0.1">
+                <span class="hint">0 = 抖音式立即播放正片（封面仅作预览图与发布封面）；&gt;0 = 封面显示 N 秒后转场进正片</span>
+              </div>
+              <div class="form-group">
+                <label class="form-label">开口起手延迟（秒）</label>
+                <input type="number" class="form-input" id="speech-lead-seconds" value="0.25" min="0" max="2" step="0.05">
+                <span class="hint">正片开始到开口说话的间隔，0.2-0.4 最自然（字幕/口型自动同步，无需担心错位）</span>
+              </div>
+            </div>
             <div class="form-group">
               <label class="form-label">标题最大字符数</label>
               <input type="number" class="form-input" id="cover-max-chars" value="20" min="8" max="40">
@@ -3203,8 +3215,8 @@
   <!-- Toast 容器 -->
   <div class="toast-container" id="toast-container"></div>
 
-  <script src="/static/js/app.js?v=20260904lg17"></script>
-  <script src="/static/js/settings.js?v=20260901lg8"></script>
+  <script src="/static/js/app.js?v=20260904lg18"></script>
+  <script src="/static/js/settings.js?v=20260904lg9"></script>
 
   <!-- ========== Liquid Glass SVG 滤镜定义（边缘折射变形效果） ========== -->
   <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false">

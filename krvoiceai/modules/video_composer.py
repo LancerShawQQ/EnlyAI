@@ -236,11 +236,18 @@ class VideoComposer(BaseModule):
         # lead_delay_ms：正片内容在成片中的实际起点（毫秒）。
         # 人声 adelay 与字幕偏移都必须用它，而不是名义封面时长——
         # xfade 转场会让正片提前 transition_duration 秒出现，用名义值会让人声比嘴型晚
+        #
+        # 封面停留可配（composer.cover_hold_seconds）：
+        # 0 = 抖音式立即进主体——封面不进成片，只作应用内 poster 预览图
+        #     与发布时的平台封面；正片从 0s 开始
+        # >0 = 传统封面停留：封面段 hold 秒 + 转场进正片（旧行为）
+        cover_hold_s = min(max(float(self.config.get(
+            "composer.cover_hold_seconds", 0.0)), 0.0), 3.0)
         main_video = video
         lead_delay_ms = 0
-        if cover and Path(cover).exists():
+        if cover and Path(cover).exists() and cover_hold_s > 0.05:
             main_video, cover_lead_ms = self._prepend_cover(
-                video, Path(cover), output.parent
+                video, Path(cover), output.parent, hold_seconds=cover_hold_s,
             )
             lead_delay_ms += cover_lead_ms
 
@@ -263,11 +270,18 @@ class VideoComposer(BaseModule):
             )
             lead_delay_ms += intro_lead_ms
 
-        # 音视频同步：正片实际起点 = lead_delay_ms + 开场留白 1s。
+        # 音视频同步：正片实际起点 = lead_delay_ms + 开口起手静默。
         # 人声/口型/字幕三方必须用同一偏移量，任何一方单独偏移都会导致
-        # "嘴动没声"或"字幕先于声音"的错位
-        SPEECH_LEAD_S = 1.0   # 封面结束后正片画面静默 1s 再开口（商用节奏）
+        # "嘴动没声"或"字幕先于声音"的错位。
+        # 开口起手可配（composer.speech_lead_seconds，默认 0.25s）：
+        # 抖音式成片 0.2-0.4s 内开口最自然；旧硬编码 1s 观感是"等太久"
+        SPEECH_LEAD_S = min(max(float(self.config.get(
+            "composer.speech_lead_seconds", 0.25)), 0.0), 2.0)
         speech_delay_ms = lead_delay_ms + int(SPEECH_LEAD_S * 1000)
+        self.logger.info(
+            f"成片时序: 封面停留={cover_hold_s}s 正片起点={lead_delay_ms}ms "
+            f"开口延迟={speech_delay_ms}ms（人声/口型/字幕共用同一偏移）"
+        )
 
         # 字幕时间戳偏移：和人声延迟保持一致（cover + 开场留白）
         shifted_segments = subtitle_segments
@@ -696,22 +710,22 @@ class VideoComposer(BaseModule):
         return positions.get(pos, positions["top_right"])
 
     def _prepend_cover(
-        self, video: Path, cover: Path, work_dir: Path
+        self, video: Path, cover: Path, work_dir: Path,
+        hold_seconds: float = 1.0,
     ) -> tuple[Path, int]:
-        """在视频开头插入封面图（1.5 秒）
+        """在视频开头插入封面图（hold_seconds 秒，可配）
 
         Returns:
             (拼接后视频路径, 正片实际起点毫秒数)。
             xfade 转场与封面重叠 transition_duration 秒，正片提前出现，
-            人声/字幕延迟必须按返回值而不是名义 1500ms。
+            人声/字幕延迟必须按返回值而不是名义时长。
         """
-        self.logger.info(f"插入封面首帧: {cover.name}")
+        self.logger.info(f"插入封面首帧: {cover.name} 停留 {hold_seconds}s")
 
         # 将封面图转为视频片段
-        # 1s：封面只是"起始帧标识"（缩略图），太长会让观众等待正片
         cover_clip = work_dir / "_tmp_cover_intro.mp4"
         w, h = self.output_resolution
-        cover_duration = 1.0
+        cover_duration = min(max(float(hold_seconds), 0.2), 3.0)
 
         # 调整封面尺寸
         resized_cover = work_dir / "_tmp_cover_resized.jpg"

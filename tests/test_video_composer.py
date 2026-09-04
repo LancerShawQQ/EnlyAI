@@ -124,11 +124,12 @@ def test_compose_with_cover(composer, job_work_dir, sample_video, sample_cover):
     assert result.success is True
     assert ctx.final_video.exists()
     assert result.data["has_cover"] is True
-    # 封面 1s + 原视频 3s − xfade 重叠 0.5s + 收尾定格 1s = 4.5s
+    # 默认抖音式（cover_hold_seconds=0）：封面不进成片，时长≈原视频 3s
+    # （历史区间 3.2-4.0 是封面停留 1s 时代的行为，见 test_compose_cover_hold_legacy）
     ff = FFmpegRunner()
     info = ff.probe_video_info(ctx.final_video)
     assert info is not None
-    assert 3.2 < info.duration < 4.0
+    assert 2.5 < info.duration < 4.0
 
 
 def test_compose_all_elements(
@@ -194,3 +195,58 @@ def test_pick_bgm_empty(composer):
     result = composer.pick_bgm()
     # 测试环境 BGM 库可能为空
     assert result is None or result.exists()
+
+
+# ============ 封面停留可配（抖音式 hold=0）============
+
+def _first_frame_color(video: Path):
+    """提取成片第一帧的平均 RGB（用于断言首帧是封面还是正片）"""
+    import subprocess, tempfile
+    from PIL import Image
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+        frame = Path(f.name)
+    ff = FFmpegRunner()
+    subprocess.run(
+        [ff.ffmpeg, "-y", "-i", str(video), "-frames:v", "1", str(frame)],
+        capture_output=True, check=True, timeout=30,
+    )
+    img = Image.open(str(frame)).convert("RGB").resize((16, 16))
+    px = list(img.getdata())
+    n = len(px)
+    return tuple(sum(c[i] for c in px) // n for i in range(3))
+
+
+def test_compose_cover_hold_zero_immediate(composer, job_work_dir, sample_video, sample_cover, isolated_config):
+    """hold=0（默认，抖音式）：封面不进成片，第一帧就是正片画面"""
+    isolated_config.set("composer.cover_hold_seconds", 0.0)
+    isolated_config.set("composer.speech_lead_seconds", 0.25)
+    ctx = JobContext(
+        work_dir=job_work_dir,
+        raw_video_path=sample_video,
+        cover_path=sample_cover,
+    )
+    ctx.ensure_work_dir()
+    result = composer.execute(ctx)
+    assert result.success is True
+
+    # 首帧应是正片颜色 (80,100,130) 而非封面颜色 (150,80,100)
+    r, g, b = _first_frame_color(ctx.final_video)
+    assert abs(g - 100) < abs(g - 80), f"首帧疑似封面: RGB=({r},{g},{b})"
+    assert abs(b - 130) < abs(b - 100), f"首帧疑似封面: RGB=({r},{g},{b})"
+
+
+def test_compose_cover_hold_legacy(composer, job_work_dir, sample_video, sample_cover, isolated_config):
+    """hold>0（传统模式）：封面段进成片，第一帧是封面"""
+    isolated_config.set("composer.cover_hold_seconds", 1.5)
+    isolated_config.set("composer.speech_lead_seconds", 0.5)
+    ctx = JobContext(
+        work_dir=job_work_dir,
+        raw_video_path=sample_video,
+        cover_path=sample_cover,
+    )
+    ctx.ensure_work_dir()
+    result = composer.execute(ctx)
+    assert result.success is True
+
+    r, g, b = _first_frame_color(ctx.final_video)
+    assert abs(r - 150) < abs(r - 80), f"首帧疑似正片: RGB=({r},{g},{b})"
