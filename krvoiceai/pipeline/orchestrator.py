@@ -201,6 +201,17 @@ class PipelineOrchestrator:
         if not job:
             self.logger.error(f"任务不存在: {job_id}")
             return False
+        # 启动前已收到取消请求（排队期间发出）：直接标 CANCELLED 不执行。
+        # 此前入口无条件 clear 会把 pending 期间的取消标志抹掉——
+        # 矩阵批量串行场景实测：取消第 2 个排队任务，其启动后照样全量执行
+        if self._is_cancelled(job_id):
+            self.store.update_job_status(
+                job_id, JobStatus.CANCELLED, error="用户取消"
+            )
+            self._clear_cancel(job_id)
+            self.logger.info(f"任务在启动前被用户取消 job={job_id}")
+            return False
+        # 清理上次运行残留的取消标志（取消请求与任务收尾的竞态余量）
         self._clear_cancel(job_id)
 
         self.store.update_job_status(job_id, JobStatus.RUNNING)

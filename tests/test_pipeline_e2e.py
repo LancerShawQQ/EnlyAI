@@ -261,3 +261,19 @@ def test_timeout_error_no_retry():
     # TTS 模块实际产出的中文错误（httpx timed out 被重写后）
     err = "CosyVoice 合成失败（服务超时或无输出）。请稍后重试".lower()
     assert any(k in err for k in keywords)
+
+
+def test_cancel_before_start(orchestrator, isolated_config):
+    """r10 新发现：排队（pending）期间发出的取消在启动瞬间被入口 clear 抹掉。
+    矩阵串行场景实测第 2 个变体的取消失效、全量执行。"""
+    job_id = orchestrator.submit_job(script="测试排队取消。")
+    # 任务尚未 run —— 处于 pending，此时请求取消
+    ok = orchestrator.request_cancel(job_id)
+    assert ok is True
+    result = orchestrator.run_job(job_id)
+    assert result is False, "启动前已取消的任务不应执行"
+    job = orchestrator.get_status(job_id)
+    assert job["status"] == "cancelled"
+    # 没有任何步骤被执行（script_write 未跑或至多被跳过标记）
+    ran = [s for s in job["steps"] if s["status"] == "running"]
+    assert not ran
