@@ -5320,10 +5320,19 @@ input[type="color"]::-webkit-color-swatch {
    语音播客向导专用样式
    ============================================ */
 
-/* 旋转加载图标（通用 .spin 类） */
+/* 旋转加载图标（通用 .spin 类）：固定尺寸防 flex 拉伸成非整数 */
 .spin {
   animation: spin 1s linear infinite;
   display: inline-block;
+  flex-shrink: 0;
+  width: 1.25em;
+  height: 1.25em;
+}
+/* lucide 替换后的 svg 继承同尺寸（health 页 loader-2 曾被拉到 33px） */
+.spin svg, svg.spin {
+  width: 1.25em;
+  height: 1.25em;
+  flex-shrink: 0;
 }
 
 /* 上传区域 */

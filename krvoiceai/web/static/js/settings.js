@@ -28,13 +28,16 @@ function showTestResult(elId, result) {
 // ========== 子标签切换 ==========
 
 document.addEventListener('DOMContentLoaded', () => {
-  document.querySelectorAll('.sub-tab').forEach(tab => {
+  // 仅绑定设置中心自己的 sub-tab（带 data-subtab）——向导文案标签/播客来源
+  // 标签也叫 .sub-tab 但由各自页面处理，绑进来会因 subpage-undefined 抛
+  // null classList 错（r11 P3：全站 7 个标签点击即报 console error）
+  document.querySelectorAll('.sub-tab[data-subtab]').forEach(tab => {
     tab.addEventListener('click', () => {
       const target = tab.dataset.subtab;
-      document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.sub-tab[data-subtab]').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.sub-page').forEach(p => p.classList.remove('active'));
       tab.classList.add('active');
-      document.getElementById(`subpage-${target}`).classList.add('active');
+      document.getElementById(`subpage-${target}`)?.classList.add('active');
     });
   });
 });

@@ -2333,10 +2333,22 @@ async function previewScriptTts() {
   }
 }
 
+// 生成任务进行中提示（GPU 共享时 LLM/AI 调用会显著变慢）
+async function warnIfGpuBusy() {
+  try {
+    const jobs = await api('/api/jobs');
+    const active = (jobs || []).some(j => j.status === 'running' || j.status === 'pending');
+    if (active) {
+      toast('检测到视频/播客生成任务进行中：GPU 忙，AI 处理与法务检测可能明显变慢，请耐心等待', 'warning', 6000);
+    }
+  } catch (e) { /* 状态查询失败不阻塞主流程 */ }
+}
+
 // AI 法务：文案合规检测（违禁词 + 平台敏感词 + LLM 语义风险）
 async function runLegalCheck() {
   const script = document.getElementById('wiz-script').value.trim();
   if (!script) { toast('请先输入文案', 'error'); return; }
+  warnIfGpuBusy();
   const btn = document.getElementById('wiz-legal-btn');
   const panel = document.getElementById('wiz-legal-report');
   const body = document.getElementById('wiz-legal-body');
@@ -2623,6 +2635,7 @@ function renderViralReport(report, isMock) {
 }
 
 async function wizardScriptProcess() {
+  warnIfGpuBusy();
   const script = document.getElementById('wiz-script').value.trim();
   const action = wizardState.wizScriptAction;
   const style = action === 'style' ? document.getElementById('wiz-process-style').value : null;
