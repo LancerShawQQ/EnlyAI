@@ -120,6 +120,10 @@ class ScriptProcessRequest(BaseModel):
     """文案 AI 处理请求"""
     script: str = ""
     action: str = "polish"  # polish/rewrite/expand/shorten/style/extract/generate
+    style: Optional[str] = None  # 幽默/严肃/活泼/专业/口语化
+    topic: Optional[str] = None  # generate 模式下的主题
+    reference_url: Optional[str] = None  # extract 模式下的参考视频链接
+    template_id: Optional[str] = None  # generate 模式下使用的爆款模板 ID
 
 
 class LegalCheckRequest(BaseModel):
@@ -127,10 +131,6 @@ class LegalCheckRequest(BaseModel):
     script: str = ""
     auto_fix: bool = False
     soften: bool = False  # 词库清零后针对 LLM-only 语义风险的"AI 优化表述"
-    style: Optional[str] = None  # 幽默/严肃/活泼/专业/口语化
-    topic: Optional[str] = None  # generate 模式下的主题
-    reference_url: Optional[str] = None  # extract 模式下的参考视频链接
-    template_id: Optional[str] = None  # generate 模式下使用的爆款模板 ID
 
 
 class ParseShareTextRequest(BaseModel):
