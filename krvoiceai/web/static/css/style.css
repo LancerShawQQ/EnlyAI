@@ -44,6 +44,11 @@
   --color-success: #30d158;
   --color-warning: #ff9f0a;
   --color-error: #ff453a;
+  /* 按钮黑（Apple 黑色风格，U1 统一定义）：主按钮玻璃黑与选中态共用同一色基。
+     注意 --color-primary(#0071e3) 是交互强调色（focus/勾选/链接），
+     按钮主色是这份黑，新代码不要再引入第三种黑 */
+  --color-btn-dark: rgba(20, 20, 22, 0.78);
+  --color-btn-dark-hover: rgba(30, 30, 32, 0.88);
   --color-info: #64d2ff;
   --color-skipped: #6b7280;
 
@@ -594,13 +599,13 @@ body::after {
 }
 
 .btn-primary {
-  background: #1d1d1f;
+  background: var(--color-btn-dark);
   color: white;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .btn-primary:hover {
-  background: #000000;
+  background: var(--color-btn-dark-hover);
   opacity: 0.9;
 }
 
@@ -640,13 +645,20 @@ body::after {
 
 .btn-danger {
   background: rgba(255, 69, 58, 0.12);
-  color: #d70015;
+  color: var(--color-error);
   border: 1px solid rgba(255, 69, 58, 0.3);
 }
 
 .btn-danger:hover {
   background: rgba(255, 69, 58, 0.20);
   border-color: rgba(255, 69, 58, 0.45);
+}
+
+/* 文案统计行内联图标对齐文字（U4：lucide 默认 24px 与 13px 文字不协调） */
+.script-stats svg {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
 }
 
 /* 取消任务（橙色，与红色删除区分） */
@@ -887,7 +899,7 @@ body::after {
 
 .badge-error {
   background: rgba(255, 69, 58, 0.15);
-  color: #d70015;
+  color: var(--color-error);
 }
 
 .badge-warning {
@@ -1040,6 +1052,8 @@ body::after {
 .spinner {
   width: 18px;
   height: 18px;
+  flex-shrink: 0;        /* U4: 防 flex 容器拉伸成非整数尺寸 */
+  align-self: center;
   border: 2px solid rgba(0, 0, 0, 0.2);
   border-top-color: var(--color-primary);
   border-radius: 50%;
@@ -1174,7 +1188,7 @@ body::after {
 }
 
 .sub-tab.active {
-  background: #1d1d1f;
+  background: var(--color-btn-dark);
   color: white;
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
@@ -1913,7 +1927,7 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 .btn-card.active {
-  background: #1d1d1f;
+  background: var(--color-btn-dark);
   border-color: transparent;
   color: white;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);

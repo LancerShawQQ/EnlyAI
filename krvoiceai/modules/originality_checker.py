@@ -395,25 +395,49 @@ class OriginalityChecker(BaseModule):
         Returns:
             修正后的文案（str），失败返回 None
         """
-        prompt = (
-            "以下是短视频口播文案，其中包含一些平台违禁/极限词。"
-            "请替换这些词为合规的近义表达，保持文案的口播风格、语气和长度基本不变，"
-            "直接输出修改后的完整文案，不要解释。\n\n"
-            f"违禁词列表：{'、'.join(banned)}\n\n"
-            f"原始文案：\n{text}"
+        # 同义变体黑名单：LLM 常把极限词换成这些"换汤不换药"的词
+        # （r10 实测第一轮把"全国第一"修成"行业领先"仍命中词库）
+        variant_hint = (
+            "注意：替换词不得使用这些常见变体——领先、顶尖、顶级、极致、"
+            "冠军、王牌、第一、之最、独一无二、绝无仅有、空前、绝后、"
+            "销量第一、全网最。用客观描述替代（如'很多用户选择'、'口碑不错'、"
+            "'行业内知名度较高'）。"
         )
-        try:
-            resp = self.llm.chat([
-                {"role": "system", "content": "你是短视频文案合规审核专家。"},
-                {"role": "user", "content": prompt},
-            ])
-            # 后处理：去多余空行
-            lines = [ln.strip() for ln in resp.splitlines() if ln.strip()]
-            fixed = "\n".join(lines)
-            return fixed if fixed else None
-        except Exception as e:
-            self.logger.warning(f"违禁词自动修正 LLM 调用失败：{e}")
-            return None
+        fixed: Optional[str] = None
+        cur_banned = list(banned)
+        # 最多 2 轮：修正稿复扫仍命中时，把新命中的词加入黑名单再修一次
+        for attempt in range(2):
+            prompt = (
+                "以下是短视频口播文案，其中包含一些平台违禁/极限词。"
+                "请替换这些词为合规的近义表达，保持文案的口播风格、语气和长度基本不变，"
+                "直接输出修改后的完整文案，不要解释。\n"
+                f"{variant_hint}\n\n"
+                f"违禁词列表：{'、'.join(cur_banned)}\n\n"
+                f"原始文案：\n{text}"
+            )
+            try:
+                resp = self.llm.chat([
+                    {"role": "system", "content": "你是短视频文案合规审核专家。"},
+                    {"role": "user", "content": prompt},
+                ])
+                # 后处理：去多余空行
+                lines = [ln.strip() for ln in resp.splitlines() if ln.strip()]
+                fixed = "\n".join(lines)
+            except Exception as e:
+                self.logger.warning(f"违禁词自动修正 LLM 调用失败：{e}")
+                return None
+            if not fixed:
+                return None
+            # 修正稿复扫：词库清零才返回，否则带上新命中词再修一轮
+            remaining = self._scan_banned_words(fixed)
+            if not remaining:
+                return fixed
+            self.logger.info(
+                f"违禁词修正第 {attempt + 1} 轮仍命中 {remaining}，加强约束重修"
+            )
+            cur_banned = list(dict.fromkeys(cur_banned + remaining))
+            text = fixed
+        return fixed
 
     # ============ LLM 语义风控 ============
 
@@ -424,20 +448,55 @@ class OriginalityChecker(BaseModule):
         """
         prompt = (
             "请对以下短视频口播文案做平台风控检测，判断在抖音/小红书/B站/视频号发布的风险。\n"
-            "检测维度：1) 违禁词/极限词 2) 虚假宣传 3) 医疗/金融违规 4) 引流违规 5) 其他敏感。\n\n"
+            "检测维度：1) 虚假宣传/无依据承诺 2) 医疗功效违规 3) 金融投资收益保证 "
+            "4) 引流违规 5) 其他敏感。\n"
+            "校准标准（重要）：\n"
+            "- 广告法极限词已由本地词库单独判定，你不要再按'极限词'扩大化——"
+            "普通的正面营销表述（如'销量突出''效果显著''体验很好''口碑不错'）"
+            "不属于风险，判 low。\n"
+            "- 只把有具体监管后果的表述判 medium/high：虚假事实、保证收益、"
+            "医疗功效承诺、夸大到违背常识等。\n\n"
             "请严格按以下 JSON 格式返回（不要其他内容）：\n"
             '{"level": "low|medium|high", "reason": "一句话说明", "risks": ["具体风险点"]}\n\n'
             f"文案：\n{text}"
         )
         try:
             resp = self.llm.chat([
-                {"role": "system", "content": "你是短视频平台风控审核专家。"},
+                {"role": "system", "content": "你是短视频平台风控审核专家，判定标准严格对齐广告法与平台规则原文，不做扩大化解读。"},
                 {"role": "user", "content": prompt},
             ])
             return self._parse_llm_risk(resp)
         except Exception as e:
             self.logger.warning(f"LLM 风控调用失败，降级为 low：{e}")
             return {"level": "low", "reason": "LLM 调用失败，已降级", "risks": []}
+
+    def soften_script(self, script: str) -> Optional[str]:
+        """AI 优化表述：降低语义风险但不删改要点（词库清零后的 LLM-only 风险入口）
+
+        与 _auto_fix_banned_words 的区别：不针对具体违禁词，而是把夸张/
+        绝对化表述改写为客观表述（r10：营销文案 LLM 判 medium 后用户
+        无 AI 修正入口，只能手动改）。
+        """
+        prompt = (
+            "以下是短视频口播文案，被判存在语义层面的合规风险（夸大/绝对化/"
+            "无依据承诺）。请改写为客观、留有余地的表述：\n"
+            "- 不使用任何绝对化词语（最、第一、唯一、保证、百分百、稳赚）\n"
+            "- 事实性表述加合理限定（'很多用户反馈'代替'所有人都说'）\n"
+            "- 保持口播风格、核心卖点与长度基本不变\n"
+            "直接输出修改后的完整文案，不要解释。\n\n"
+            f"原始文案：\n{script}"
+        )
+        try:
+            resp = self.llm.chat([
+                {"role": "system", "content": "你是短视频文案合规改写专家。"},
+                {"role": "user", "content": prompt},
+            ])
+            lines = [ln.strip() for ln in resp.splitlines() if ln.strip()]
+            fixed = "\n".join(lines)
+            return fixed if fixed else None
+        except Exception as e:
+            self.logger.warning(f"AI 优化表述调用失败：{e}")
+            return None
 
     @staticmethod
     def _parse_llm_risk(resp: str) -> dict:

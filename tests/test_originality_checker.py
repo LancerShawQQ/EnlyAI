@@ -333,3 +333,36 @@ def test_check_script_clean(checker):
     assert r["success"] is True
     assert r["banned_count"] == 0
     assert r["verdict"] in ("pass", "low")
+
+
+# ============ r10: 法务收敛（复扫重修）与 soften ============
+
+def test_auto_fix_rescan_retry(checker, job_work_dir):
+    """修正稿复扫仍命中时自动加强重修（r10 实测第一轮把'全国第一'修成
+    '行业领先'仍命中词库，需用户手动点第二轮）"""
+    from unittest.mock import patch
+
+    calls = {"n": 0}
+
+    def fake_chat(messages):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return "我们的品牌行业领先，销量领先全国"   # 复扫会命中"领先"
+        return "我们的品牌口碑不错，很多用户选择"        # 第二轮干净
+
+    with patch.object(checker.llm, "chat", side_effect=fake_chat):
+        fixed = checker._auto_fix_banned_words(
+            "我们的品牌全国第一", ["全国第一"]
+        )
+    assert calls["n"] == 2, "复扫命中后应自动重修一轮"
+    assert fixed == "我们的品牌口碑不错，很多用户选择"
+    assert not checker._scan_banned_words(fixed)
+
+
+def test_check_script_soften(checker):
+    """soften_script：词库清零后的 LLM-only 风险优化入口"""
+    from unittest.mock import patch
+    with patch.object(checker.llm, "chat",
+                      return_value="很多用户反馈使用体验不错"):
+        r = checker.soften_script("所有人都说效果最好")
+    assert r == "很多用户反馈使用体验不错"

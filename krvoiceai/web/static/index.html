@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
   <title>EnlyAI · 虚拟人口播智能体</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260901lg8">
-  <link rel="stylesheet" href="/static/css/liquid_glass.css?v=20260815lg4">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260904lg9">
+  <link rel="stylesheet" href="/static/css/liquid_glass.css?v=20260904lg5">
   <script src="https://unpkg.com/lucide@0.460.0"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
   <!-- 移动端点击修复（内联确保优先级，避免外部CSS缓存导致失效） -->
@@ -2140,8 +2140,8 @@
                 <label class="form-label">服务提供商</label>
                 <select class="form-select" id="tts-provider" onchange="onTTSProviderChange()">
                   <option value="cosyvoice">CosyVoice3（本地0.5B，9语言+18方言+instruct+克隆，Apache 2.0）</option>
-                  <option value="qwen3_tts">Qwen3-TTS 预置音色（本地0.6B，9音色+情绪控制，推荐）</option>
-                  <option value="qwen3_tts_clone">Qwen3-TTS 声音克隆（本地0.6B Base，3秒样本克隆）</option>
+                  <option value="qwen3_tts">Qwen3-TTS 预置音色（本地0.6B，需本地部署 Qwen3-TTS 服务，未部署不可用）</option>
+                  <option value="qwen3_tts_clone">Qwen3-TTS 声音克隆（本地0.6B Base，需本地部署，未部署不可用）</option>
                   <option value="moss_nano">MOSS NANO（本地CPU降级，6中文+5英文，快速预览）</option>
                   <option value="edge_tts">Edge TTS（微软标准音色，免费，7中文）</option>
                   <option value="mimo">MiMo TTS（小米云端，需API凭证）</option>
@@ -3203,7 +3203,7 @@
   <!-- Toast 容器 -->
   <div class="toast-container" id="toast-container"></div>
 
-  <script src="/static/js/app.js?v=20260903lg16"></script>
+  <script src="/static/js/app.js?v=20260904lg17"></script>
   <script src="/static/js/settings.js?v=20260901lg8"></script>
 
   <!-- ========== Liquid Glass SVG 滤镜定义（边缘折射变形效果） ========== -->

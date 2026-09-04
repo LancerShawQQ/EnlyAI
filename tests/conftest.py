@@ -35,6 +35,12 @@ def isolated_config(test_root: Path, monkeypatch) -> Config:
     cfg.set("publisher.cookies_dir", str(work_root / "cookies"))
     cfg.set("pipeline.db_path", str(work_root / "jobs.db"))
     cfg.set("pipeline.gpu_enabled", False)
+    # 原创性历史库指向临时目录：默认 ./workspace_data/originality_history.db
+    # 与线上 E2E 并发访问同一 SQLite 会瞬时锁冲突（r10 实测 7 个瞬时 E）
+    cfg.set(
+        "originality.history_db",
+        str(work_root / "originality_history.db"),
+    )
     # 单测必须走 mock 链路：否则 e2e 用例会按真实 provider 拉起
     # Ollama/CosyVoice/LatentSync（services.auto_start），测试挂死数分钟
     cfg.set("services.auto_start", False)

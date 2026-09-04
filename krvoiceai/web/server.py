@@ -126,6 +126,7 @@ class LegalCheckRequest(BaseModel):
     """AI 法务：文案合规检测请求"""
     script: str = ""
     auto_fix: bool = False
+    soften: bool = False  # 词库清零后针对 LLM-only 语义风险的"AI 优化表述"
     style: Optional[str] = None  # 幽默/严肃/活泼/专业/口语化
     topic: Optional[str] = None  # generate 模式下的主题
     reference_url: Optional[str] = None  # extract 模式下的参考视频链接
@@ -1414,14 +1415,20 @@ def create_app() -> FastAPI:
     async def legal_check_script(req: LegalCheckRequest):
         """AI 法务：检测文案违禁词（广告法极限词/平台敏感词/医疗金融）与 LLM 语义风险
 
-        auto_fix=True 时返回修正后的文案（不直接替换，由前端确认后回填）。
+        auto_fix=True 时返回违禁词修正稿；soften=True 时返回语义风险
+        优化稿（均不直接替换，由前端确认后回填）。
         """
         from ..modules.originality_checker import OriginalityChecker
 
         def _check():
             checker = OriginalityChecker()
             checker.setup()
-            return checker.check_script(req.script, auto_fix=req.auto_fix)
+            result = checker.check_script(req.script, auto_fix=req.auto_fix)
+            if req.soften and result.get("success"):
+                softened = checker.soften_script(req.script)
+                if softened:
+                    result["softened_script"] = softened
+            return result
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _check)
@@ -1608,6 +1615,26 @@ def create_app() -> FastAPI:
             raise HTTPException(400, "文案不能为空")
         if not avatar_ids or not voice_ids:
             raise HTTPException(400, "至少选择一个数字人和一个音色")
+
+        # r10 P2：同批变体共用同一份文案——各变体独立润色会产生不同内容/时长
+        # （实测 49字/7.6s vs 139字/21.4s 且自行发挥），违背"批量裂变=同内容
+        # 换形象"的产品语义（对标万兴播爆）。展开前统一改写一次，改写失败
+        # 则退回原始文案，绝不阻断批量。
+        if script_mode in ("polish", "rewrite", "generate"):
+            try:
+                _pw = krvoice.process_script(script=script, action=script_mode)
+                if _pw.get("success") and (_pw.get("script") or "").strip():
+                    script = _pw["script"]
+                    krvoice.logger.info(
+                        f"矩阵批量：文案已统一{script_mode}（{len(script)}字），全部变体共用"
+                    )
+                else:
+                    krvoice.logger.warning(
+                        f"矩阵批量：统一改写失败（{_pw.get('error')}），使用原始文案"
+                    )
+            except Exception as e:
+                krvoice.logger.warning(f"矩阵批量：统一改写异常: {e}，使用原始文案")
+            script_mode = "raw"  # 变体任务不再二次改写
 
         # 笛卡尔积展开
         combos = list(itertools.product(avatar_ids, voice_ids, template_ids))

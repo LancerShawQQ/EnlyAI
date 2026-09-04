@@ -203,12 +203,12 @@
 
 /* 退出按钮（红色调，与常规导航区分） */
 .nav-item.nav-exit {
-  color: #d7263d;
+  color: var(--color-error, #ff453a);  /* U3: 危险红统一 token */
   margin-top: 6px;
 }
 .nav-item.nav-exit:hover {
-  background: rgba(215, 38, 61, 0.08);
-  border-color: rgba(215, 38, 61, 0.25);
+  background: rgba(255, 69, 58, 0.08);
+  border-color: rgba(255, 69, 58, 0.25);
 }
 
 .nav-item.active::after {

@@ -2414,8 +2414,45 @@ function renderLegalReport(result, script) {
     html += `<div style="font-size:13px;color:#10b981">✓ 未检出语义风险</div>`;
   }
 
+  // 词库清零但 LLM 判 medium/high：提供"AI 优化表述"入口
+  // （r10：此前该状态无 AI 修正入口，用户只能手动改）
+  const llmLv = result.llm_risk ? (result.llm_risk.level || 'low') : 'low';
+  if (result.banned_count === 0 && result.llm_available && (llmLv === 'medium' || llmLv === 'high')) {
+    html += `<div style="margin-top:10px"><button class="btn btn-sm btn-primary" id="wiz-legal-soften-btn" type="button"><i data-lucide="sparkles" style="width:13px;height:13px"></i> AI 优化表述（降低语义风险）</button></div>`;
+  }
+
   body.innerHTML = html;
   lucide.createIcons();
+
+  // AI 优化表述：针对 LLM-only 语义风险的改写入口
+  const softenBtn = document.getElementById('wiz-legal-soften-btn');
+  if (softenBtn) softenBtn.addEventListener('click', async () => {
+    softenBtn.disabled = true;
+    softenBtn.innerHTML = '<span class="spinner"></span> AI 优化中...';
+    try {
+      const r3 = await api('/api/script/legal-check', {
+        method: 'POST',
+        body: { script, soften: true },
+      });
+      if (r3.success && r3.softened_script) {
+        const ta = document.getElementById('wiz-script');
+        ta.value = r3.softened_script;
+        ta.dispatchEvent(new Event('input'));
+        toast('已用优化表述替换文案（原稿可 Ctrl+Z 撤销），请再次检测确认', 'success');
+        runLegalCheck();
+      } else {
+        toast('AI 优化表述失败，请手动调整夸张表述', 'error');
+        softenBtn.disabled = false;
+        softenBtn.innerHTML = '<i data-lucide="sparkles" style="width:13px;height:13px"></i> AI 优化表述（降低语义风险）';
+        lucide.createIcons();
+      }
+    } catch (e) {
+      toast(`优化失败: ${e.message}`, 'error');
+      softenBtn.disabled = false;
+      softenBtn.innerHTML = '<i data-lucide="sparkles" style="width:13px;height:13px"></i> AI 优化表述（降低语义风险）';
+      lucide.createIcons();
+    }
+  });
 
   // 一键修正：调 auto_fix 拿修正稿，预览确认后替换编辑器内容
   const fixBtn = document.getElementById('wiz-legal-fix-btn');
